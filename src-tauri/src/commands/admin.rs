@@ -2,6 +2,26 @@ use crate::commands::{get_config_path, get_db_path, get_log_path, get_project_di
 use gdclone_bot::state::{db::Database, repo};
 use serde::{Deserialize, Serialize};
 
+const BACKUP_NAME_PREFIX: &str = "backup_";
+
+fn validate_backup_name(name: &str) -> Result<&str, String> {
+    let bytes = name.as_bytes();
+    let valid = bytes.len() == 22
+        && name.starts_with(BACKUP_NAME_PREFIX)
+        && bytes[7..15].iter().all(u8::is_ascii_digit)
+        && bytes[15] == b'_'
+        && bytes[16..22].iter().all(u8::is_ascii_digit);
+    if !valid {
+        return Err("invalid backup name".to_string());
+    }
+    Ok(name)
+}
+
+fn backup_dir() -> Result<std::path::PathBuf, String> {
+    let dirs = get_project_dirs().ok_or_else(|| "cannot locate project dirs".to_string())?;
+    Ok(dirs.data_dir().join("backups"))
+}
+
 // ── Default Destination ─────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -138,14 +158,25 @@ pub struct BackupInfoDto {
 
 #[tauri::command]
 pub async fn backup_database() -> Result<BackupInfoDto, String> {
-    let dirs = get_project_dirs().ok_or_else(|| "cannot locate project dirs".to_string())?;
-    let backup_dir = dirs.data_dir().join("backups");
+    let backup_dir = backup_dir()?;
     std::fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&backup_dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| e.to_string())?;
+    }
 
     let now = chrono::Local::now();
     let name = format!("backup_{}", now.format("%Y%m%d_%H%M%S"));
     let target_dir = backup_dir.join(&name);
     std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&target_dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| e.to_string())?;
+    }
 
     let db_path = get_db_path();
     let cfg_path = get_config_path();
@@ -177,11 +208,10 @@ pub async fn backup_database() -> Result<BackupInfoDto, String> {
 
 #[tauri::command]
 pub async fn list_backups() -> Result<Vec<BackupInfoDto>, String> {
-    let dirs = match get_project_dirs() {
-        Some(d) => d,
-        None => return Ok(Vec::new()),
+    let backup_dir = match backup_dir() {
+        Ok(path) => path,
+        Err(_) => return Ok(Vec::new()),
     };
-    let backup_dir = dirs.data_dir().join("backups");
     if !backup_dir.exists() {
         return Ok(Vec::new());
     }
@@ -192,6 +222,9 @@ pub async fn list_backups() -> Result<Vec<BackupInfoDto>, String> {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().to_string();
+                if validate_backup_name(&name).is_err() {
+                    continue;
+                }
                 let mut size = 0u64;
                 let mut count = 0;
                 if let Ok(files) = std::fs::read_dir(&path) {
@@ -226,8 +259,8 @@ pub async fn list_backups() -> Result<Vec<BackupInfoDto>, String> {
 
 #[tauri::command]
 pub async fn restore_backup(backup_name: String) -> Result<(), String> {
-    let dirs = get_project_dirs().ok_or_else(|| "cannot locate project dirs".to_string())?;
-    let source_dir = dirs.data_dir().join("backups").join(&backup_name);
+    let backup_name = validate_backup_name(&backup_name)?;
+    let source_dir = backup_dir()?.join(backup_name);
     if !source_dir.exists() {
         return Err(format!("bản sao lưu '{backup_name}' không tồn tại"));
     }
@@ -255,8 +288,8 @@ pub async fn restore_backup(backup_name: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn delete_backup(backup_name: String) -> Result<(), String> {
-    let dirs = get_project_dirs().ok_or_else(|| "cannot locate project dirs".to_string())?;
-    let dir = dirs.data_dir().join("backups").join(&backup_name);
+    let backup_name = validate_backup_name(&backup_name)?;
+    let dir = backup_dir()?.join(backup_name);
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
     }
@@ -312,4 +345,18 @@ pub async fn apply_remote_update() -> Result<String, String> {
         .output();
 
     Ok("Cập nhật thành công! Bản mới nhất đã được cài đặt và khởi động lại dịch vụ.".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_backup_name;
+
+    #[test]
+    fn backup_name_validation_rejects_path_traversal() {
+        assert!(validate_backup_name("backup_20261002_174500").is_ok());
+        assert!(validate_backup_name("../backup_20261002_174500").is_err());
+        assert!(validate_backup_name("../../tmp").is_err());
+        assert!(validate_backup_name("backup_20261002_174500/../../tmp").is_err());
+        assert!(validate_backup_name("backup_20261002_17450x").is_err());
+    }
 }
