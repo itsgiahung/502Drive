@@ -376,7 +376,7 @@ export const translations = {
       updating: 'Đang xác minh bản phát hành chính thức…',
       update_success: 'Đã mở trang GitHub Releases chính thức.',
       auto_backup_note: 'Tải từ GitHub Releases chính thức và kiểm tra SHA256 trước khi cài đặt',
-      default_changelog: 'Bản cập nhật tối ưu hóa hiệu năng, giao diện và mở rộng tính năng mới.',
+      default_changelog: 'Bản phát hành này không cung cấp ghi chú thay đổi.',
     },
     folder_picker: {
       back: 'Quay lại',
@@ -835,7 +835,7 @@ export const translations = {
       updating: 'Verifying the official release…',
       update_success: 'Official GitHub Releases page opened.',
       auto_backup_note: 'Download from the official GitHub Releases page and verify SHA256 before installing',
-      default_changelog: 'Performance optimizations, UI improvements, and new feature capabilities.',
+      default_changelog: 'No release notes were provided for this version.',
     },
     folder_picker: {
       back: 'Back',
