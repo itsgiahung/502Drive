@@ -106,9 +106,7 @@ async fn run_initial_clone_inner(
     // ── Step 3: Switch to catching_up ─────────────────────────────────────────
     // A user may stop the watch while the initial clone is running. Do not
     // resurrect a stopped watch after that long-running I/O completes.
-    if !repo::transition_watch_status(&db, &watch_id, "catching_up", &["initializing"])
-        .await?
-    {
+    if !repo::transition_watch_status(&db, &watch_id, "catching_up", &["initializing"]).await? {
         info!(
             watch_id,
             "watch left initializing state during initial clone; skipping catch-up"
@@ -140,9 +138,7 @@ async fn run_initial_clone_inner(
             // Caught up — promote to active.
             repo::advance_watch_consumed_sequence(&db, &watch_id, cursor.last_event_sequence)
                 .await?;
-            if repo::transition_watch_status(&db, &watch_id, "active", &["catching_up"])
-                .await?
-            {
+            if repo::transition_watch_status(&db, &watch_id, "active", &["catching_up"]).await? {
                 info!(watch_id, cycles = cycle, "watch caught up → active");
             }
             break;

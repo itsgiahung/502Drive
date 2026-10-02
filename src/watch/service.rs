@@ -336,8 +336,7 @@ pub async fn resolve_pending(
 
     let remaining = repo::count_pending_confirmation_events(db, watch_id).await?;
     if remaining == 0 && watch.status == "needs_reconcile" {
-        let _ =
-            repo::transition_watch_status(db, watch_id, "active", &["needs_reconcile"]).await?;
+        let _ = repo::transition_watch_status(db, watch_id, "active", &["needs_reconcile"]).await?;
     }
 
     Ok(Some(ResolveOutcome {

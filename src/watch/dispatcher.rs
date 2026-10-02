@@ -1097,12 +1097,7 @@ async fn ensure_watch_destination_item_with_retry(
 
         let result = if source.is_folder() {
             drive
-                .create_folder(
-                    access_token,
-                    &source.name,
-                    dest_parent,
-                    Some(&props),
-                )
+                .create_folder(access_token, &source.name, dest_parent, Some(&props))
                 .await
         } else if source.is_shortcut() {
             let details = source
