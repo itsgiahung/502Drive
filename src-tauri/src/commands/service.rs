@@ -203,7 +203,10 @@ pub async fn set_launch_at_startup(enabled: bool) -> Result<(), String> {
                     .args(["--user", "disable", "--now", "gdclone-bot.service"])
                     .output()
                     .map_err(|e| format!("failed to disable gdclone-bot: {e}"))?;
-                ensure_success("systemctl --user disable --now gdclone-bot.service", disable)?;
+                ensure_success(
+                    "systemctl --user disable --now gdclone-bot.service",
+                    disable,
+                )?;
             }
 
             let output = Command::new(&cli)
@@ -225,7 +228,10 @@ pub async fn set_launch_at_startup(enabled: bool) -> Result<(), String> {
     {
         let mut command = Command::new(&cli);
         if enabled {
-            command.arg("--config").arg(&config_path).arg("service-install");
+            command
+                .arg("--config")
+                .arg(&config_path)
+                .arg("service-install");
         } else {
             command.arg("service-uninstall");
         }
