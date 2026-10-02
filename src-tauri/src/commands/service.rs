@@ -337,7 +337,10 @@ mod tests {
             validate_telegram_username("@Drive502_Bot").unwrap(),
             "Drive502_Bot"
         );
-        assert_eq!(validate_telegram_username("valid_bot").unwrap(), "valid_bot");
+        assert_eq!(
+            validate_telegram_username("valid_bot").unwrap(),
+            "valid_bot"
+        );
         assert!(validate_telegram_username("bad/name").is_err());
         assert!(validate_telegram_username("https://t.me/evil").is_err());
         assert!(validate_telegram_username("abc").is_err());
