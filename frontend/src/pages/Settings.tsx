@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react"
 import { motion, AnimatePresence } from "motion/react"
 import { Card } from "@/components/ui/Card"
 import { Button } from "@/components/ui/Button"
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog"
 import { ConfigSummary, SystemStatus } from "@/lib/types"
 import { useTheme, ThemeMode } from "@/hooks/useTheme"
 import { useI18n } from "@/hooks/useI18n"
@@ -21,15 +22,15 @@ import {
   Moon,
   Monitor,
   HelpCircle,
-  FileCode,
   Sparkles,
   AlertTriangle,
-  FolderKey,
   FolderOpen,
   FolderSync,
 } from "lucide-react"
 import { api, getErrorMessage } from "@/lib/ipc"
 import { useToast } from "@/components/primitives/Toast"
+import { FolderPickerPanel } from "@/components/primitives/FolderPicker"
+import { DriveItemRef } from "@/lib/types"
 
 export interface SettingsProps {
   config: ConfigSummary | null
@@ -38,7 +39,7 @@ export interface SettingsProps {
   onTriggerLogin: () => void
   onTriggerRevoke: () => void
   onRestartService: () => void
-  onCheckUpdate: () => void
+  onCheckUpdate?: () => Promise<void>
   onOpenWizard?: () => void
 }
 
@@ -56,14 +57,14 @@ export const Settings: React.FC<SettingsProps> = ({
   const [isUpdating, setIsUpdating] = useState(false)
   const [updateChecked, setUpdateChecked] = useState(false)
   const [showOAuthHelp, setShowOAuthHelp] = useState(false)
-  const [saDir, setSaDir] = useState<string>("~/.config/502drive/sa")
-  const [saFilesCount, setSaFilesCount] = useState<number>(0)
+  const [isRevokeConfirmOpen, setIsRevokeConfirmOpen] = useState(false)
   // Slider drafts locally while dragging; persists once on release.
   const [concurrencyDraft, setConcurrencyDraft] = useState<number | null>(null)
   const { theme, setTheme } = useTheme()
 
   const { toast } = useToast()
   const [isEditingDest, setIsEditingDest] = useState(false)
+  const [showFolderPicker, setShowFolderPicker] = useState(false)
   const [destId, setDestId] = useState(status?.destination_id || "")
   const [destLabel, setDestLabel] = useState(status?.destination_label || "")
   const [isSavingDest, setIsSavingDest] = useState(false)
@@ -75,7 +76,7 @@ export const Settings: React.FC<SettingsProps> = ({
 
   const handleSaveDestination = async () => {
     if (!destId.trim()) {
-      toast({ title: t('common.error'), description: 'Vui lòng nhập ID hoặc liên kết thư mục Drive', variant: 'error' })
+      toast({ title: t('common.error'), description: t('settings_page.enter_dest_error'), variant: 'error' })
       return
     }
     setIsSavingDest(true)
@@ -84,7 +85,7 @@ export const Settings: React.FC<SettingsProps> = ({
       await api.setDefaultDestination(destId.trim(), label)
       toast({ title: t('common.success'), description: t('settings_page.dest_saved_toast'), variant: 'success' })
       setIsEditingDest(false)
-      onRestartService()
+      setShowFolderPicker(false)
     } catch (err) {
       toast({ title: t('common.error'), description: getErrorMessage(err), variant: 'error' })
     } finally {
@@ -110,7 +111,7 @@ export const Settings: React.FC<SettingsProps> = ({
     setTimeout(() => {
       setIsUpdating(false)
       setUpdateChecked(true)
-      onCheckUpdate()
+      onCheckUpdate?.()
     }, 1200)
   }
 
@@ -171,28 +172,19 @@ export const Settings: React.FC<SettingsProps> = ({
               <div className="p-4 rounded-2xl bg-warning/10 border border-warning/25 space-y-3 text-xs text-text-secondary">
                 <div className="flex items-center gap-2 text-warning font-medium">
                   <AlertTriangle className="h-4 w-4" />
-                  <span>Tại sao tài khoản khác bị lỗi: "Đã chặn quyền truy cập (Lỗi 403: access_denied)"?</span>
+                  <span>{t('settings_page.oauth_help_why')}</span>
                 </div>
                 <p className="leading-relaxed">
-                  Khi Google Cloud Console ở trạng thái <strong className="text-text-primary">"Testing"</strong>, Google chỉ cho phép các email được thêm thủ công vào mục <em>"Test Users"</em> đăng nhập.
+                  {t('settings_page.oauth_help_desc')}
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 text-[0.6875rem]">
                   <div className="p-2.5 rounded-xl bg-bg-card border border-border/70 space-y-1">
                     <p className="font-semibold text-text-primary flex items-center gap-1.5">
                       <Sparkles className="h-3.5 w-3.5 text-accent" />
-                      Cách 1: Chuyển sang "In Production" (Chuẩn Rclone)
+                      {t('settings_page.oauth_help_step1_title')}
                     </p>
                     <p className="text-text-muted leading-relaxed">
-                      Trên Google Cloud Console &rarr; OAuth Consent Screen &rarr; bấm <strong>"Publish App"</strong>. Khi đó bất kỳ ai cũng đăng nhập được ngay (1-chạm) mà không bị chặn 403.
-                    </p>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-bg-card border border-border/70 space-y-1">
-                    <p className="font-semibold text-text-primary flex items-center gap-1.5">
-                      <FileCode className="h-3.5 w-3.5 text-accent" />
-                      Cách 2: Service Accounts (Quota Không Giới Hạn - Tự Xoay Vòng)
-                    </p>
-                    <p className="text-text-muted leading-relaxed">
-                      Tạo Service Accounts miễn phí (mỗi SA 750GB/ngày). Nạp thư mục JSON vào tool để sao chép tự động không cần trình duyệt và tự xoay vòng khi chạm hạn mức.
+                      {t('settings_page.oauth_help_step1_desc')}
                     </p>
                   </div>
                 </div>
@@ -230,7 +222,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   <Button
                     size="sm"
                     variant="danger"
-                    onClick={onTriggerRevoke}
+                    onClick={() => setIsRevokeConfirmOpen(true)}
                     className="h-8 px-2.5 text-xs gap-1 rounded-xl"
                     title={t('dashboard.btn_disconnect')}
                   >
@@ -297,7 +289,7 @@ export const Settings: React.FC<SettingsProps> = ({
                       {status?.destination_label || t('dashboard.dest_unset')}
                     </span>
                     {status?.destination_id && (
-                      <span className="text-[0.625rem] font-mono text-text-muted">
+                      <span className="text-[0.6875rem] font-mono text-text-muted">
                         ({status.destination_id})
                       </span>
                     )}
@@ -316,28 +308,70 @@ export const Settings: React.FC<SettingsProps> = ({
             </div>
 
             {isEditingDest && (
-              <div className="p-3.5 rounded-xl bg-bg-input/60 border border-border/60 space-y-2 mt-2">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    value={destId}
-                    onChange={(e) => setDestId(e.target.value)}
-                    placeholder={t('dev_page.dest_folder_id')}
-                    className="w-full text-xs font-mono px-3 py-2 rounded-lg bg-bg-card border border-border/80 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
-                  />
-                  <input
-                    type="text"
-                    value={destLabel}
-                    onChange={(e) => setDestLabel(e.target.value)}
-                    placeholder={t('dev_page.dest_folder_name')}
-                    className="w-full text-xs px-3 py-2 rounded-lg bg-bg-card border border-border/80 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
-                  />
+              <div className="p-3.5 rounded-xl bg-bg-input/60 border border-border/60 space-y-3 mt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-text-secondary">
+                    {t('settings_page.dest_desc')}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setShowFolderPicker((v) => !v)}
+                    className="text-xs gap-1.5 rounded-lg h-7 px-2.5 font-medium text-accent"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    <span>{showFolderPicker ? t('common.close') : t('quick_clone.browse_drive')}</span>
+                  </Button>
                 </div>
+
+                {showFolderPicker && (
+                  <div className="rounded-xl border border-border/70 overflow-hidden bg-bg-card p-2">
+                    <FolderPickerPanel
+                      selectedId={destId}
+                      onSelect={(item: DriveItemRef) => {
+                        setDestId(item.id)
+                        setDestLabel(item.name)
+                        setShowFolderPicker(false)
+                      }}
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[0.6875rem] font-medium text-text-muted mb-1 block">
+                      {t('dev_page.dest_folder_id')}
+                    </label>
+                    <input
+                      type="text"
+                      value={destId}
+                      onChange={(e) => setDestId(e.target.value)}
+                      placeholder={t('dev_page.dest_folder_id')}
+                      className="w-full text-xs font-mono px-3 py-2 rounded-lg bg-bg-card border border-border/80 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[0.6875rem] font-medium text-text-muted mb-1 block">
+                      {t('dev_page.dest_folder_name')}
+                    </label>
+                    <input
+                      type="text"
+                      value={destLabel}
+                      onChange={(e) => setDestLabel(e.target.value)}
+                      placeholder={t('dev_page.dest_folder_name')}
+                      className="w-full text-xs px-3 py-2 rounded-lg bg-bg-card border border-border/80 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-end gap-2 pt-1">
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => setIsEditingDest(false)}
+                    onClick={() => {
+                      setIsEditingDest(false)
+                      setShowFolderPicker(false)
+                    }}
                     className="text-xs rounded-lg"
                   >
                     {t('common.cancel')}
@@ -432,64 +466,7 @@ export const Settings: React.FC<SettingsProps> = ({
         </Card>
       </div>
 
-      {/* ── Group 3: Service Accounts (SA) Quota Manager ──── */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
-              {t('settings_page.group_sa')}
-            </h2>
-            <span className="text-[0.625rem] font-mono font-semibold px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/25">
-              {t('settings_page.sa_badge')}
-            </span>
-          </div>
-        </div>
-        <Card className="p-4 space-y-3 shadow-xs border border-border/70">
-          <div className="flex items-start gap-3">
-            <div className="p-2.5 rounded-xl bg-accent/10 text-accent shrink-0">
-              <FolderKey className="h-4 w-4 stroke-[1.75]" />
-            </div>
-            <div className="space-y-1 flex-1">
-              <p className="text-xs text-text-secondary leading-relaxed">
-                {t('settings_page.sa_desc')}
-              </p>
-              <div className="pt-2 flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-                <input
-                  type="text"
-                  value={saDir}
-                  onChange={(e) => setSaDir(e.target.value)}
-                  placeholder={t('settings_page.sa_dir_placeholder')}
-                  className="flex-1 px-3 py-1.5 text-xs rounded-xl bg-bg-input border border-border/80 text-text-primary font-mono focus:outline-none focus:border-accent"
-                />
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    // Simulate inspecting folder for .json files
-                    setSaFilesCount(saFilesCount > 0 ? 0 : 50)
-                  }}
-                  className="text-xs gap-1.5 rounded-xl shrink-0 font-medium"
-                >
-                  <FolderOpen className="h-3.5 w-3.5" />
-                  <span>{t('settings_page.sa_btn_browse')}</span>
-                </Button>
-              </div>
-              <div className="pt-2 flex items-center justify-between text-xs text-text-muted">
-                <span>
-                  {saFilesCount > 0
-                    ? `${saFilesCount} Service Accounts loaded`
-                    : t('settings_page.sa_status_none')}
-                </span>
-                {saFilesCount > 0 && (
-                  <span className="font-semibold text-accent font-mono">
-                    {t('settings_page.sa_calc_quota')}{saFilesCount * 750} {t('settings_page.sa_per_day')}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </Card>
-      </div>
+
 
       {/* ── Group 4: Hệ thống & Giao diện (Apple HIG Style) ─── */}
       <div className="space-y-3">
@@ -667,6 +644,19 @@ export const Settings: React.FC<SettingsProps> = ({
           </Button>
         </Card>
       </div>
+
+      <ConfirmDialog
+        isOpen={isRevokeConfirmOpen}
+        onClose={() => setIsRevokeConfirmOpen(false)}
+        onConfirm={() => {
+          setIsRevokeConfirmOpen(false)
+          onTriggerRevoke()
+        }}
+        title={t('settings_page.disconnect_confirm_title')}
+        description={t('settings_page.disconnect_confirm_desc')}
+        confirmText={t('dashboard.btn_disconnect')}
+        variant="danger"
+      />
     </div>
   )
 }

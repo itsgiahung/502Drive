@@ -21,19 +21,19 @@ pub enum Command {
     Clone(String),
     #[command(description = "clone ngay vào thư mục đích mặc định")]
     CloneHere(String),
-    #[command(description = "liệt kê job đang chạy/tạm dừng")]
+    #[command(description = "liệt kê tác vụ đang chạy/tạm dừng")]
     Jobs,
-    #[command(description = "xem trạng thái một job")]
+    #[command(description = "xem trạng thái một tác vụ")]
     Status(String),
-    #[command(description = "tạm dừng job")]
+    #[command(description = "tạm dừng tác vụ")]
     Pause(String),
-    #[command(description = "tiếp tục job đã tạm dừng")]
+    #[command(description = "tiếp tục tác vụ đã tạm dừng")]
     Resume(String),
-    #[command(description = "hủy job")]
+    #[command(description = "hủy tác vụ")]
     Cancel(String),
-    #[command(description = "thử lại các item lỗi")]
+    #[command(description = "thử lại các mục lỗi")]
     Retry(String),
-    #[command(description = "gửi lại report JSON/CSV của job gần nhất")]
+    #[command(description = "gửi lại báo cáo JSON/CSV của tác vụ gần nhất")]
     LastReport,
     #[command(description = "xem Telegram user id và quyền hiện tại")]
     Whoami,

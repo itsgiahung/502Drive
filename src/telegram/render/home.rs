@@ -41,21 +41,40 @@ pub(crate) async fn render_home_dashboard(
         None => lang.text(T::HomeNoDestination).to_string(),
     };
 
-    let mut lines = vec!["🚀 502Drive".to_string()];
-    // Overall health dot — needs-attention state wins over "ready".
-    if needs_attention > 0 {
-        lines.push(format!("⚠ {}", lang.text(T::HomeNeedsAttention)));
+    let (overall_icon, overall_status) = if account == "reconnect_required" {
+        (
+            "⚠",
+            match lang {
+                keyboards::UiLanguage::Vi => "Cần kết nối lại",
+                keyboards::UiLanguage::En => "Reconnect required",
+            },
+        )
+    } else if account != "connected" {
+        (
+            "⚠",
+            match lang {
+                keyboards::UiLanguage::Vi => "Dịch vụ chưa sẵn sàng",
+                keyboards::UiLanguage::En => "Service unavailable",
+            },
+        )
+    } else if needs_attention > 0 {
+        ("⚠", lang.text(T::HomeNeedsAttention))
     } else {
-        lines.push(format!("● {}", lang.text(T::HomeBotReady)));
-    }
+        ("●", lang.text(T::HomeBotReady))
+    };
+
+    let mut lines = vec!["🚀 502Drive".to_string()];
+    lines.push(format!("{overall_icon} {overall_status}"));
     lines.push(String::new());
-    // Natural label/value blocks — no space-padding alignment.
+
     lines.push(lang.text(T::HomeDriveLabel).to_string());
     lines.push(drive_status.to_string());
     lines.push(String::new());
+
     lines.push(lang.text(T::HomeDefaultDestination).to_string());
     lines.push(destination);
     lines.push(String::new());
+
     lines.push(format!(
         "{}  {}",
         lang.text(T::HomeJobsRunning),
@@ -63,13 +82,13 @@ pub(crate) async fn render_home_dashboard(
     ));
     if config.watch.enabled {
         lines.push(format!("{}  {}", lang.text(T::HomeWatching), watch_active));
-        if needs_attention > 0 {
-            lines.push(format!(
-                "⚠ {}  {}",
-                lang.text(T::HomeNeedsAttention),
-                needs_attention
-            ));
-        }
+    }
+    if needs_attention > 0 {
+        lines.push(format!(
+            "{}  {}",
+            lang.text(T::HomeNeedsAttention),
+            needs_attention
+        ));
     }
     lines.push(String::new());
     lines.push(lang.text(T::HomeHint).to_string());

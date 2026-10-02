@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { TabId } from './Sidebar'
 import { useTheme } from '@/hooks/useTheme'
+import { useI18n } from '@/hooks/useI18n'
 import {
   Search,
   LayoutDashboard,
@@ -17,10 +18,13 @@ import {
   Users,
   Database,
   Stethoscope,
-  HardDrive,
   ArrowUpCircle,
   FolderOpen,
+  Radio,
+  FolderUp,
 } from 'lucide-react'
+
+import { DevSubTab } from '@/pages/Dev'
 
 export interface CommandPaletteProps {
   isOpen: boolean
@@ -31,6 +35,9 @@ export interface CommandPaletteProps {
   onTriggerLogin: () => void
   onRefresh: () => void
   onOpenUpdateModal?: () => void
+  onSelectDevSubTab?: (subTab: DevSubTab) => void
+  onOpenQuickClone?: () => void
+  onOpenCreateWatch?: () => void
 }
 
 interface CommandItem {
@@ -39,7 +46,7 @@ interface CommandItem {
   subtitle: string
   icon: React.ComponentType<{ className?: string }>
   action: () => void
-  category: 'Trang' | 'Thao tác' | 'Giao diện' | 'Công cụ'
+  category: string
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -51,19 +58,29 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onTriggerLogin,
   onRefresh,
   onOpenUpdateModal,
+  onSelectDevSubTab,
+  onOpenQuickClone,
+  onOpenCreateWatch,
 }) => {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const { toggleTheme } = useTheme()
+  const { lang, t } = useI18n()
+  const isVi = lang === 'vi'
+
+  const catPages = isVi ? 'Trang' : 'Pages'
+  const catActions = isVi ? 'Thao tác' : 'Actions'
+  const catAppearance = isVi ? 'Giao diện' : 'Appearance'
+  const catTools = isVi ? 'Công cụ' : 'Tools'
 
   const commands: CommandItem[] = [
     {
       id: 'nav-dashboard',
-      title: 'Mở Trang chính',
-      subtitle: 'Xem tổng quan hệ thống, tài khoản và thống kê',
+      title: isVi ? 'Mở Trang chính' : 'Open Dashboard',
+      subtitle: isVi ? 'Xem tổng quan hệ thống, tài khoản và thống kê' : 'System overview, accounts, and performance stats',
       icon: LayoutDashboard,
-      category: 'Trang',
+      category: catPages,
       action: () => {
         onSelectTab('dashboard')
         onClose()
@@ -71,10 +88,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-jobs',
-      title: 'Mở Tiến độ & Đồng bộ',
-      subtitle: 'Xem danh sách tác vụ clone và theo dõi thời gian thực',
+      title: isVi ? 'Mở Tiến độ & Đồng bộ' : 'Open Jobs & Sync',
+      subtitle: isVi ? 'Xem danh sách tác vụ clone và theo dõi thời gian thực' : 'Active clone jobs and realtime watch folders',
       icon: ArrowLeftRight,
-      category: 'Trang',
+      category: catPages,
       action: () => {
         onSelectTab('jobs')
         onClose()
@@ -82,10 +99,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-settings',
-      title: 'Mở Cài đặt hệ thống',
-      subtitle: 'Cấu hình concurrency, tài khoản, ngôn ngữ, SA pool',
+      title: isVi ? 'Mở Cài đặt hệ thống' : 'Open System Settings',
+      subtitle: isVi ? 'Cấu hình concurrency, tài khoản, ngôn ngữ, thư mục đích' : 'Configure concurrency, account, language, default destination',
       icon: Settings,
-      category: 'Trang',
+      category: catPages,
       action: () => {
         onSelectTab('settings')
         onClose()
@@ -93,10 +110,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-dev',
-      title: 'Mở Công cụ Dev & Vận hành',
-      subtitle: 'Chẩn đoán doctor, quản lý người dùng, sao lưu SQLite, nhật ký',
+      title: isVi ? 'Mở Công cụ Dev & Vận hành' : 'Open Developer Tools',
+      subtitle: isVi ? 'Chẩn đoán doctor, quản lý người dùng, sao lưu SQLite, nhật ký' : 'System doctor, users, database backups, logs',
       icon: Terminal,
-      category: 'Trang',
+      category: catPages,
       action: () => {
         onSelectTab('dev')
         onClose()
@@ -104,65 +121,92 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'tool-users',
-      title: 'Quản lý Người dùng Telegram',
-      subtitle: 'Thêm và phân quyền các tài khoản điều khiển bot',
+      title: isVi ? 'Quản lý Người dùng Telegram' : 'Manage Telegram Users',
+      subtitle: isVi ? 'Thêm và phân quyền các tài khoản điều khiển bot' : 'Authorize and manage bot operators',
       icon: Users,
-      category: 'Công cụ',
+      category: catTools,
       action: () => {
-        onSelectTab('dev')
+        if (onSelectDevSubTab) onSelectDevSubTab('users')
+        else onSelectTab('dev')
         onClose()
       },
     },
     {
       id: 'tool-backup',
-      title: 'Sao lưu & Khôi phục Dữ liệu (Backup SQLite)',
-      subtitle: 'Tạo bản snapshot dữ liệu state.db và config.toml an toàn',
+      title: isVi ? 'Sao lưu & Khôi phục Dữ liệu (Backup SQLite)' : 'Database Backup & Restore (SQLite)',
+      subtitle: isVi ? 'Tạo bản snapshot dữ liệu state.db và config.toml an toàn' : 'Create safe snapshots of state.db and config.toml',
       icon: Database,
-      category: 'Công cụ',
+      category: catTools,
       action: () => {
-        onSelectTab('dev')
+        if (onSelectDevSubTab) onSelectDevSubTab('database')
+        else onSelectTab('dev')
         onClose()
       },
     },
     {
       id: 'tool-doctor',
-      title: 'Chạy Chẩn đoán Toàn diện (Doctor)',
-      subtitle: 'Kiểm tra tệp tin, SQLite, WAL, permissions, kết nối Google & Telegram',
+      title: isVi ? 'Chạy Chẩn đoán Toàn diện (Doctor)' : 'Run System Doctor Diagnostics',
+      subtitle: isVi ? 'Kiểm tra tệp tin, SQLite, WAL, permissions, kết nối Google & Telegram' : 'Check files, SQLite WAL, permissions, Google & Telegram connectivity',
       icon: Stethoscope,
-      category: 'Công cụ',
+      category: catTools,
       action: () => {
-        onSelectTab('dev')
+        if (onSelectDevSubTab) onSelectDevSubTab('doctor')
+        else onSelectTab('dev')
+        onClose()
+      },
+    },
+    {
+      id: 'tool-logs',
+      title: isVi ? 'Xem Nhật ký Vận hành (Live Logs)' : 'View Live Operation Logs',
+      subtitle: isVi ? 'Theo dõi trực tiếp log tiến trình và luồng sự kiện của daemon' : 'Stream live daemon process logs and runtime events',
+      icon: Terminal,
+      category: catTools,
+      action: () => {
+        if (onSelectDevSubTab) onSelectDevSubTab('logs')
+        else onSelectTab('dev')
         onClose()
       },
     },
     {
       id: 'tool-destination',
-      title: 'Cấu hình Thư mục đích mặc định',
-      subtitle: 'Chọn thư mục Google Drive để lưu các tác vụ sao chép',
+      title: isVi ? 'Cấu hình Thư mục đích mặc định' : 'Configure Default Destination',
+      subtitle: isVi ? 'Chọn thư mục Google Drive để lưu các tác vụ sao chép' : 'Select Google Drive destination for cloned files',
       icon: FolderOpen,
-      category: 'Công cụ',
+      category: catTools,
       action: () => {
         onSelectTab('settings')
         onClose()
       },
     },
+
     {
-      id: 'tool-sa',
-      title: 'Cấu hình Service Accounts Pool',
-      subtitle: 'Mở rộng hạn mức tải và tự động luân chuyển token bypass 750GB/ngày',
-      icon: HardDrive,
-      category: 'Công cụ',
+      id: 'act-quick-clone',
+      title: isVi ? 'Sao chép nhanh thư mục Drive' : 'Quick Clone Drive Folder',
+      subtitle: isVi ? 'Dán liên kết thư mục để gửi yêu cầu sao chép ngay' : 'Paste folder link to queue a copy request immediately',
+      icon: FolderUp,
+      category: catActions,
       action: () => {
-        onSelectTab('settings')
+        onOpenQuickClone?.()
+        onClose()
+      },
+    },
+    {
+      id: 'act-create-watch',
+      title: isVi ? 'Tạo theo dõi thư mục tự động (Watch)' : 'Create Folder Watch (Realtime Sync)',
+      subtitle: isVi ? 'Tự động đồng bộ khi thư mục Google Drive nguồn có thay đổi' : 'Automatically sync when source Drive folder changes',
+      icon: Radio,
+      category: catActions,
+      action: () => {
+        onOpenCreateWatch?.()
         onClose()
       },
     },
     {
       id: 'act-restart',
-      title: 'Khởi động lại Background Service',
-      subtitle: 'Tải lại tiến trình gdclone-bot',
+      title: isVi ? 'Khởi động lại Background Service' : 'Restart Background Service',
+      subtitle: isVi ? 'Tải lại tiến trình gdclone-bot' : 'Reload gdclone-bot daemon process',
       icon: RotateCcw,
-      category: 'Thao tác',
+      category: catActions,
       action: () => {
         onRestartService()
         onClose()
@@ -170,10 +214,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'act-refresh',
-      title: 'Làm mới dữ liệu',
-      subtitle: 'Cập nhật lại trạng thái các tác vụ từ engine',
+      title: isVi ? 'Làm mới dữ liệu' : 'Refresh All Data',
+      subtitle: isVi ? 'Cập nhật lại trạng thái các tác vụ từ engine' : 'Fetch latest runtime status from engine',
       icon: RefreshCw,
-      category: 'Thao tác',
+      category: catActions,
       action: () => {
         onRefresh()
         onClose()
@@ -181,10 +225,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'act-bot',
-      title: 'Mở bot Telegram',
-      subtitle: 'Mở ứng dụng Telegram điều khiển bot',
+      title: isVi ? 'Mở bot Telegram' : 'Open Telegram Bot',
+      subtitle: isVi ? 'Mở ứng dụng Telegram điều khiển bot' : 'Open Telegram client to control bot',
       icon: Send,
-      category: 'Thao tác',
+      category: catActions,
       action: () => {
         onOpenBot()
         onClose()
@@ -192,10 +236,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'act-login',
-      title: 'Đăng nhập Google OAuth',
-      subtitle: 'Xác thực tài khoản Google Drive',
+      title: isVi ? 'Đăng nhập Google OAuth' : 'Google OAuth Login',
+      subtitle: isVi ? 'Xác thực tài khoản Google Drive' : 'Authenticate Google Drive account',
       icon: LogIn,
-      category: 'Thao tác',
+      category: catActions,
       action: () => {
         onTriggerLogin()
         onClose()
@@ -203,10 +247,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'act-update',
-      title: 'Kiểm tra & Cập nhật Phiên bản Mới',
-      subtitle: 'Cập nhật ứng dụng từ xa với sao lưu tự động',
+      title: isVi ? 'Kiểm tra & Cập nhật Phiên bản Mới' : 'Check for Remote Updates',
+      subtitle: isVi ? 'Cập nhật ứng dụng từ xa với sao lưu tự động' : 'Update application remotely with automated backup',
       icon: ArrowUpCircle,
-      category: 'Thao tác',
+      category: catActions,
       action: () => {
         onOpenUpdateModal?.()
         onClose()
@@ -214,10 +258,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'act-theme',
-      title: 'Chuyển đổi giao diện Sáng / Tối',
-      subtitle: 'Chuyển đổi phong cách hiển thị',
+      title: isVi ? 'Chuyển đổi giao diện Sáng / Tối' : 'Toggle Dark / Light Theme',
+      subtitle: isVi ? 'Chuyển đổi phong cách hiển thị' : 'Switch between dark and light appearance',
       icon: SunMoon,
-      category: 'Giao diện',
+      category: catAppearance,
       action: () => {
         toggleTheme()
         onClose()
@@ -295,7 +339,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             transition={{ duration: 0.1, ease: "easeOut" }}
             role="dialog"
             aria-modal="true"
-            aria-label="Thanh lệnh nhanh"
+            aria-label={isVi ? "Thanh lệnh nhanh" : "Command Palette"}
             className="w-full max-w-xl bg-bg-card border border-border/80 rounded-2xl shadow-modal overflow-hidden z-10 select-none flex flex-col max-h-[460px]"
           >
             {/* Search Input Bar */}
@@ -305,17 +349,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 ref={inputRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Tìm kiếm tác vụ, thao tác hoặc trang..."
+                placeholder={isVi ? "Tìm kiếm tác vụ, thao tác hoặc trang..." : "Search commands, actions, or pages..."}
                 role="combobox"
                 aria-expanded="true"
                 aria-controls={LISTBOX_ID}
                 aria-activedescendant={activeDescendantId}
-                aria-label="Tìm kiếm tác vụ, thao tác hoặc trang"
+                aria-label={isVi ? "Tìm kiếm tác vụ, thao tác hoặc trang" : "Search commands, actions, or pages"}
                 className="w-full bg-transparent border-0 text-sm text-text-primary placeholder:text-text-muted focus:outline-none"
               />
               <button
                 onClick={onClose}
-                aria-label="Đóng thanh lệnh"
+                aria-label={isVi ? "Đóng thanh lệnh" : "Close command palette"}
                 className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               >
                 <X className="h-4 w-4" />
@@ -326,12 +370,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             <div
               id={LISTBOX_ID}
               role="listbox"
-              aria-label="Kết quả tìm kiếm"
+              aria-label={isVi ? "Kết quả tìm kiếm" : "Search results"}
               className="overflow-y-auto p-2 space-y-1"
             >
               {filtered.length === 0 ? (
                 <div className="py-8 text-center text-xs text-text-muted">
-                  Không tìm thấy thao tác phù hợp với "{query}"
+                  {isVi ? `Không tìm thấy thao tác phù hợp với "${query}"` : `No matching actions found for "${query}"`}
                 </div>
               ) : (
                 filtered.map((item, index) => {
@@ -365,7 +409,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                           <p className="text-[0.6875rem] text-text-muted truncate">{item.subtitle}</p>
                         </div>
                       </div>
-                      <span className="text-[0.625rem] font-mono px-2 py-0.5 rounded bg-bg-input/60 text-text-muted shrink-0 ml-2">
+                      <span className="text-[0.6875rem] font-mono px-2 py-0.5 rounded bg-bg-input/60 text-text-muted shrink-0 ml-2">
                         {item.category}
                       </span>
                     </button>
@@ -376,12 +420,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
             {/* Footer hints */}
             <div className="px-4 py-2 border-t border-border/50 bg-bg-input/30 flex items-center justify-between text-[0.6875rem] text-text-muted">
-              <div className="flex items-center gap-3 font-mono text-[0.625rem]">
-                <span>↑↓ điều hướng</span>
-                <span>↵ chọn</span>
-                <span>esc đóng</span>
+              <div className="flex items-center gap-3 font-mono text-[0.6875rem]">
+                <span>{t('command_palette.footer_navigate')}</span>
+                <span>{t('command_palette.footer_select')}</span>
+                <span>{t('command_palette.footer_close')}</span>
               </div>
-              <span className="font-mono text-[0.625rem]">⌘K / Ctrl+K</span>
+              <span className="font-mono text-[0.6875rem]">⌘K / Ctrl+K</span>
             </div>
           </motion.div>
         </div>

@@ -373,17 +373,17 @@ impl TextKey {
             (UiLanguage::En, Self::CloneHere) => "Clone here",
             (UiLanguage::Vi, Self::CloneIncompleteTitle) => "⚠ Sao chép chưa hoàn tất",
             (UiLanguage::En, Self::CloneIncompleteTitle) => "⚠ Clone incomplete",
-            (UiLanguage::Vi, Self::CloneNow) => "Clone ngay",
+            (UiLanguage::Vi, Self::CloneNow) => "Sao chép ngay",
             (UiLanguage::En, Self::CloneNow) => "Clone now",
             (UiLanguage::Vi, Self::CloneToDestination) => "Clone vào đích",
             (UiLanguage::En, Self::CloneToDestination) => "Clone to destination",
             (UiLanguage::Vi, Self::ConfirmCancelJobBody) => {
-                "Job đang chạy sẽ dừng ở checkpoint gần nhất. Bạn chắc chắn muốn huỷ?"
+                "Tác vụ đang chạy sẽ dừng ở checkpoint gần nhất. Bạn chắc chắn muốn huỷ?"
             }
             (UiLanguage::En, Self::ConfirmCancelJobBody) => {
                 "The running job will stop at the nearest checkpoint. Are you sure?"
             }
-            (UiLanguage::Vi, Self::ConfirmCancelJobTitle) => "XÁC NHẬN HUỶ JOB",
+            (UiLanguage::Vi, Self::ConfirmCancelJobTitle) => "XÁC NHẬN HUỶ TÁC VỤ",
             (UiLanguage::En, Self::ConfirmCancelJobTitle) => "CONFIRM JOB CANCEL",
             (UiLanguage::Vi, Self::ConfirmUnwatchBody) => {
                 "Bot sẽ ngừng theo dõi thư mục này. Bản copy ở đích vẫn được giữ lại."
@@ -391,7 +391,7 @@ impl TextKey {
             (UiLanguage::En, Self::ConfirmUnwatchBody) => {
                 "The bot will stop watching this folder. Destination copies are kept."
             }
-            (UiLanguage::Vi, Self::ConfirmUnwatchTitle) => "XÁC NHẬN DỪNG WATCH",
+            (UiLanguage::Vi, Self::ConfirmUnwatchTitle) => "XÁC NHẬN DỪNG ĐỒNG BỘ",
             (UiLanguage::En, Self::ConfirmUnwatchTitle) => "CONFIRM STOP WATCH",
             (UiLanguage::Vi, Self::ConfirmSetDestinationPrompt) => {
                 "Đặt đây làm thư mục đích mặc định?"
@@ -401,7 +401,7 @@ impl TextKey {
             }
             (UiLanguage::Vi, Self::CommandAccount) => "Xem tài khoản Google",
             (UiLanguage::En, Self::CommandAccount) => "Show Google account",
-            (UiLanguage::Vi, Self::CommandCancel) => "Huỷ job",
+            (UiLanguage::Vi, Self::CommandCancel) => "Huỷ tác vụ",
             (UiLanguage::En, Self::CommandCancel) => "Cancel job",
             (UiLanguage::Vi, Self::CommandClearDestination) => "Xoá thư mục đích mặc định",
             (UiLanguage::En, Self::CommandClearDestination) => "Clear default destination",
@@ -421,23 +421,23 @@ impl TextKey {
             (UiLanguage::En, Self::CommandDisconnect) => "Disconnect Google Drive",
             (UiLanguage::Vi, Self::CommandHelp) => "Xem các lệnh chính",
             (UiLanguage::En, Self::CommandHelp) => "Show commands",
-            (UiLanguage::Vi, Self::CommandJobs) => "Xem job đang chạy",
+            (UiLanguage::Vi, Self::CommandJobs) => "Xem tác vụ đang chạy",
             (UiLanguage::En, Self::CommandJobs) => "Show active jobs",
-            (UiLanguage::Vi, Self::CommandLastReport) => "Gửi lại report gần nhất",
+            (UiLanguage::Vi, Self::CommandLastReport) => "Gửi lại báo cáo gần nhất",
             (UiLanguage::En, Self::CommandLastReport) => "Send latest report",
             (UiLanguage::Vi, Self::CommandMenu | Self::CommandStart) => "Mở bảng điều khiển",
             (UiLanguage::En, Self::CommandMenu | Self::CommandStart) => "Open control center",
-            (UiLanguage::Vi, Self::CommandPause) => "Tạm dừng job",
+            (UiLanguage::Vi, Self::CommandPause) => "Tạm dừng tác vụ",
             (UiLanguage::En, Self::CommandPause) => "Pause job",
             (UiLanguage::Vi, Self::CommandPreview) => "Bảng tổng quan realtime",
             (UiLanguage::En, Self::CommandPreview) => "Realtime overview",
-            (UiLanguage::Vi, Self::CommandResume) => "Tiếp tục job",
+            (UiLanguage::Vi, Self::CommandResume) => "Tiếp tục tác vụ",
             (UiLanguage::En, Self::CommandResume) => "Resume job",
-            (UiLanguage::Vi, Self::CommandRetry) => "Làm lại item lỗi",
+            (UiLanguage::Vi, Self::CommandRetry) => "Thử lại các mục lỗi",
             (UiLanguage::En, Self::CommandRetry) => "Retry failed items",
             (UiLanguage::Vi, Self::CommandSetDestination) => "Đặt thư mục đích mặc định",
             (UiLanguage::En, Self::CommandSetDestination) => "Set default destination",
-            (UiLanguage::Vi, Self::CommandStatus) => "Xem chi tiết job",
+            (UiLanguage::Vi, Self::CommandStatus) => "Xem chi tiết tác vụ",
             (UiLanguage::En, Self::CommandStatus) => "Show job details",
             (UiLanguage::Vi, Self::CommandSync) => {
                 "Đồng bộ realtime từ nguồn sang đích: /sync <nguon> [dich]"
@@ -497,8 +497,8 @@ impl TextKey {
             (UiLanguage::En, Self::HomeBotLabel) => "Bot",
             (UiLanguage::Vi, Self::HomeBotReady) => "Sẵn sàng",
             (UiLanguage::En, Self::HomeBotReady) => "Ready",
-            (UiLanguage::Vi, Self::HomeDefaultDestination) => "Đích mặc định",
-            (UiLanguage::En, Self::HomeDefaultDestination) => "Default destination",
+            (UiLanguage::Vi, Self::HomeDefaultDestination) => "Thư mục đích",
+            (UiLanguage::En, Self::HomeDefaultDestination) => "Destination",
             (UiLanguage::Vi, Self::HomeDriveLabel) => "Google Drive",
             (UiLanguage::En, Self::HomeDriveLabel) => "Google Drive",
             (UiLanguage::Vi, Self::HomeHint) => "Gửi link Google Drive để bắt đầu nhanh.",
@@ -527,27 +527,27 @@ impl TextKey {
             (UiLanguage::En, Self::HomeJobsRunning) => "Running",
             (UiLanguage::Vi, Self::HomeNeedsAttention) => "Cần chú ý",
             (UiLanguage::En, Self::HomeNeedsAttention) => "Needs attention",
-            (UiLanguage::Vi, Self::HomeNoDestination) => "—",
-            (UiLanguage::En, Self::HomeNoDestination) => "—",
+            (UiLanguage::Vi, Self::HomeNoDestination) => "Chưa thiết lập",
+            (UiLanguage::En, Self::HomeNoDestination) => "Not set",
             (UiLanguage::Vi, Self::HomeStatusConnected) => "Đã kết nối",
             (UiLanguage::En, Self::HomeStatusConnected) => "Connected",
             (UiLanguage::Vi, Self::HomeStatusNotConnected) => "Chưa kết nối",
             (UiLanguage::En, Self::HomeStatusNotConnected) => "Not connected",
             (UiLanguage::Vi, Self::HomeStatusReconnect) => "Cần kết nối lại",
             (UiLanguage::En, Self::HomeStatusReconnect) => "Reconnect needed",
-            (UiLanguage::Vi, Self::HomeWatching) => "Đang theo dõi",
-            (UiLanguage::En, Self::HomeWatching) => "Watching",
-            (UiLanguage::Vi, Self::Jobs) => "Jobs",
+            (UiLanguage::Vi, Self::HomeWatching) => "Đồng bộ",
+            (UiLanguage::En, Self::HomeWatching) => "Syncing",
+            (UiLanguage::Vi, Self::Jobs) => "Tác vụ",
             (UiLanguage::En, Self::Jobs) => "Jobs",
-            (UiLanguage::Vi, Self::KeepJob) => "Giữ job",
+            (UiLanguage::Vi, Self::KeepJob) => "Giữ tác vụ",
             (UiLanguage::En, Self::KeepJob) => "Keep job",
-            (UiLanguage::Vi, Self::KeepWatch) => "Giữ watch",
+            (UiLanguage::Vi, Self::KeepWatch) => "Giữ đồng bộ",
             (UiLanguage::En, Self::KeepWatch) => "Keep watch",
             (UiLanguage::Vi, Self::Manual) => "Xác nhận tay",
             (UiLanguage::En, Self::Manual) => "Manual",
             (UiLanguage::Vi, Self::MenuClone) => "＋ Sao chép",
             (UiLanguage::En, Self::MenuClone) => "＋ Clone",
-            (UiLanguage::Vi, Self::MenuJobs) => "📦 Công việc",
+            (UiLanguage::Vi, Self::MenuJobs) => "📦 Tác vụ",
             (UiLanguage::En, Self::MenuJobs) => "📦 Jobs",
             (UiLanguage::Vi, Self::MenuSettings) => "⚙ Cài đặt",
             (UiLanguage::En, Self::MenuSettings) => "⚙ Settings",
@@ -576,7 +576,7 @@ impl TextKey {
             (UiLanguage::Vi, Self::PreviewTotalJobs) => "Tổng job",
             (UiLanguage::En, Self::PreviewTotalJobs) => "Total jobs",
             (UiLanguage::Vi, Self::PromptClone) => {
-                "Dán link nguồn Drive vào ô trả lời tin nhắn này.\n\
+                "Gửi link nguồn Google Drive vào cuộc trò chuyện này.\n\
                  Bot sẽ kiểm tra nguồn và mở màn xác nhận clone.\n\
                  \n\
                  Ví dụ:\n\
@@ -585,7 +585,7 @@ impl TextKey {
                  Mẹo: bạn cũng có thể dán thẳng link Drive vào chat, không cần gõ /clone."
             }
             (UiLanguage::En, Self::PromptClone) => {
-                "Paste the source Drive link in reply to this message.\n\
+                "Send the Google Drive source link in this chat.\n\
                  The bot will check the source and open the clone confirmation.\n\
                  \n\
                  Example:\n\
@@ -594,7 +594,7 @@ impl TextKey {
                  Tip: you can also paste a Drive link directly into chat without typing /clone."
             }
             (UiLanguage::Vi, Self::PromptCloneHere) => {
-                "Dán link nguồn Drive vào ô trả lời tin nhắn này.\n\
+                "Gửi link nguồn Google Drive vào cuộc trò chuyện này.\n\
                  Bot sẽ clone ngay vào thư mục đích mặc định.\n\
                  \n\
                  Ví dụ:\n\
@@ -603,7 +603,7 @@ impl TextKey {
                  Chưa có đích mặc định thì dùng /destination hoặc /set_destination trước."
             }
             (UiLanguage::En, Self::PromptCloneHere) => {
-                "Paste the source Drive link in reply to this message.\n\
+                "Send the Google Drive source link in this chat.\n\
                  The bot will clone it to the default destination folder.\n\
                  \n\
                  Example:\n\
@@ -645,19 +645,15 @@ impl TextKey {
             (UiLanguage::En, Self::PromptMarkerStatus) => "Command: /status <job_id>",
             (UiLanguage::Vi, Self::PromptMarkerUnwatch) => "Lệnh: /unwatch <id_watch>",
             (UiLanguage::En, Self::PromptMarkerUnwatch) => "Command: /unwatch <watch_id>",
-            (UiLanguage::Vi, Self::PromptMarkerWatch) => {
-                "Dán 2 link vào ô trả lời tin nhắn này: nguồn rồi đích."
-            }
+            (UiLanguage::Vi, Self::PromptMarkerWatch) => "Gửi 2 link vào chat: nguồn rồi đích.",
             (UiLanguage::En, Self::PromptMarkerWatch) => {
-                "Paste 2 links in reply to this message: source then destination."
+                "Send 2 links in chat: source then destination."
             }
             (UiLanguage::Vi, Self::PromptMarkerWatchPause) => "Lệnh: /watch_pause <id_watch>",
             (UiLanguage::En, Self::PromptMarkerWatchPause) => "Command: /watch_pause <watch_id>",
-            (UiLanguage::Vi, Self::PromptMarkerWatchPolicy) => {
-                "Dán ID watch và policy vào ô trả lời tin nhắn này."
-            }
+            (UiLanguage::Vi, Self::PromptMarkerWatchPolicy) => "Gửi ID watch và policy vào chat.",
             (UiLanguage::En, Self::PromptMarkerWatchPolicy) => {
-                "Paste the watch ID and policy in reply to this message."
+                "Send the watch ID and policy in chat."
             }
             (UiLanguage::Vi, Self::PromptMarkerWatchResume) => "Lệnh: /watch_resume <id_watch>",
             (UiLanguage::En, Self::PromptMarkerWatchResume) => "Command: /watch_resume <watch_id>",
@@ -682,35 +678,35 @@ impl TextKey {
             (UiLanguage::Vi, Self::PromptPlaceholderWatchPolicy) => "Dán: watch_id policy",
             (UiLanguage::En, Self::PromptPlaceholderWatchPolicy) => "Paste: watch_id policy",
             (UiLanguage::Vi, Self::PromptSetDestination) => {
-                "Dán link thư mục đích vào ô trả lời tin nhắn này.\n\
+                "Gửi link thư mục đích vào cuộc trò chuyện này.\n\
                  Đích là folder sẽ nhận bản copy.\n\
                  \n\
                  Ví dụ:\n\
                  drive.google.com/drive/folders/DICH"
             }
             (UiLanguage::En, Self::PromptSetDestination) => {
-                "Paste the destination folder link in reply to this message.\n\
+                "Send the destination folder link in this chat.\n\
                  The destination is the folder that will receive the copy.\n\
                  \n\
                  Example:\n\
                  drive.google.com/drive/folders/DESTINATION"
             }
             (UiLanguage::Vi, Self::PromptWatch) => {
-                "Dán 2 link vào ô trả lời tin nhắn này: nguồn rồi đích.\n\
+                "Gửi link nguồn và đích vào chat (hoặc chỉ gửi link nguồn nếu đã có đích mặc định).\n\
                  Nguồn là folder cần theo dõi. Đích là folder nhận bản copy.\n\
                  \n\
                  Ví dụ:\n\
                  drive.google.com/drive/folders/NGUON drive.google.com/drive/folders/DICH"
             }
             (UiLanguage::En, Self::PromptWatch) => {
-                "Paste 2 links in reply to this message: source then destination.\n\
+                "Send source and destination links in chat (or just source if default destination is set).\n\
                  The source is the folder to watch. The destination receives the copies.\n\
                  \n\
                  Example:\n\
                  drive.google.com/drive/folders/SOURCE drive.google.com/drive/folders/DESTINATION"
             }
             (UiLanguage::Vi, Self::PromptWatchPolicy) => {
-                "Dán ID watch và policy vào ô trả lời tin nhắn này.\n\
+                "Gửi ID watch và policy vào cuộc trò chuyện này.\n\
                  Policy hợp lệ:\n\
                  • versioned_copy: nguồn đổi nội dung thì tạo bản copy mới.\n\
                  • replace_copy: copy mới rồi đưa bản cũ vào thùng rác.\n\
@@ -720,7 +716,7 @@ impl TextKey {
                  abc12345 versioned_copy"
             }
             (UiLanguage::En, Self::PromptWatchPolicy) => {
-                "Paste the watch ID and policy in reply to this message.\n\
+                "Send the watch ID and policy in this chat.\n\
                  Valid policies:\n\
                  • versioned_copy: create a new copy when source content changes.\n\
                  • replace_copy: create a new copy, then trash the old one.\n\
@@ -733,20 +729,20 @@ impl TextKey {
             (UiLanguage::En, Self::Refresh) => "Refresh",
             (UiLanguage::Vi, Self::Replace) => "Thay bản cũ",
             (UiLanguage::En, Self::Replace) => "Replace",
-            (UiLanguage::Vi, Self::Report) => "Report",
+            (UiLanguage::Vi, Self::Report) => "Báo cáo",
             (UiLanguage::En, Self::Report) => "Report",
             (UiLanguage::Vi, Self::ReportCompleted) => "Hoàn tất",
             (UiLanguage::En, Self::ReportCompleted) => "Completed",
             (UiLanguage::Vi, Self::ReportFailed) => "Lỗi",
             (UiLanguage::En, Self::ReportFailed) => "Failed",
             (UiLanguage::Vi, Self::ReportHintClean) => {
-                "Job đã sạch lỗi. Có thể lưu JSON/CSV nếu cần đối soát."
+                "Tác vụ không có lỗi. Có thể lưu JSON/CSV nếu cần đối soát."
             }
             (UiLanguage::En, Self::ReportHintClean) => {
                 "This job has no failed items. Keep the JSON/CSV if you need an audit trail."
             }
             (UiLanguage::Vi, Self::ReportHintRetry) => {
-                "Bấm Retry lỗi trong chi tiết job để chạy lại phần lỗi."
+                "Bấm Thử lại lỗi trong chi tiết tác vụ để chạy lại phần lỗi."
             }
             (UiLanguage::En, Self::ReportHintRetry) => {
                 "Tap Retry failed in the job detail to rerun failed items."
@@ -771,7 +767,7 @@ impl TextKey {
             (UiLanguage::En, Self::Resume) => "Resume",
             (UiLanguage::Vi, Self::Retry) => "Thử lại",
             (UiLanguage::En, Self::Retry) => "Retry",
-            (UiLanguage::Vi, Self::RetryFailed) => "Retry lỗi",
+            (UiLanguage::Vi, Self::RetryFailed) => "Thử lại lỗi",
             (UiLanguage::En, Self::RetryFailed) => "Retry failed",
             (UiLanguage::Vi, Self::SelectThisFolder) => "Chọn thư mục này",
             (UiLanguage::En, Self::SelectThisFolder) => "Select this folder",
@@ -785,7 +781,7 @@ impl TextKey {
             (UiLanguage::En, Self::ViewErrors) => "View errors",
             (UiLanguage::Vi, Self::ViewReport) => "Xem báo cáo",
             (UiLanguage::En, Self::ViewReport) => "View report",
-            (UiLanguage::Vi, Self::Watches) => "Đồng bộ (Sync)",
+            (UiLanguage::Vi, Self::Watches) => "Đồng bộ realtime",
             (UiLanguage::En, Self::Watches) => "Sync",
             (UiLanguage::Vi, Self::ConfirmWatchTitle) => "XÁC NHẬN THEO DÕI REALTIME",
             (UiLanguage::En, Self::ConfirmWatchTitle) => "CONFIRM REALTIME WATCH",
@@ -855,7 +851,7 @@ mod tests {
     fn destructive_confirmation_copy_is_localized() {
         assert_eq!(
             UiLanguage::Vi.text(TextKey::ConfirmCancelJobTitle),
-            "XÁC NHẬN HUỶ JOB"
+            "XÁC NHẬN HUỶ TÁC VỤ"
         );
         assert_eq!(
             UiLanguage::En.text(TextKey::ConfirmCancelJobTitle),

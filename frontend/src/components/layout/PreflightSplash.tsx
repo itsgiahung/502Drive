@@ -207,7 +207,7 @@ export const PreflightSplash: React.FC<PreflightSplashProps> = ({
                 )}
 
                 {step.auto_fixed && (
-                  <span className="text-[0.625rem] px-1.5 py-0.5 rounded bg-accent/10 text-accent font-medium shrink-0">
+                  <span className="text-[0.6875rem] px-1.5 py-0.5 rounded bg-accent/10 text-accent font-medium shrink-0">
                     Tự động tạo
                   </span>
                 )}

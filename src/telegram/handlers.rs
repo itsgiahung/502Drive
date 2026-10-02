@@ -6,7 +6,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use teloxide::{
     prelude::*,
-    types::{ForceReply, InlineKeyboardMarkup, InputFile, MessageId},
+    types::{InlineKeyboardMarkup, InputFile, MessageId},
     utils::command::BotCommands,
 };
 use tokio::sync::oneshot;
@@ -43,7 +43,7 @@ use crate::{
 
 const CALLBACK_STATE_TTL_MS: i64 = 15 * 60 * 1000;
 const CLONE_PLAN_ITEM_LIMIT: usize = 2_000;
-const DESTINATION_BROWSER_LIMIT: usize = 20;
+const DESTINATION_BROWSER_LIMIT: usize = 8;
 const WATCH_LIST_PAGE_SIZE: usize = 5;
 
 fn ui_language(config: &AppConfig) -> keyboards::UiLanguage {
@@ -176,6 +176,7 @@ impl ReplyPrompt {
         }
     }
 
+    #[allow(dead_code)]
     fn placeholder_key(self) -> T {
         match self {
             Self::Clone | Self::CloneHere => T::PromptPlaceholderDriveSource,
@@ -192,124 +193,94 @@ impl ReplyPrompt {
         }
     }
 
+    #[allow(dead_code)]
     fn placeholder(self, lang: keyboards::UiLanguage) -> &'static str {
         lang.text(self.placeholder_key())
     }
 }
 
-/// Dispatch a persistent reply-keyboard section press. Sections mirror the
-/// `menu:open:*` callback arms but always SEND a fresh panel (there is no
-/// message to edit when the user taps a keyboard button).
+static CLEANED_CHATS: std::sync::LazyLock<std::sync::RwLock<std::collections::HashSet<ChatId>>> =
+    std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashSet::new()));
 
-/// The 502Drive build line ~2026-09 briefly shipped a persistent ReplyKeyboard.
-/// Old Telegram clients keep showing it even when the server stops sending it,
-/// so the first /start or /menu after a daemon (re)start explicitly removes it.
-async fn remove_legacy_reply_keyboard_once(bot: &Bot, chat_id: ChatId) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use teloxide::types::KeyboardRemove;
-    static LEGACY_KEYBOARD_REMOVED: AtomicBool = AtomicBool::new(false);
-    if LEGACY_KEYBOARD_REMOVED.swap(true, Ordering::Relaxed) {
+async fn remove_legacy_reply_keyboard_silently(bot: &Bot, chat_id: ChatId) {
+    let already_cleaned = CLEANED_CHATS
+        .read()
+        .map(|set| set.contains(&chat_id))
+        .unwrap_or(false);
+    if already_cleaned {
         return;
     }
-    let _ = bot
-        .send_message(chat_id, "🧹 Đã dọn bàn phím cũ. Dùng /menu để điều khiển.")
-        .reply_markup(KeyboardRemove::new())
-        .await;
+    if let Ok(mut set) = CLEANED_CHATS.write() {
+        set.insert(chat_id);
+    }
+    // Remove reply keyboard silently by sending a temporary message and immediately deleting it
+    if let Ok(msg) = bot
+        .send_message(chat_id, "•")
+        .reply_markup(teloxide::types::KeyboardRemove::new())
+        .await
+    {
+        let _ = bot.delete_message(chat_id, msg.id).await;
+    }
 }
 
-pub(crate) async fn handle_section(
-    bot: Bot,
-    chat_id: ChatId,
-    config: AppConfig,
-    db: Database,
-    user_id: i64,
-    section: keyboards::Section,
-) -> ResponseResult<()> {
-    let lang = ui_language(&config);
-    match section {
-        keyboards::Section::Clone => {
-            send_reply_prompt(
-                &bot,
-                &db,
-                user_id,
-                chat_id,
-                clone_prompt(lang),
-                ReplyPrompt::Clone,
-                lang,
-            )
-            .await?;
-        }
-        keyboards::Section::Watch => {
-            send_reply_prompt(
-                &bot,
-                &db,
-                user_id,
-                chat_id,
-                watch_prompt(lang),
-                ReplyPrompt::Watch,
-                lang,
-            )
-            .await?;
-        }
-        keyboards::Section::Overview => {
-            let text = render_home_dashboard(&config, &db, user_id, lang)
-                .await
-                .unwrap_or_else(|err| load_home_error(lang, &err));
-            bot.send_message(chat_id, text)
-                .reply_markup(keyboards::main_menu_keyboard(config.watch.enabled, lang))
-                .await?;
-        }
-        keyboards::Section::Jobs => match render_jobs_panel(&db, user_id, lang).await {
-            Ok((text, keyboard)) => {
-                bot.send_message(chat_id, text)
-                    .reply_markup(keyboard)
-                    .await?;
-            }
-            Err(err) => {
-                bot.send_message(chat_id, load_jobs_error(lang, &err))
-                    .reply_markup(keyboards::back_home_keyboard(lang))
-                    .await?;
-            }
-        },
-        keyboards::Section::Watches => {
-            match render_watch_panel(&config, &db, user_id, 0, WatchListMode::Status).await {
-                Ok((text, keyboard)) => {
-                    let keyboard = (!keyboard.inline_keyboard.is_empty())
-                        .then_some(keyboard)
-                        .unwrap_or_else(|| keyboards::back_home_keyboard(lang));
-                    bot.send_message(chat_id, text)
-                        .reply_markup(keyboard)
-                        .await?;
-                }
-                Err(err) => {
-                    bot.send_message(chat_id, load_watch_error(lang, &err))
-                        .reply_markup(keyboards::back_home_keyboard(lang))
-                        .await?;
-                }
-            }
-        }
-        keyboards::Section::Destination => {
-            let (text, keyboard) = render_destination_panel(&db, user_id, chat_id.0, lang).await;
-            let keyboard = keyboard.unwrap_or_else(|| keyboards::back_home_keyboard(lang));
-            bot.send_message(chat_id, text)
-                .reply_markup(keyboard)
-                .await?;
-        }
-        keyboards::Section::Account => {
-            let text = account_summary(&config, &db, lang)
-                .await
-                .unwrap_or_else(|err| format!("Lỗi đọc trạng thái tài khoản: {err}"));
-            bot.send_message(chat_id, text)
-                .reply_markup(keyboards::account_keyboard(lang))
-                .await?;
-        }
-        keyboards::Section::Language => {
-            bot.send_message(chat_id, language_panel_text(lang))
-                .reply_markup(keyboards::language_keyboard(lang))
-                .await?;
-        }
+static RECENT_CONTROL_MESSAGES: std::sync::LazyLock<
+    std::sync::RwLock<std::collections::HashMap<i64, MessageId>>,
+> = std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashMap::new()));
+
+pub(crate) fn record_control_message(chat_id: i64, message_id: MessageId) {
+    if let Ok(mut map) = RECENT_CONTROL_MESSAGES.write() {
+        map.insert(chat_id, message_id);
     }
-    Ok(())
+}
+
+pub(crate) fn get_recent_control_message(chat_id: i64) -> Option<MessageId> {
+    RECENT_CONTROL_MESSAGES
+        .read()
+        .ok()
+        .and_then(|map| map.get(&chat_id).copied())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LegacyAction {
+    Clone,
+    Watch,
+    Overview,
+    Jobs,
+    Watches,
+    Destination,
+    Account,
+    Language,
+    Settings,
+    Help,
+}
+
+pub fn parse_legacy_action(text: &str) -> Option<LegacyAction> {
+    let t = text.trim();
+    match t {
+        "＋ Sao chép" | "＋ Clone" | "Sao chép" | "Clone" => Some(LegacyAction::Clone),
+        "⟳ Đồng bộ" | "⟳ Sync" | "Đồng bộ" | "Sync" => Some(LegacyAction::Watch),
+        "📊 Tổng quan" | "📊 Overview" | "Tổng quan" | "Overview" => {
+            Some(LegacyAction::Overview)
+        }
+        "📦 Công việc" | "📦 Tác vụ" | "📦 Jobs" | "Công việc" | "Tác vụ" | "Jobs" => {
+            Some(LegacyAction::Jobs)
+        }
+        "👁 Theo dõi" | "👁 Watches" | "Theo dõi" | "Watches" => Some(LegacyAction::Watches),
+        "📁 Thư mục đích" | "📁 Destination" | "Thư mục đích" | "Destination" => {
+            Some(LegacyAction::Destination)
+        }
+        "👤 Tài khoản" | "👤 Account" | "Tài khoản" | "Account" => {
+            Some(LegacyAction::Account)
+        }
+        "🌐 Ngôn ngữ" | "🌐 Language" | "Ngôn ngữ" | "Language" => {
+            Some(LegacyAction::Language)
+        }
+        "⚙️ Cài đặt" | "⚙ Cài đặt" | "⚙️ Settings" | "⚙ Settings" | "Cài đặt" | "Settings" => {
+            Some(LegacyAction::Settings)
+        }
+        "❓ Trợ giúp" | "❓ Help" | "Trợ giúp" | "Help" => Some(LegacyAction::Help),
+        _ => None,
+    }
 }
 
 pub(crate) async fn handle_message(
@@ -339,11 +310,147 @@ pub(crate) async fn handle_message(
         return handle_command(bot, msg, config, db, user_id, command).await;
     }
 
-    // Persistent reply-keyboard sections always work — even mid-session —
-    // and clear any active conversational flow like commands do.
-    if let Some(section) = keyboards::section_from_text(&text) {
+    if let Some(action) = parse_legacy_action(&text) {
+        remove_legacy_reply_keyboard_silently(&bot, msg.chat.id).await;
         let _ = session::clear_session(&db, user_id, msg.chat.id.0).await;
-        return handle_section(bot, msg.chat.id, config, db, user_id, section).await;
+        let lang = ui_language(&config);
+        match action {
+            LegacyAction::Overview => {
+                let text = render_home_dashboard(&config, &db, user_id, lang)
+                    .await
+                    .unwrap_or_else(|err| load_home_error(lang, &err));
+                let kb = keyboards::main_menu_keyboard(config.watch.enabled, lang);
+                let recent_id = get_recent_control_message(msg.chat.id.0);
+                edit_or_send_with_keyboard(&bot, msg.chat.id, recent_id, text, Some(kb)).await?;
+            }
+            LegacyAction::Clone => {
+                send_reply_prompt(
+                    &bot,
+                    &db,
+                    user_id,
+                    msg.chat.id,
+                    clone_prompt(lang),
+                    ReplyPrompt::Clone,
+                    lang,
+                )
+                .await?;
+            }
+            LegacyAction::Watch => {
+                send_reply_prompt(
+                    &bot,
+                    &db,
+                    user_id,
+                    msg.chat.id,
+                    watch_prompt(lang),
+                    ReplyPrompt::Watch,
+                    lang,
+                )
+                .await?;
+            }
+            LegacyAction::Jobs => {
+                let (text, kb) = match render_jobs_panel(&db, user_id, lang).await {
+                    Ok((t, k)) => (t, k),
+                    Err(err) => (
+                        load_jobs_error(lang, &err),
+                        keyboards::back_home_keyboard(lang),
+                    ),
+                };
+                let recent_id = get_recent_control_message(msg.chat.id.0);
+                edit_or_send_with_keyboard(&bot, msg.chat.id, recent_id, text, Some(kb)).await?;
+            }
+            LegacyAction::Watches => {
+                let (text, kb) =
+                    match render_watch_panel(&config, &db, user_id, 0, WatchListMode::Status).await
+                    {
+                        Ok((t, k)) => (
+                            t,
+                            (!k.inline_keyboard.is_empty())
+                                .then_some(k)
+                                .unwrap_or_else(|| keyboards::back_home_keyboard(lang)),
+                        ),
+                        Err(err) => (
+                            load_watch_error(lang, &err),
+                            keyboards::back_home_keyboard(lang),
+                        ),
+                    };
+                let recent_id = get_recent_control_message(msg.chat.id.0);
+                edit_or_send_with_keyboard(&bot, msg.chat.id, recent_id, text, Some(kb)).await?;
+            }
+            LegacyAction::Destination => {
+                let (text, kb) = render_destination_panel(&db, user_id, msg.chat.id.0, lang).await;
+                let kb = kb.unwrap_or_else(|| keyboards::back_home_keyboard(lang));
+                let recent_id = get_recent_control_message(msg.chat.id.0);
+                edit_or_send_with_keyboard(&bot, msg.chat.id, recent_id, text, Some(kb)).await?;
+            }
+            LegacyAction::Account => {
+                let text = account_summary(&config, &db, lang)
+                    .await
+                    .unwrap_or_else(|err| load_account_error(lang, &err));
+                let recent_id = get_recent_control_message(msg.chat.id.0);
+                edit_or_send_with_keyboard(
+                    &bot,
+                    msg.chat.id,
+                    recent_id,
+                    text,
+                    Some(keyboards::account_keyboard(lang)),
+                )
+                .await?;
+            }
+            LegacyAction::Language => {
+                let recent_id = get_recent_control_message(msg.chat.id.0);
+                edit_or_send_with_keyboard(
+                    &bot,
+                    msg.chat.id,
+                    recent_id,
+                    language_panel_text(lang),
+                    Some(keyboards::language_keyboard(lang)),
+                )
+                .await?;
+            }
+            LegacyAction::Settings => {
+                let account = repo::account_status(&db)
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default();
+                let drive_status = match account.as_str() {
+                    "connected" => lang.text(crate::telegram::i18n::TextKey::HomeStatusConnected),
+                    "reconnect_required" => {
+                        lang.text(crate::telegram::i18n::TextKey::HomeStatusReconnect)
+                    }
+                    _ => lang.text(crate::telegram::i18n::TextKey::HomeStatusNotConnected),
+                };
+                let n = &config.notifications;
+                let notifications_on = n.job_completed || n.job_failed || n.watch_errors;
+                let text = crate::telegram::render::home::render_settings_panel(
+                    lang,
+                    drive_status,
+                    notifications_on,
+                );
+                let recent_id = get_recent_control_message(msg.chat.id.0);
+                edit_or_send_with_keyboard(
+                    &bot,
+                    msg.chat.id,
+                    recent_id,
+                    text,
+                    Some(keyboards::settings_keyboard(lang)),
+                )
+                .await?;
+            }
+            LegacyAction::Help => {
+                let text = render_help_text(lang);
+                let recent_id = get_recent_control_message(msg.chat.id.0);
+                edit_or_send_with_keyboard(
+                    &bot,
+                    msg.chat.id,
+                    recent_id,
+                    text,
+                    Some(keyboards::back_home_keyboard(lang)),
+                )
+                .await?;
+            }
+        }
+        return Ok(());
     }
 
     if let Ok(Some(active_session)) = session::get_session(&db, user_id, msg.chat.id.0).await {
@@ -421,9 +528,39 @@ async fn handle_session_input(
         }
         (session::SessionFlow::Watch, session::SessionStep::WaitSource) => {
             let _ = session::clear_session(&db, user_id, msg.chat.id.0).await;
-            if let Some(reference) = crate::drive::id_parser::detect_drive_reference(&input) {
-                handle_inspect_flow(bot, msg.chat.id, config, db, user_id, reference, input)
+            let parts: Vec<&str> = input.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let text = start_watch(
+                    &bot,
+                    &config,
+                    &db,
+                    msg.chat.id.0,
+                    user_id,
+                    &input,
+                    ui_language(&config),
+                )
+                .await;
+                bot.send_message(msg.chat.id, text.unwrap_or_else(|err| err.to_string()))
                     .await?;
+            } else if let Some(reference) = crate::drive::id_parser::detect_drive_reference(&input)
+            {
+                if let Ok(Some(_)) = repo::default_destination_profile(&db, "default").await {
+                    let text = start_watch(
+                        &bot,
+                        &config,
+                        &db,
+                        msg.chat.id.0,
+                        user_id,
+                        &input,
+                        ui_language(&config),
+                    )
+                    .await;
+                    bot.send_message(msg.chat.id, text.unwrap_or_else(|err| err.to_string()))
+                        .await?;
+                } else {
+                    handle_inspect_flow(bot, msg.chat.id, config, db, user_id, reference, input)
+                        .await?;
+                }
             } else {
                 let text = start_watch(
                     &bot,
@@ -712,15 +849,15 @@ pub async fn handle_callback_query(
     };
 
     // Immediate answerCallbackQuery right after authorization: gives instant toast feedback
-    // on fast actions (e.g. "Đã tạm dừng ✓") and prevents Telegram button spinning during Drive I/O.
+    // on fast actions (e.g. "Đang tạm dừng...") and prevents Telegram button spinning during Drive I/O.
     let toast = match parse_callback_action(data) {
         Some(("job", "pause", _)) | Some(("watch", "pause", _)) => match ui_language(&config) {
-            keyboards::UiLanguage::Vi => Some("Đã tạm dừng ✓"),
-            keyboards::UiLanguage::En => Some("Paused ✓"),
+            keyboards::UiLanguage::Vi => Some("Đang tạm dừng..."),
+            keyboards::UiLanguage::En => Some("Pausing..."),
         },
         Some(("job", "resume", _)) | Some(("watch", "resume", _)) => match ui_language(&config) {
-            keyboards::UiLanguage::Vi => Some("Đã tiếp tục ▶"),
-            keyboards::UiLanguage::En => Some("Resumed ▶"),
+            keyboards::UiLanguage::Vi => Some("Đang tiếp tục..."),
+            keyboards::UiLanguage::En => Some("Resuming..."),
         },
         Some(("wres", _, _)) => match ui_language(&config) {
             keyboards::UiLanguage::Vi => Some("Đang áp dụng..."),
@@ -739,6 +876,7 @@ pub async fn handle_callback_query(
 
     match parse_callback_action(data) {
         Some(("menu", "open", "home")) => {
+            let _ = session::clear_session(&db, user_id, chat_id.0).await;
             let text = render_home_dashboard(&config, &db, user_id, ui_language(&config)).await;
             edit_or_send_with_keyboard(
                 &bot,
@@ -763,6 +901,50 @@ pub async fn handle_callback_query(
                 query.message.as_ref().map(|m| m.id()),
                 text,
                 Some(keyboards::account_keyboard(ui_language(&config))),
+            )
+            .await?;
+            return Ok(());
+        }
+        Some(("account", "disconnect", "prompt")) => {
+            let lang = ui_language(&config);
+            let text = match lang {
+                keyboards::UiLanguage::Vi => {
+                    "NGẮT KẾT NỐI TÀI KHOẢN GOOGLE\n━━━━━━━━━━━━━━━━━━━━\n\
+                    Bạn có chắc muốn ngắt kết nối tài khoản Google khỏi 502Drive?\n\n\
+                    ⚠ Refresh token sẽ bị thu hồi. Các tác vụ clone/watch đang chạy có thể bị ảnh hưởng."
+                }
+                keyboards::UiLanguage::En => {
+                    "DISCONNECT GOOGLE ACCOUNT\n━━━━━━━━━━━━━━━━━━━━\n\
+                    Are you sure you want to disconnect Google account from 502Drive?\n\n\
+                    ⚠ Refresh token will be revoked. Active clone/sync jobs may be affected."
+                }
+            };
+            edit_or_send_with_keyboard(
+                &bot,
+                chat_id,
+                query.message.as_ref().map(|m| m.id()),
+                text.to_string(),
+                Some(keyboards::account_disconnect_confirm_keyboard(lang)),
+            )
+            .await?;
+            return Ok(());
+        }
+        Some(("account", "disconnect", "confirm")) => {
+            let lang = ui_language(&config);
+            let result = disconnect_google(&config, &db, user_id).await;
+            let text = match result {
+                Ok(msg) => msg,
+                Err(err) => match lang {
+                    keyboards::UiLanguage::Vi => format!("Lỗi ngắt kết nối: {err}"),
+                    keyboards::UiLanguage::En => format!("Disconnect error: {err}"),
+                },
+            };
+            edit_or_send_with_keyboard(
+                &bot,
+                chat_id,
+                query.message.as_ref().map(|m| m.id()),
+                text,
+                Some(keyboards::back_home_keyboard(lang)),
             )
             .await?;
             return Ok(());
@@ -853,6 +1035,20 @@ pub async fn handle_callback_query(
             return Ok(());
         }
         Some(("menu", "open", "destination")) => {
+            let (text, keyboard) =
+                render_destination_panel(&db, user_id, chat_id.0, ui_language(&config)).await;
+            edit_or_send_with_keyboard(
+                &bot,
+                chat_id,
+                query.message.as_ref().map(|m| m.id()),
+                text,
+                keyboard,
+            )
+            .await?;
+            return Ok(());
+        }
+        Some(("dest", "clear", "confirm")) => {
+            let _ = repo::clear_default_destination(&db, "default").await;
             let (text, keyboard) =
                 render_destination_panel(&db, user_id, chat_id.0, ui_language(&config)).await;
             edit_or_send_with_keyboard(
@@ -2125,7 +2321,7 @@ pub async fn handle_callback_query(
                         chat_id,
                         query.message.as_ref().map(|m| m.id()),
                         err.to_string(),
-                        None,
+                        Some(keyboards::back_home_keyboard(lang)),
                     )
                     .await?;
                     return Ok(());
@@ -2188,7 +2384,7 @@ pub async fn handle_callback_query(
                         chat_id,
                         query.message.as_ref().map(|m| m.id()),
                         err.to_string(),
-                        None,
+                        Some(keyboards::back_home_keyboard(lang)),
                     )
                     .await?;
                 }
@@ -2231,13 +2427,11 @@ async fn send_reply_prompt(
         _ => "{}".to_string(),
     };
     let _ = session::start_session(db, user_id, chat_id.0, flow, step, payload).await;
-    bot.send_message(chat_id, text)
-        .reply_markup(
-            ForceReply::new()
-                .input_field_placeholder(Some(prompt.placeholder(lang).to_string()))
-                .selective(),
-        )
+    let sent = bot
+        .send_message(chat_id, text)
+        .reply_markup(keyboards::back_home_keyboard(lang))
         .await?;
+    record_control_message(chat_id.0, sent.id);
     Ok(())
 }
 
@@ -2253,16 +2447,31 @@ async fn handle_command(
 ) -> ResponseResult<()> {
     match command {
         Command::Start | Command::Menu => {
-            let text = render_home_dashboard(&config, &db, user_id, ui_language(&config))
+            let lang = ui_language(&config);
+            let text = render_home_dashboard(&config, &db, user_id, lang)
                 .await
-                .unwrap_or_else(|err| load_home_error(ui_language(&config), &err));
-            bot.send_message(msg.chat.id, text)
-                .reply_markup(keyboards::main_menu_keyboard(
-                    config.watch.enabled,
-                    ui_language(&config),
-                ))
-                .await?;
-            remove_legacy_reply_keyboard_once(&bot, msg.chat.id).await;
+                .unwrap_or_else(|err| load_home_error(lang, &err));
+            let kb = keyboards::main_menu_keyboard(config.watch.enabled, lang);
+
+            remove_legacy_reply_keyboard_silently(&bot, msg.chat.id).await;
+
+            let mut edited = false;
+            if let Some(recent_id) = get_recent_control_message(msg.chat.id.0) {
+                if bot
+                    .edit_message_text(msg.chat.id, recent_id, &text)
+                    .reply_markup(kb.clone())
+                    .await
+                    .is_ok()
+                {
+                    edited = true;
+                }
+            }
+
+            if !edited {
+                if let Ok(sent) = bot.send_message(msg.chat.id, text).reply_markup(kb).await {
+                    record_control_message(msg.chat.id.0, sent.id);
+                }
+            }
         }
         Command::Help => {
             let text = render_help_text(ui_language(&config));
@@ -2394,25 +2603,51 @@ async fn handle_command(
         }
         Command::ClearDestination => {
             let lang = ui_language(&config);
-            let text = match repo::clear_default_destination(&db, "default").await {
-                Ok(0) => match lang {
-                    keyboards::UiLanguage::Vi => {
-                        "Chưa có thư mục đích mặc định để xoá.".to_string()
-                    }
-                    keyboards::UiLanguage::En => {
-                        "No default destination folder to clear.".to_string()
-                    }
-                },
-                Ok(_) => match lang {
-                    keyboards::UiLanguage::Vi => "Đã xoá thư mục đích mặc định.".to_string(),
-                    keyboards::UiLanguage::En => "Cleared default destination folder.".to_string(),
-                },
-                Err(err) => match lang {
-                    keyboards::UiLanguage::Vi => format!("Lỗi xoá thư mục đích: {err}"),
-                    keyboards::UiLanguage::En => format!("Error clearing destination: {err}"),
-                },
-            };
-            bot.send_message(msg.chat.id, text).await?;
+            match repo::default_destination_profile(&db, "default").await {
+                Ok(Some(profile)) => {
+                    let text = match lang {
+                        keyboards::UiLanguage::Vi => {
+                            format!(
+                                "XÁC NHẬN XOÁ THƯ MỤC ĐÍCH MẶC ĐỊNH\n━━━━━━━━━━━━━━━━━━━━\n\
+                                Bạn có chắc muốn xoá thư mục đích mặc định hiện tại?\n\n\
+                                📁 Thư mục: {}\n\n\
+                                (Sau khi xoá, các lệnh clone/watch mới sẽ yêu cầu bạn chọn đích trước khi chạy).",
+                                profile.label
+                            )
+                        }
+                        keyboards::UiLanguage::En => {
+                            format!(
+                                "CONFIRM CLEAR DEFAULT DESTINATION\n━━━━━━━━━━━━━━━━━━━━\n\
+                                Are you sure you want to clear current default destination?\n\n\
+                                📁 Folder: {}\n\n\
+                                (New clone/sync jobs will require choosing a destination).",
+                                profile.label
+                            )
+                        }
+                    };
+                    bot.send_message(msg.chat.id, text)
+                        .reply_markup(keyboards::confirm_clear_destination_keyboard(lang))
+                        .await?;
+                }
+                Ok(None) => {
+                    let text = match lang {
+                        keyboards::UiLanguage::Vi => {
+                            "Chưa có thư mục đích mặc định để xoá.".to_string()
+                        }
+                        keyboards::UiLanguage::En => {
+                            "No default destination folder to clear.".to_string()
+                        }
+                    };
+                    bot.send_message(msg.chat.id, text).await?;
+                }
+                Err(err) => {
+                    let text = match lang {
+                        keyboards::UiLanguage::Vi => format!("Lỗi tải thư mục đích: {err}"),
+                        keyboards::UiLanguage::En => format!("Error loading destination: {err}"),
+                    };
+                    bot.send_message(msg.chat.id, text).await?;
+                }
+            }
         }
         Command::SetDestination(input) => {
             if input.trim().is_empty() {
@@ -3022,15 +3257,19 @@ async fn edit_or_send_with_keyboard(
                 .await
         };
         if edited.is_ok() {
+            record_control_message(chat_id.0, message_id);
             return Ok(());
         }
     }
     if let Some(keyboard) = keyboard {
-        bot.send_message(chat_id, text)
+        let sent = bot
+            .send_message(chat_id, text)
             .reply_markup(keyboard)
             .await?;
+        record_control_message(chat_id.0, sent.id);
     } else {
-        bot.send_message(chat_id, text).await?;
+        let sent = bot.send_message(chat_id, text).await?;
+        record_control_message(chat_id.0, sent.id);
     }
     Ok(())
 }
@@ -3712,6 +3951,10 @@ struct DestinationBrowseTarget {
     drive_id: Option<String>,
     #[serde(default)]
     shared_drives: bool,
+    #[serde(default)]
+    page_number: usize,
+    #[serde(default)]
+    token_history: Vec<Option<String>>,
 }
 
 impl DestinationBrowseTarget {
@@ -3722,6 +3965,8 @@ impl DestinationBrowseTarget {
             page_token: None,
             drive_id: None,
             shared_drives: false,
+            page_number: 1,
+            token_history: Vec::new(),
         }
     }
 
@@ -3732,6 +3977,8 @@ impl DestinationBrowseTarget {
             page_token: None,
             drive_id: None,
             shared_drives: true,
+            page_number: 1,
+            token_history: Vec::new(),
         }
     }
 
@@ -3802,7 +4049,7 @@ async fn open_destination_browser(
             db,
             telegram_user_id,
             chat_id,
-            target.page_token.as_deref(),
+            &target,
             ui_language(config),
         )
         .await;
@@ -3835,6 +4082,7 @@ async fn open_destination_browser(
     folders.sort_by_key(|file| file.name.to_lowercase());
     // ponytail: page through Drive's native page token; add search if huge folders need it.
     let has_next = page.next_page_token.is_some();
+    let current_page = target.page_number.max(1);
 
     let can_pick = folder
         .capabilities
@@ -3853,6 +4101,8 @@ async fn open_destination_browser(
                     page_token: None,
                     drive_id: target.drive_id.clone().or(folder.drive_id.clone()),
                     shared_drives: false,
+                    page_number: 1,
+                    token_history: Vec::new(),
                 },
             )
             .await?,
@@ -3872,6 +4122,8 @@ async fn open_destination_browser(
                     page_token: None,
                     drive_id: target.drive_id.clone().or(folder.drive_id.clone()),
                     shared_drives: false,
+                    page_number: 1,
+                    token_history: Vec::new(),
                 },
             )
             .await?,
@@ -3891,12 +4143,39 @@ async fn open_destination_browser(
                 page_token: None,
                 drive_id: child.drive_id.clone().or_else(|| target.drive_id.clone()),
                 shared_drives: false,
+                page_number: 1,
+                token_history: Vec::new(),
             },
         )
         .await?;
         child_states.push((child.name, state_id));
     }
+    let prev_state = if current_page > 1 && !target.token_history.is_empty() {
+        let mut prev_token_history = target.token_history.clone();
+        let prev_page_token = prev_token_history.pop().flatten();
+        Some(
+            create_destination_browser_state(
+                db,
+                telegram_user_id,
+                chat_id,
+                DestinationBrowseTarget {
+                    file_id: folder.id.clone(),
+                    resource_key: target.resource_key.clone().or(folder.resource_key.clone()),
+                    page_token: prev_page_token,
+                    drive_id: target.drive_id.clone().or(folder.drive_id.clone()),
+                    shared_drives: false,
+                    page_number: current_page.saturating_sub(1),
+                    token_history: prev_token_history,
+                },
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     let next_state = if let Some(next_page_token) = page.next_page_token {
+        let mut next_token_history = target.token_history.clone();
+        next_token_history.push(target.page_token.clone());
         Some(
             create_destination_browser_state(
                 db,
@@ -3908,6 +4187,8 @@ async fn open_destination_browser(
                     page_token: Some(next_page_token),
                     drive_id: target.drive_id.clone().or(folder.drive_id.clone()),
                     shared_drives: false,
+                    page_number: current_page + 1,
+                    token_history: next_token_history,
                 },
             )
             .await?,
@@ -3925,16 +4206,6 @@ async fn open_destination_browser(
         destination_name_field(ui_language(config)),
         &folder.name,
     );
-    push_field(
-        &mut lines,
-        destination_folder_id_field(ui_language(config)),
-        &folder.id,
-    );
-    push_field(
-        &mut lines,
-        destination_writable_field(ui_language(config)),
-        capability_text_lang(Some(can_pick), ui_language(config)),
-    );
     if let Some(drive_id) = &folder.drive_id {
         push_field(&mut lines, "Drive", &format!("Shared Drive ({drive_id})"));
     } else {
@@ -3943,6 +4214,13 @@ async fn open_destination_browser(
             "Drive",
             destination_my_drive_label(ui_language(config)),
         );
+    }
+    if !can_pick {
+        let warn = match ui_language(config) {
+            keyboards::UiLanguage::Vi => "⚠ Thư mục chỉ đọc (không thể chọn làm đích)",
+            keyboards::UiLanguage::En => "⚠ Read-only folder (cannot be chosen as destination)",
+        };
+        lines.push(warn.to_string());
     }
     lines.push(String::new());
     if child_states.is_empty() {
@@ -3953,8 +4231,15 @@ async fn open_destination_browser(
             child_states.len(),
         ));
     }
-    if has_next {
-        lines.push(destination_folder_page_hint(ui_language(config)).to_string());
+    if current_page > 1 || has_next {
+        let page_indicator = match ui_language(config) {
+            keyboards::UiLanguage::Vi => format!("Trang {current_page}"),
+            keyboards::UiLanguage::En => format!("Page {current_page}"),
+        };
+        lines.push(format!(
+            "{page_indicator} • {}",
+            destination_folder_page_hint(ui_language(config))
+        ));
     }
 
     Ok((
@@ -3962,6 +4247,7 @@ async fn open_destination_browser(
         keyboards::destination_browser_keyboard(
             pick_state.as_deref(),
             parent_state.as_deref(),
+            prev_state.as_deref(),
             next_state.as_deref(),
             &child_states,
             ui_language(config),
@@ -3975,11 +4261,16 @@ async fn open_shared_drives_browser(
     db: &Database,
     telegram_user_id: i64,
     chat_id: i64,
-    page_token: Option<&str>,
+    target: &DestinationBrowseTarget,
     lang: keyboards::UiLanguage,
 ) -> anyhow::Result<(String, InlineKeyboardMarkup)> {
+    let current_page = target.page_number.max(1);
     let page = drive
-        .list_shared_drives_page_size(access_token, page_token, DESTINATION_BROWSER_LIMIT)
+        .list_shared_drives_page_size(
+            access_token,
+            target.page_token.as_deref(),
+            DESTINATION_BROWSER_LIMIT,
+        )
         .await?;
     let has_next = page.next_page_token.is_some();
     let mut drive_states = Vec::with_capacity(page.drives.len());
@@ -3994,12 +4285,39 @@ async fn open_shared_drives_browser(
                 page_token: None,
                 drive_id: Some(shared_drive.id),
                 shared_drives: false,
+                page_number: 1,
+                token_history: Vec::new(),
             },
         )
         .await?;
         drive_states.push((shared_drive.name, state_id));
     }
+    let prev_state = if current_page > 1 && !target.token_history.is_empty() {
+        let mut prev_token_history = target.token_history.clone();
+        let prev_page_token = prev_token_history.pop().flatten();
+        Some(
+            create_destination_browser_state(
+                db,
+                telegram_user_id,
+                chat_id,
+                DestinationBrowseTarget {
+                    file_id: String::new(),
+                    resource_key: None,
+                    page_token: prev_page_token,
+                    drive_id: None,
+                    shared_drives: true,
+                    page_number: current_page.saturating_sub(1),
+                    token_history: prev_token_history,
+                },
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     let next_state = if let Some(next_page_token) = page.next_page_token {
+        let mut next_token_history = target.token_history.clone();
+        next_token_history.push(target.page_token.clone());
         Some(
             create_destination_browser_state(
                 db,
@@ -4011,6 +4329,8 @@ async fn open_shared_drives_browser(
                     page_token: Some(next_page_token),
                     drive_id: None,
                     shared_drives: true,
+                    page_number: current_page + 1,
+                    token_history: next_token_history,
                 },
             )
             .await?,
@@ -4028,8 +4348,15 @@ async fn open_shared_drives_browser(
     } else {
         lines.push(destination_shared_drive_count(lang, drive_states.len()));
     }
-    if has_next {
-        lines.push(destination_drive_page_hint(lang).to_string());
+    if current_page > 1 || has_next {
+        let page_indicator = match lang {
+            keyboards::UiLanguage::Vi => format!("Trang {current_page}"),
+            keyboards::UiLanguage::En => format!("Page {current_page}"),
+        };
+        lines.push(format!(
+            "{page_indicator} • {}",
+            destination_drive_page_hint(lang)
+        ));
     }
 
     Ok((
@@ -4037,6 +4364,7 @@ async fn open_shared_drives_browser(
         keyboards::destination_browser_keyboard(
             None,
             None,
+            prev_state.as_deref(),
             next_state.as_deref(),
             &drive_states,
             lang,
@@ -5068,7 +5396,7 @@ mod tests {
         let vi = render_clone_outcome_from_job(keyboards::UiLanguage::Vi, &job);
         assert!(vi.contains("CLONE LỖI"));
         assert!(vi.contains("Trạng thái: thất bại"));
-        assert!(vi.contains("Retry lỗi"));
+        assert!(vi.contains("Thử lại lỗi"));
     }
 
     #[test]
@@ -5102,7 +5430,7 @@ mod tests {
         assert!(en_progress.contains("Skipped: 2"));
 
         let vi_detail = render_job_detail(&job, keyboards::UiLanguage::Vi);
-        assert!(vi_detail.contains("CHI TIẾT JOB"));
+        assert!(vi_detail.contains("CHI TIẾT TÁC VỤ"));
         assert!(vi_detail.contains("Trạng thái: đang chạy"));
         assert!(vi_detail.contains("Lỗi gần nhất: rate limited"));
     }
@@ -5236,7 +5564,7 @@ mod tests {
             2,
             1,
         );
-        assert!(failed.contains("Retry lỗi"));
+        assert!(failed.contains("Thử lại lỗi"));
         assert!(failed.contains("Bỏ qua: 1"));
 
         let clean = render_report_summary(
@@ -5249,7 +5577,7 @@ mod tests {
             0,
             0,
         );
-        assert!(clean.contains("Job đã sạch lỗi"));
+        assert!(clean.contains("Tác vụ không có lỗi"));
 
         let english = render_report_summary(
             keyboards::UiLanguage::En,
@@ -5293,13 +5621,13 @@ mod tests {
             "Đã kết nối"
         );
         let en = keyboards::UiLanguage::En;
-        assert_eq!(en.text(T::HomeDefaultDestination), "Default destination");
+        assert_eq!(en.text(T::HomeDefaultDestination), "Destination");
         assert_eq!(en.text(T::HomeStatusConnected), "Connected");
         assert_eq!(en.text(T::HomeStatusNotConnected), "Not connected");
         assert_eq!(en.text(T::HomeStatusReconnect), "Reconnect needed");
         assert_eq!(en.text(T::HomeBotReady), "Ready");
         assert_eq!(en.text(T::HomeJobsRunning), "Running");
-        assert_eq!(en.text(T::HomeWatching), "Watching");
+        assert_eq!(en.text(T::HomeWatching), "Syncing");
         assert_eq!(en.text(T::HomeNeedsAttention), "Needs attention");
         assert_eq!(
             en.text(T::HomeHint),
@@ -5328,10 +5656,10 @@ mod tests {
 
     #[test]
     fn jobs_labels_follow_language() {
-        assert_eq!(jobs_title(keyboards::UiLanguage::En), "ACTIVE JOBS");
+        assert_eq!(jobs_title(keyboards::UiLanguage::En), "📦 Jobs");
         assert_eq!(
             jobs_empty_text(keyboards::UiLanguage::En),
-            "ACTIVE JOBS\n━━━━━━━━━━\nNo active jobs."
+            "📦 Jobs\n\nNo jobs running right now.\n\nSend a Google Drive link into the chat, or tap ＋ Clone below."
         );
         assert_eq!(jobs_status_field(keyboards::UiLanguage::En), "Status");
         assert_eq!(jobs_progress_field(keyboards::UiLanguage::En), "Progress");
@@ -5382,7 +5710,7 @@ mod tests {
         assert_eq!(destination_child_count(en, 3), "Child folders: 3");
         assert_eq!(
             destination_folder_page_hint(en),
-            "Showing 20 folders per page."
+            "Showing 8 folders per page."
         );
         assert_eq!(
             destination_no_shared_drives(en),
@@ -5391,7 +5719,7 @@ mod tests {
         assert_eq!(destination_shared_drive_count(en, 2), "Shared Drives: 2");
         assert_eq!(
             destination_drive_page_hint(en),
-            "Showing 20 drives per page."
+            "Showing 8 drives per page."
         );
     }
 
@@ -5419,15 +5747,15 @@ mod tests {
         let vi = keyboards::UiLanguage::Vi;
         let en = keyboards::UiLanguage::En;
 
-        assert!(clone_prompt(vi).contains("ô trả lời"));
+        assert!(clone_prompt(vi).contains("cuộc trò chuyện"));
         assert!(set_destination_prompt(vi).contains("Đích là folder"));
-        assert!(watch_prompt(vi).contains("nguồn rồi đích"));
+        assert!(watch_prompt(vi).contains("nguồn và đích"));
         assert!(watch_id_prompt("/watch_status", vi).contains("/watches"));
         assert!(watch_policy_prompt(vi).contains("versioned_copy"));
         assert_eq!(ReplyPrompt::Clone.placeholder(vi), "Dán link nguồn Drive");
 
-        assert!(clone_prompt(en).contains("reply to this message"));
-        assert!(watch_prompt(en).contains("source then destination"));
+        assert!(clone_prompt(en).contains("in this chat"));
+        assert!(watch_prompt(en).contains("source and destination"));
         assert_eq!(
             ReplyPrompt::Clone.placeholder(en),
             "Paste source Drive link"

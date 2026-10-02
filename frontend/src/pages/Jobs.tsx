@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "motion/react"
 import { Card } from "@/components/ui/Card"
 import { JobCard } from "@/components/primitives/JobCard"
 import { WatchCard } from "@/components/primitives/WatchCard"
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog"
 import { Button } from "@/components/ui/Button"
 import { JobSummary, WatchSummary, WatchPolicyKind } from "@/lib/types"
 import {
@@ -35,7 +36,7 @@ export interface JobsProps {
   isRefreshing?: boolean
 }
 
-type FilterType = "all" | "running" | "completed" | "watches"
+type FilterType = "all" | "active" | "attention" | "completed" | "watches"
 
 export const Jobs: React.FC<JobsProps> = ({
   jobs,
@@ -56,6 +57,8 @@ export const Jobs: React.FC<JobsProps> = ({
   const [filter, setFilter] = useState<FilterType>("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [isSearchFocused, setIsSearchFocused] = useState(false)
+  const [jobToCancel, setJobToCancel] = useState<string | null>(null)
+  const [watchToStop, setWatchToStop] = useState<string | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Hotkey "/" to focus search
@@ -95,42 +98,64 @@ export const Jobs: React.FC<JobsProps> = ({
     )
   }, [watches, query])
 
-  const runningJobs = useMemo(
+  // Complete status coverage: all 11 statuses mapped deterministically
+  const activeJobs = useMemo(
     () =>
-      filteredJobs.filter(
-        (j) => j.status === "running" || j.status === "discovering" || j.status === "paused"
+      filteredJobs.filter((j) =>
+        [
+          'queued',
+          'discovering',
+          'running',
+          'pausing',
+          'paused',
+          'cancelling',
+          'recovering',
+        ].includes(j.status)
+      ),
+    [filteredJobs]
+  )
+
+  const attentionJobs = useMemo(
+    () =>
+      filteredJobs.filter((j) =>
+        ['failed', 'partially_completed'].includes(j.status)
       ),
     [filteredJobs]
   )
 
   const completedJobs = useMemo(
     () =>
-      filteredJobs.filter(
-        (j) => j.status === "completed" || j.status === "failed" || j.status === "cancelled"
+      filteredJobs.filter((j) =>
+        ['completed', 'partially_completed', 'failed', 'cancelled'].includes(j.status)
       ),
     [filteredJobs]
   )
 
   const tabs: { id: FilterType; label: string; count: number }[] = [
     { id: "all", label: t('jobs_page.filter_all'), count: filteredJobs.length + filteredWatches.length },
-    { id: "running", label: t('jobs_page.filter_running'), count: runningJobs.length },
-    { id: "completed", label: t('jobs_page.filter_completed'), count: completedJobs.length },
+    { id: "active", label: t('jobs_page.filter_active'), count: activeJobs.length },
+    ...(attentionJobs.length > 0
+      ? [{ id: "attention" as const, label: t('jobs_page.filter_attention'), count: attentionJobs.length }]
+      : []),
+    { id: "completed", label: t('jobs_page.filter_history'), count: completedJobs.length },
     { id: "watches", label: t('jobs_page.filter_watches'), count: filteredWatches.length },
   ]
+
+  const isGlobalEmpty = filteredJobs.length === 0 && filteredWatches.length === 0
 
   return (
     <div className="space-y-6 pb-12 w-full">
       {/* ── Control Bar: Animated Search & Segmented Filter ──────────────── */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 pb-4 border-b border-border/60">
-        {/* Apple-style Animated Segmented Filter Tabs */}
-        <div className="flex items-center p-1 rounded-2xl bg-bg-input/70 border border-border/50 self-start select-none">
+        {/* Segmented Filter Tabs */}
+        <div className="flex items-center p-1 rounded-2xl bg-bg-input/70 border border-border/50 self-start select-none overflow-x-auto max-w-full">
           {tabs.map((tab) => {
             const isSelected = filter === tab.id
             return (
               <button
                 key={tab.id}
                 onClick={() => setFilter(tab.id)}
-                className="relative px-3.5 sm:px-4 py-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors cursor-pointer text-text-secondary hover:text-text-primary flex items-center gap-1.5"
+                className="relative px-3.5 sm:px-4 py-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors cursor-pointer text-text-secondary hover:text-text-primary flex items-center gap-1.5 whitespace-nowrap"
               >
                 {isSelected && (
                   <motion.div
@@ -143,9 +168,11 @@ export const Jobs: React.FC<JobsProps> = ({
                   {tab.label}
                 </span>
                 <span
-                  className={`relative z-10 text-[0.625rem] sm:text-xs font-mono px-1.5 py-0.5 rounded-full ${
+                  className={`relative z-10 text-[0.6875rem] font-mono px-1.5 py-0.5 rounded-full ${
                     isSelected
-                      ? "bg-accent/15 text-accent font-semibold"
+                      ? tab.id === 'attention'
+                        ? "bg-warning/20 text-warning font-semibold"
+                        : "bg-accent/15 text-accent font-semibold"
                       : "bg-bg-card text-text-muted"
                   }`}
                 >
@@ -207,8 +234,23 @@ export const Jobs: React.FC<JobsProps> = ({
         </div>
       </div>
 
+      {/* Global empty state when search finds nothing or no tasks exist */}
+      {isGlobalEmpty && (
+        <Card className="p-8 text-center space-y-2.5 border-dashed border-border/80">
+          <div className="w-12 h-12 rounded-2xl bg-bg-input/80 text-text-muted flex items-center justify-center mx-auto shadow-xs">
+            <FolderSearch className="h-6 w-6 stroke-[1.5]" />
+          </div>
+          <p className="text-sm font-semibold text-text-primary">
+            {query ? `${t('jobs_page.empty_title')} "${query}"` : t('jobs_page.empty_title')}
+          </p>
+          <p className="text-xs text-text-muted max-w-sm mx-auto">
+            {t('jobs_page.empty_desc')}
+          </p>
+        </Card>
+      )}
+
       {/* ── Active Jobs Section ───────────────────────────── */}
-      {(filter === "all" || filter === "running") && (
+      {(filter === "all" || filter === "active") && (activeJobs.length > 0 || filter === "active") && !isGlobalEmpty && (
         <motion.div layout className="space-y-3.5">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2.5">
@@ -216,27 +258,19 @@ export const Jobs: React.FC<JobsProps> = ({
                 <ArrowLeftRight className="h-4 w-4" />
               </div>
               <h2 className="text-sm font-semibold text-text-primary">
-                {t('jobs_page.filter_running')} ({runningJobs.length})
+                {t('jobs_page.filter_active')} ({activeJobs.length})
               </h2>
             </div>
           </div>
 
-          {runningJobs.length === 0 ? (
-            <Card className="p-8 text-center space-y-2.5 border-dashed border-border/80">
-              <div className="w-12 h-12 rounded-2xl bg-bg-input/80 text-text-muted flex items-center justify-center mx-auto shadow-xs">
-                <FolderSearch className="h-6 w-6 stroke-[1.5]" />
-              </div>
-              <p className="text-sm font-semibold text-text-primary">
-                {query ? `${t('jobs_page.empty_title')} "${query}"` : t('jobs_page.empty_title')}
-              </p>
-              <p className="text-xs text-text-muted max-w-sm mx-auto">
-                {t('jobs_page.empty_desc')}
-              </p>
+          {activeJobs.length === 0 ? (
+            <Card className="p-6 text-center space-y-2 border-dashed border-border/70">
+              <p className="text-xs text-text-muted">{t('jobs_page.empty_desc')}</p>
             </Card>
           ) : (
             <div className="grid grid-cols-1 gap-3.5">
               <AnimatePresence>
-                {runningJobs.map((job) => (
+                {activeJobs.map((job) => (
                   <motion.div
                     key={job.id}
                     layout
@@ -249,7 +283,52 @@ export const Jobs: React.FC<JobsProps> = ({
                       job={job}
                       onPause={onPauseJob}
                       onResume={onResumeJob}
-                      onCancel={onCancelJob}
+                      onCancel={setJobToCancel}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* ── Attention Jobs Section (Failed & Partially Completed) ───────────────── */}
+      {filter === "attention" && (
+        <motion.div layout className="space-y-3.5">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-warning/10 text-warning">
+                <CheckCircle2 className="h-4 w-4" />
+              </div>
+              <h2 className="text-sm font-semibold text-text-primary">
+                {t('jobs_page.filter_attention')} ({attentionJobs.length})
+              </h2>
+            </div>
+          </div>
+
+          {attentionJobs.length === 0 ? (
+            <Card className="p-6 text-center space-y-2 border-dashed border-border/70">
+              <p className="text-xs text-text-muted">{t('jobs_page.empty_desc')}</p>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 gap-3.5">
+              <AnimatePresence>
+                {attentionJobs.map((job) => (
+                  <motion.div
+                    key={job.id}
+                    layout
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <JobCard
+                      job={job}
+                      onPause={onPauseJob}
+                      onResume={onResumeJob}
+                      onCancel={setJobToCancel}
+                      onRetry={onRetryJob}
                     />
                   </motion.div>
                 ))}
@@ -260,7 +339,7 @@ export const Jobs: React.FC<JobsProps> = ({
       )}
 
       {/* ── Watches (Realtime Sync) Section ───────────────── */}
-      {(filter === "all" || filter === "watches") && (
+      {(filter === "all" || filter === "watches") && (filteredWatches.length > 0 || filter === "watches") && !isGlobalEmpty && (
         <motion.div layout className="space-y-3.5 pt-2">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2.5">
@@ -314,7 +393,7 @@ export const Jobs: React.FC<JobsProps> = ({
                       onPause={onPauseWatch}
                       onResume={onResumeWatch}
                       onSetWatchPolicy={onSetWatchPolicy}
-                      onUnwatch={onUnwatch}
+                      onUnwatch={onUnwatch ? setWatchToStop : undefined}
                     />
                   </motion.div>
                 ))}
@@ -325,7 +404,7 @@ export const Jobs: React.FC<JobsProps> = ({
       )}
 
       {/* ── Completed Jobs History Section ────────────────── */}
-      {(filter === "all" || filter === "completed") && (
+      {(filter === "all" || filter === "completed") && (completedJobs.length > 0 || filter === "completed") && !isGlobalEmpty && (
         <motion.div layout className="space-y-3.5 pt-2">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2.5">
@@ -333,7 +412,7 @@ export const Jobs: React.FC<JobsProps> = ({
                 <CheckCircle2 className="h-4 w-4" />
               </div>
               <h2 className="text-sm font-semibold text-text-primary">
-                {t('jobs_page.filter_completed')} ({completedJobs.length})
+                {t('jobs_page.filter_history')} ({completedJobs.length})
               </h2>
             </div>
           </div>
@@ -367,6 +446,37 @@ export const Jobs: React.FC<JobsProps> = ({
           )}
         </motion.div>
       )}
+
+      {/* Confirmation Dialogs */}
+      <ConfirmDialog
+        isOpen={Boolean(jobToCancel)}
+        onClose={() => setJobToCancel(null)}
+        onConfirm={() => {
+          if (jobToCancel) {
+            onCancelJob(jobToCancel)
+            setJobToCancel(null)
+          }
+        }}
+        title={t('jobs_page.cancel_confirm_title')}
+        description={t('jobs_page.cancel_confirm_desc')}
+        confirmText={t('jobs_page.btn_cancel')}
+        variant="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={Boolean(watchToStop)}
+        onClose={() => setWatchToStop(null)}
+        onConfirm={() => {
+          if (watchToStop && onUnwatch) {
+            onUnwatch(watchToStop)
+            setWatchToStop(null)
+          }
+        }}
+        title={t('watches.unwatch_confirm_title')}
+        description={t('watches.unwatch_confirm_desc')}
+        confirmText={t('watches.btn_unwatch')}
+        variant="danger"
+      />
     </div>
   )
 }

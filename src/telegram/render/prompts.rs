@@ -28,13 +28,13 @@ pub(crate) fn watch_prompt(lang: keyboards::UiLanguage) -> &'static str {
 pub(crate) fn watch_id_prompt(command: &str, lang: keyboards::UiLanguage) -> String {
     match lang {
         keyboards::UiLanguage::Vi => format!(
-            "Dán ID watch vào ô trả lời tin nhắn này.\n\
+            "Gửi ID watch vào cuộc trò chuyện này.\n\
              Lệnh: {command} <id_watch>\n\
              \n\
              Dùng /watches để bấm chọn, không cần nhớ ID."
         ),
         keyboards::UiLanguage::En => format!(
-            "Paste the watch ID in reply to this message.\n\
+            "Send the watch ID in this chat.\n\
              Command: {command} <watch_id>\n\
              \n\
              Use /watches to select from list without remembering ID."
@@ -45,13 +45,13 @@ pub(crate) fn watch_id_prompt(command: &str, lang: keyboards::UiLanguage) -> Str
 pub(crate) fn job_id_prompt(command: &str, lang: keyboards::UiLanguage) -> String {
     match lang {
         keyboards::UiLanguage::Vi => format!(
-            "Dán job ID vào ô trả lời tin nhắn này.\n\
+            "Gửi job ID vào cuộc trò chuyện này.\n\
              Lệnh: {command} <job_id>\n\
              \n\
              Dùng /jobs để xem job đang chạy."
         ),
         keyboards::UiLanguage::En => format!(
-            "Paste the job ID in reply to this message.\n\
+            "Send the job ID in this chat.\n\
              Command: {command} <job_id>\n\
              \n\
              Use /jobs to see running jobs."
@@ -62,13 +62,13 @@ pub(crate) fn job_id_prompt(command: &str, lang: keyboards::UiLanguage) -> Strin
 pub(crate) fn user_id_prompt(command: &str, lang: keyboards::UiLanguage) -> String {
     match lang {
         keyboards::UiLanguage::Vi => format!(
-            "Dán Telegram user ID vào ô trả lời tin nhắn này.\n\
+            "Gửi Telegram user ID vào cuộc trò chuyện này.\n\
              Lệnh: {command} <telegram_user_id>\n\
              \n\
              User có thể dùng /whoami để xem ID."
         ),
         keyboards::UiLanguage::En => format!(
-            "Paste the Telegram user ID in reply to this message.\n\
+            "Send the Telegram user ID in this chat.\n\
              Command: {command} <telegram_user_id>\n\
              \n\
              Users can run /whoami to see their ID."

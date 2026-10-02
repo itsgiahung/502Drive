@@ -4,7 +4,7 @@ use crate::state::repo;
 use crate::telegram::handlers::WatchListMode;
 use crate::telegram::i18n::TextKey as T;
 use crate::telegram::keyboards;
-use crate::telegram::render::{human_bytes, progress_status_field, push_field, short_id};
+use crate::telegram::render::{human_bytes, push_field, short_id};
 
 pub(crate) fn watch_list_mode_title(
     mode: WatchListMode,

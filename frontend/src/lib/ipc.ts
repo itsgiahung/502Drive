@@ -501,12 +501,12 @@ export const api = {
         checks: [
           { name: 'Cấu hình ứng dụng', passed: true, detail: 'Đã tải (~/.config/gdclone-bot/config.toml)' },
           { name: 'Cơ sở dữ liệu', passed: true, detail: 'Toàn vẹn WAL (~/.local/share/gdclone-bot/state.db)' },
-          { name: 'Telegram Bot', passed: true, detail: '@Drive502_Bot (Dịch vụ sẵn sàng)' },
+          { name: 'Telegram Bot', passed: true, detail: 'Dịch vụ sẵn sàng' },
           { name: 'Tài khoản Google', passed: true, detail: 'Đã kết nối (Token hợp lệ)' },
           { name: 'Thư mục đích', passed: true, detail: 'My Drive / Backup 502' },
           { name: 'Dịch vụ nền', passed: true, detail: 'gdclone-bot.service đang hoạt động' },
         ],
-        raw_output: `$ 502drive doctor\n502Drive doctor\n===============\n[OK] Cấu hình: Đã tải\n  Đường dẫn DB : ~/.local/share/gdclone-bot/state.db\n  Thư mục Log  : ~/.local/share/gdclone-bot/logs\n[OK] Cơ sở dữ liệu: Toàn vẹn WAL\n[OK] Tác vụ: Đang hoạt động\n[OK] Telegram: @Drive502_Bot\n[OK] Google Account: Đã kết nối\n[OK] Thư mục đích: My Drive / Backup 502\nToàn bộ kiểm tra đạt chuẩn. Hệ thống sẵn sàng.\n`,
+        raw_output: `$ 502drive doctor\n502Drive doctor\n===============\n[OK] Cấu hình: Đã tải\n  Đường dẫn DB : ~/.local/share/gdclone-bot/state.db\n  Thư mục Log  : ~/.local/share/gdclone-bot/logs\n[OK] Cơ sở dữ liệu: Toàn vẹn WAL\n[OK] Tác vụ: Đang hoạt động\n[OK] Telegram: Sẵn sàng\n[OK] Google Account: Đã kết nối\n[OK] Thư mục đích: My Drive / Backup 502\nToàn bộ kiểm tra đạt chuẩn. Hệ thống sẵn sàng.\n`,
       }
     }
     throw new Error(MOCK_UNAVAILABLE)

@@ -29,17 +29,18 @@ export function formatDuration(seconds: number): string {
   return `${hours}h ${remMin}m`
 }
 
-export function formatTimeAgo(ms: number): string {
-  if (!ms || ms <= 0) return 'chưa có'
+export function formatTimeAgo(ms: number, lang: string = 'vi'): string {
+  const isEn = lang === 'en'
+  if (!ms || ms <= 0) return isEn ? 'none' : 'chưa có'
   const now = Date.now()
   const diffSec = Math.max(0, Math.floor((now - ms) / 1000))
-  if (diffSec < 60) return 'vừa xong'
+  if (diffSec < 60) return isEn ? 'just now' : 'vừa xong'
   const diffMin = Math.floor(diffSec / 60)
-  if (diffMin < 60) return `${diffMin} phút trước`
+  if (diffMin < 60) return isEn ? `${diffMin}m ago` : `${diffMin} phút trước`
   const diffHour = Math.floor(diffMin / 60)
-  if (diffHour < 24) return `${diffHour} giờ trước`
+  if (diffHour < 24) return isEn ? `${diffHour}h ago` : `${diffHour} giờ trước`
   const diffDay = Math.floor(diffHour / 24)
-  return `${diffDay} ngày trước`
+  return isEn ? `${diffDay}d ago` : `${diffDay} ngày trước`
 }
 
 /** Accepts a Drive link, a `folders/…` link, or a bare Drive ID (≥ 20 chars). */

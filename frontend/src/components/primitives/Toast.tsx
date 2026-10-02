@@ -63,7 +63,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         role="region"
         aria-label="Notifications"
         aria-live="polite"
-        className="fixed top-4 right-4 z-50 flex flex-col items-end gap-2 w-full max-w-xs pointer-events-none"
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 w-full max-w-sm pointer-events-none"
       >
         <AnimatePresence mode="popLayout">
           {toasts.map((t) => (
@@ -118,9 +118,9 @@ const ToastItem: React.FC<{ toast: ToastMessage; onClose: () => void }> = ({ toa
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: -10, scale: 0.97 }}
+      initial={{ opacity: 0, y: 16, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, x: 12, scale: 0.97, transition: { duration: 0.14 } }}
+      exit={{ opacity: 0, y: 10, scale: 0.97, transition: { duration: 0.14 } }}
       transition={{ type: 'spring', stiffness: 420, damping: 32 }}
       className={cn(
         'pointer-events-auto flex items-center gap-2.5 p-3 rounded-xl bg-bg-elevated/90 backdrop-blur-md border overflow-hidden relative select-none w-full shadow-float transition-colors',

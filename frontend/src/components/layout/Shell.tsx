@@ -7,7 +7,10 @@ import { SystemStatus } from "@/lib/types"
 import { useToast } from "@/components/primitives/Toast"
 import { FolderUp } from "lucide-react"
 
+import { isValidDriveSource } from "@/lib/utils"
 import { useI18n } from "@/hooks/useI18n"
+
+import { DevSubTab } from "@/pages/Dev"
 
 export interface ShellProps {
   activeTab: TabId
@@ -18,11 +21,14 @@ export interface ShellProps {
   onRestartService?: () => void
   onOpenBot?: () => void
   onTriggerLogin?: () => void
-  currentLang?: string
-  onChangeLang?: (lang: string) => void
   updateAvailable?: boolean
   latestVersion?: string
   onOpenUpdateModal?: () => void
+  onOpenQuickCloneWithSource?: (source: string) => void
+  onSelectDevSubTab?: (subTab: DevSubTab) => void
+  onOpenQuickClone?: () => void
+  onOpenCreateWatch?: () => void
+  isStale?: boolean
   children: React.ReactNode
 }
 
@@ -35,11 +41,14 @@ export const Shell: React.FC<ShellProps> = ({
   onRestartService,
   onOpenBot,
   onTriggerLogin,
-  currentLang,
-  onChangeLang,
   updateAvailable,
   latestVersion,
   onOpenUpdateModal,
+  onOpenQuickCloneWithSource,
+  onSelectDevSubTab,
+  onOpenQuickClone,
+  onOpenCreateWatch,
+  isStale,
   children,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -72,30 +81,37 @@ export const Shell: React.FC<ShellProps> = ({
   // Drag & Drop handler for Google Drive links
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
-    setIsDraggingOver(true)
+    e.stopPropagation()
+    if (!isDraggingOver) setIsDraggingOver(true)
   }
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault()
+    e.stopPropagation()
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return
     setIsDraggingOver(false)
   }
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     setIsDraggingOver(false)
 
-    const text = e.dataTransfer.getData("text/plain")
-    if (text && (text.includes("drive.google.com") || text.includes("folders/") || text.includes("id="))) {
-      toast({
-        title: "Nhận diện liên kết Google Drive",
-        description: `Đã phát hiện liên kết: ${text.slice(0, 48)}... Vui lòng xác nhận lệnh clone trong bot.`,
-        variant: "success",
-        duration: 5000,
-      })
+    const text = e.dataTransfer.getData("text/plain")?.trim()
+    if (text && isValidDriveSource(text)) {
+      if (onOpenQuickCloneWithSource) {
+        onOpenQuickCloneWithSource(text)
+        toast({
+          title: t('quick_clone.modal_title'),
+          description: `${t('drag_drop.toast_opened')} ${text.slice(0, 48)}...`,
+          variant: "success",
+          duration: 4000,
+        })
+      }
     } else if (text) {
       toast({
-        title: "Liên kết không hợp lệ",
-        description: "Vui lòng kéo thả liên kết thư mục hoặc tệp Google Drive.",
+        title: t('drag_drop.toast_invalid_title'),
+        description: t('drag_drop.toast_invalid_desc'),
         variant: "warning",
       })
     }
@@ -143,13 +159,11 @@ export const Shell: React.FC<ShellProps> = ({
           status={status}
           isRefreshing={isRefreshing}
           onRefresh={onRefresh}
-          onRestartService={onRestartService}
           onOpenCommandPalette={() => setIsCommandOpen(true)}
-          currentLang={currentLang}
-          onChangeLang={onChangeLang}
           updateAvailable={updateAvailable}
           latestVersion={latestVersion}
           onOpenUpdateModal={onOpenUpdateModal}
+          isStale={isStale}
         />
 
         {/* Responsive viewport container with fluid auto-centering */}
@@ -179,6 +193,9 @@ export const Shell: React.FC<ShellProps> = ({
         onTriggerLogin={onTriggerLogin || (() => {})}
         onRefresh={onRefresh || (() => {})}
         onOpenUpdateModal={onOpenUpdateModal}
+        onSelectDevSubTab={onSelectDevSubTab}
+        onOpenQuickClone={onOpenQuickClone}
+        onOpenCreateWatch={onOpenCreateWatch}
       />
     </div>
   )

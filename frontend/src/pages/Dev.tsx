@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DoctorResult, AuthorizedUserDto, BackupInfoDto } from '@/lib/types'
 import { api, getErrorMessage } from '@/lib/ipc'
 import { useToast } from '@/components/primitives/Toast'
@@ -25,12 +26,16 @@ import {
   HardDrive,
 } from 'lucide-react'
 
+export type DevSubTab = 'doctor' | 'users' | 'database' | 'logs'
+
 export interface DevProps {
   onRunDoctor: () => Promise<DoctorResult>
   onGetLogs: (lines?: number) => Promise<string[]>
   onRefreshData?: () => Promise<void>
   onRestartService?: () => Promise<void>
   onTriggerLogin?: () => Promise<void>
+  activeSubTab?: DevSubTab
+  onSubTabChange?: (tab: DevSubTab) => void
 }
 
 export const Dev: React.FC<DevProps> = ({
@@ -39,12 +44,19 @@ export const Dev: React.FC<DevProps> = ({
   onRefreshData,
   onRestartService,
   onTriggerLogin,
+  activeSubTab: activeSubTabProp,
+  onSubTabChange,
 }) => {
   const { t } = useI18n()
   const { toast } = useToast()
 
-  type DevSubTab = 'doctor' | 'users' | 'database' | 'logs'
-  const [activeSubTab, setActiveSubTab] = useState<DevSubTab>('doctor')
+  const [internalSubTab, setInternalSubTab] = useState<DevSubTab>(activeSubTabProp || 'doctor')
+  const activeSubTab = activeSubTabProp !== undefined ? activeSubTabProp : internalSubTab
+
+  const setActiveSubTab = (tab: DevSubTab) => {
+    setInternalSubTab(tab)
+    onSubTabChange?.(tab)
+  }
 
   // ── Doctor State ──────────────────────────────────────────────────────────
   const [doctorResult, setDoctorResult] = useState<DoctorResult | null>(null)
@@ -70,6 +82,16 @@ export const Dev: React.FC<DevProps> = ({
   const [isLoadingBackups, setIsLoadingBackups] = useState(false)
   const [isBackingUp, setIsBackingUp] = useState(false)
   const [isVacuuming, setIsVacuuming] = useState(false)
+
+  // ── Destructive Action Confirmation State ─────────────────────────────────
+  type PendingConfirm =
+    | { type: 'delete_backup'; name: string }
+    | { type: 'restore_backup'; name: string }
+    | { type: 'remove_user'; userId: number }
+    | null
+
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm>(null)
+  const [isConfirmLoading, setIsConfirmLoading] = useState(false)
 
   // ── Logs State ────────────────────────────────────────────────────────────
   const [logs, setLogs] = useState<string[]>([])
@@ -142,7 +164,7 @@ export const Dev: React.FC<DevProps> = ({
   // ── Handlers: Destination Setup ───────────────────────────────────────────
   const handleSaveDefaultDestination = async () => {
     if (!destInputId.trim()) {
-      toast({ title: t('common.error'), description: 'Vui lòng nhập ID hoặc liên kết thư mục', variant: 'error' })
+      toast({ title: t('common.error'), description: t('dev_page.enter_dest_error'), variant: 'error' })
       return
     }
     setIsSavingDest(true)
@@ -170,7 +192,7 @@ export const Dev: React.FC<DevProps> = ({
     e.preventDefault()
     const id = parseInt(newUserId.trim(), 10)
     if (!id || id <= 0) {
-      toast({ title: t('common.error'), description: 'Telegram User ID không hợp lệ', variant: 'error' })
+      toast({ title: t('common.error'), description: t('dev_page.invalid_user_id'), variant: 'error' })
       return
     }
     setIsSubmittingUser(true)
@@ -178,7 +200,7 @@ export const Dev: React.FC<DevProps> = ({
       await api.addAuthorizedUser(id, newUserRole)
       toast({
         title: t('common.success'),
-        description: `Đã cấp quyền ${newUserRole} cho user ${id}`,
+        description: t('dev_page.user_granted_desc').replace('{role}', newUserRole).replace('{id}', String(id)),
         variant: 'success',
       })
       setNewUserId('')
@@ -197,7 +219,7 @@ export const Dev: React.FC<DevProps> = ({
       const count = await api.batchAddAuthorizedUsers(batchUsersText, newUserRole)
       toast({
         title: t('common.success'),
-        description: `Đã thêm thành công ${count} người dùng mới`,
+        description: t('dev_page.batch_added_desc').replace('{count}', String(count)),
         variant: 'success',
       })
       setBatchUsersText('')
@@ -215,7 +237,7 @@ export const Dev: React.FC<DevProps> = ({
       await api.toggleAuthorizedUser(userId, !currentEnabled)
       toast({
         title: t('common.success'),
-        description: !currentEnabled ? 'Đã kích hoạt người dùng' : 'Đã tạm vô hiệu hóa',
+        description: !currentEnabled ? t('dev_page.user_enabled') : t('dev_page.user_disabled'),
         variant: 'default',
         duration: 2000,
       })
@@ -225,17 +247,53 @@ export const Dev: React.FC<DevProps> = ({
     }
   }
 
-  const handleRemoveUser = async (userId: number) => {
+  const handleRemoveUser = (userId: number) => {
+    setPendingConfirm({ type: 'remove_user', userId })
+  }
+
+  const handleRestoreBackup = (name: string) => {
+    setPendingConfirm({ type: 'restore_backup', name })
+  }
+
+  const handleDeleteBackup = (name: string) => {
+    setPendingConfirm({ type: 'delete_backup', name })
+  }
+
+  const handleConfirmAction = async () => {
+    if (!pendingConfirm) return
+    setIsConfirmLoading(true)
     try {
-      await api.removeAuthorizedUser(userId)
-      toast({
-        title: t('common.success'),
-        description: `Đã xóa quyền user ${userId}`,
-        variant: 'warning',
-      })
-      await handleFetchUsers()
+      if (pendingConfirm.type === 'remove_user') {
+        const userId = pendingConfirm.userId
+        await api.removeAuthorizedUser(userId)
+        toast({
+          title: t('common.success'),
+          description: t('dev_page.user_removed_desc').replace('{id}', String(userId)),
+          variant: 'warning',
+        })
+        await handleFetchUsers()
+      } else if (pendingConfirm.type === 'restore_backup') {
+        const name = pendingConfirm.name
+        await api.restoreBackup(name)
+        toast({
+          title: t('dev_page.restore_success'),
+          description: t('dev_page.restore_success_desc'),
+          variant: 'success',
+          duration: 6000,
+        })
+        await handleRunDoctor()
+        await onRefreshData?.()
+      } else if (pendingConfirm.type === 'delete_backup') {
+        const name = pendingConfirm.name
+        await api.deleteBackup(name)
+        toast({ title: t('dev_page.backup_deleted_title'), description: name, variant: 'default', duration: 2000 })
+        await handleFetchBackups()
+      }
+      setPendingConfirm(null)
     } catch (err) {
       toast({ title: t('common.error'), description: getErrorMessage(err), variant: 'error' })
+    } finally {
+      setIsConfirmLoading(false)
     }
   }
 
@@ -246,7 +304,7 @@ export const Dev: React.FC<DevProps> = ({
       const res = await api.backupDatabase()
       toast({
         title: t('dev_page.backup_success'),
-        description: `Bản sao lưu ${res.name} (${formatBytes(res.size_bytes)}) đã được tạo an toàn.`,
+        description: t('dev_page.backup_created_desc').replace('{name}', res.name).replace('{size}', formatBytes(res.size_bytes)),
         variant: 'success',
         duration: 5000,
       })
@@ -258,40 +316,13 @@ export const Dev: React.FC<DevProps> = ({
     }
   }
 
-  const handleRestoreBackup = async (name: string) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn khôi phục toàn bộ dữ liệu từ bản sao lưu "${name}"?`)) return
-    try {
-      await api.restoreBackup(name)
-      toast({
-        title: t('dev_page.restore_success'),
-        description: 'Dữ liệu SQLite và cấu hình đã được khôi phục, daemon đã khởi động lại.',
-        variant: 'success',
-        duration: 6000,
-      })
-      await handleRunDoctor()
-      await onRefreshData?.()
-    } catch (err) {
-      toast({ title: t('common.error'), description: getErrorMessage(err), variant: 'error' })
-    }
-  }
-
-  const handleDeleteBackup = async (name: string) => {
-    try {
-      await api.deleteBackup(name)
-      toast({ title: 'Đã xóa bản sao lưu', description: name, variant: 'default', duration: 2000 })
-      await handleFetchBackups()
-    } catch (err) {
-      toast({ title: t('common.error'), description: getErrorMessage(err), variant: 'error' })
-    }
-  }
-
   const handleVacuumDatabase = async () => {
     setIsVacuuming(true)
     try {
       const sizeStr = await api.vacuumDatabase()
       toast({
         title: t('dev_page.vacuum_success'),
-        description: `Dung lượng hiện tại của state.db: ${sizeStr}`,
+        description: t('dev_page.vacuum_success_desc').replace('{size}', sizeStr),
         variant: 'success',
         duration: 4000,
       })
@@ -306,7 +337,7 @@ export const Dev: React.FC<DevProps> = ({
     try {
       await api.clearAppLogs()
       setLogs([])
-      toast({ title: 'Đã xóa nhật ký', variant: 'default', duration: 2000 })
+      toast({ title: t('dev_page.logs_cleared'), variant: 'default', duration: 2000 })
     } catch (err) {
       toast({ title: t('common.error'), description: getErrorMessage(err), variant: 'error' })
     }
@@ -317,8 +348,7 @@ export const Dev: React.FC<DevProps> = ({
     navigator.clipboard.writeText(text)
     setCopied(true)
     toast({
-      title: 'Đã sao chép',
-      description: 'Nội dung đã được sao chép vào bộ nhớ tạm.',
+      title: t('common.copied'),
       variant: 'default',
       duration: 2000,
     })
@@ -364,7 +394,7 @@ export const Dev: React.FC<DevProps> = ({
           >
             <Users className="h-3.5 w-3.5 text-info" />
             <span>{t('dev_page.tab_users')}</span>
-            <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-accent/15 text-accent font-mono font-semibold">
+            <span className="text-[0.6875rem] px-2 py-0.5 rounded-full bg-accent/15 text-accent font-mono font-semibold">
               {users.length}
             </span>
           </button>
@@ -505,14 +535,14 @@ export const Dev: React.FC<DevProps> = ({
                   type="text"
                   value={destInputId}
                   onChange={(e) => setDestInputId(e.target.value)}
-                  placeholder="Dán ID thư mục đích (VD: 1AbC2dE... hoặc link Drive)"
+                  placeholder={t('dev_page.dest_input_id_placeholder')}
                   className="flex-1 px-3 py-2 text-xs rounded-xl bg-bg-input border border-border/80 font-mono text-text-primary focus:outline-none focus:border-accent"
                 />
                 <input
                   type="text"
                   value={destInputName}
                   onChange={(e) => setDestInputName(e.target.value)}
-                  placeholder="Tên thư mục (tùy chọn)"
+                  placeholder={t('dev_page.dest_input_name_placeholder')}
                   className="w-full sm:w-44 px-3 py-2 text-xs rounded-xl bg-bg-input border border-border/80 text-text-primary focus:outline-none focus:border-accent"
                 />
                 <Button
@@ -523,7 +553,7 @@ export const Dev: React.FC<DevProps> = ({
                   className="text-xs gap-1.5 rounded-xl bg-accent hover:bg-accent-hover text-white font-semibold shrink-0"
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>{isSavingDest ? 'Đang lưu...' : t('dev_page.btn_set_dest_now')}</span>
+                  <span>{isSavingDest ? t('dev_page.btn_saving') : t('dev_page.btn_set_dest_now')}</span>
                 </Button>
               </div>
             </div>
@@ -550,22 +580,22 @@ export const Dev: React.FC<DevProps> = ({
 
           {/* Quick Operations Triggers */}
           <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl bg-bg-elevated/60 border border-border/50 text-xs">
-            <span className="text-text-secondary font-medium mr-1 text-[0.6875rem]">Hành động nhanh:</span>
+            <span className="text-text-secondary font-medium mr-1 text-[0.6875rem]">{t('dev_page.quick_actions')}</span>
             {onRestartService && (
               <Button size="sm" variant="secondary" onClick={onRestartService} className="text-xs gap-1.5 rounded-xl">
                 <RotateCcw className="h-3 w-3" />
-                <span>Restart Service</span>
+                <span>{t('dev_page.btn_restart_service')}</span>
               </Button>
             )}
             {onTriggerLogin && (
               <Button size="sm" variant="secondary" onClick={onTriggerLogin} className="text-xs gap-1.5 rounded-xl">
                 <ShieldCheck className="h-3 w-3 text-accent" />
-                <span>Re-authenticate Google</span>
+                <span>{t('dev_page.btn_reauth_google')}</span>
               </Button>
             )}
             <Button size="sm" variant="secondary" onClick={handleVacuumDatabase} disabled={isVacuuming} className="text-xs gap-1.5 rounded-xl">
               <Database className="h-3 w-3 text-warning" />
-              <span>{isVacuuming ? 'Đang tối ưu...' : 'VACUUM SQLite'}</span>
+              <span>{isVacuuming ? t('dev_page.btn_vacuuming') : 'VACUUM SQLite'}</span>
             </Button>
           </div>
 
@@ -578,10 +608,10 @@ export const Dev: React.FC<DevProps> = ({
                 <span className="h-2.5 w-2.5 rounded-full bg-accent/70" />
                 <span className="ml-2 text-text-secondary font-mono">502drive doctor console</span>
               </div>
-              <span className="text-[0.625rem] text-text-muted">stdout</span>
+              <span className="text-[0.6875rem] text-text-muted">stdout</span>
             </div>
             <pre className="p-4 text-text-primary overflow-x-auto leading-relaxed max-h-[340px] select-text font-mono text-[0.6875rem]">
-              {doctorResult?.raw_output || 'Đang thực thi chẩn đoán...'}
+              {doctorResult?.raw_output || t('dev_page.doctor_running')}
             </pre>
           </div>
         </div>
@@ -605,7 +635,7 @@ export const Dev: React.FC<DevProps> = ({
                 className="text-xs gap-1.5 rounded-xl shrink-0"
               >
                 <Users className="h-3.5 w-3.5" />
-                <span>{isBatchOpen ? 'Đóng nhập hàng loạt' : t('dev_page.btn_batch_add')}</span>
+                <span>{isBatchOpen ? t('dev_page.btn_close_batch') : t('dev_page.btn_batch_add')}</span>
               </Button>
             </div>
 
@@ -621,7 +651,7 @@ export const Dev: React.FC<DevProps> = ({
                 />
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-text-secondary">Vai trò mặc định:</span>
+                    <span className="text-xs text-text-secondary">{t('dev_page.default_role_label')}</span>
                     <select
                       value={newUserRole}
                       onChange={(e) => setNewUserRole(e.target.value as 'operator' | 'user')}
@@ -678,13 +708,13 @@ export const Dev: React.FC<DevProps> = ({
           <div className="rounded-xl border border-border/60 bg-bg-surface overflow-hidden shadow-xs">
             <div className="p-3 border-b border-border/50 flex items-center justify-between bg-bg-elevated/40 text-xs">
               <span className="font-semibold text-text-primary">
-                Danh sách người dùng đã ủy quyền ({users.length})
+                {t('dev_page.authorized_users_count').replace('{count}', String(users.length))}
               </span>
-              <span className="text-text-muted text-[0.6875rem] font-mono">Lưu trữ cục bộ SQLite</span>
+              <span className="text-text-muted text-[0.6875rem] font-mono">{t('dev_page.sqlite_storage_note')}</span>
             </div>
 
             {users.length === 0 ? (
-              <div className="p-8 text-center text-text-muted text-xs">Chưa có người dùng nào được ủy quyền.</div>
+              <div className="p-8 text-center text-text-muted text-xs">{t('dev_page.empty_users')}</div>
             ) : (
               <div className="divide-y divide-border/40 overflow-x-auto">
                 {users.map((u) => (
@@ -703,16 +733,16 @@ export const Dev: React.FC<DevProps> = ({
                         <div className="flex items-center gap-2 pt-0.5">
                           <Badge
                             variant={u.role === 'owner' ? 'running' : 'default'}
-                            className="text-[0.625rem]"
+                            className="text-[0.6875rem]"
                           >
                             {u.role.toUpperCase()}
                           </Badge>
                           <span
-                            className={`text-[0.625rem] ${
+                            className={`text-[0.6875rem] ${
                               u.enabled ? 'text-success' : 'text-text-muted'
                             }`}
                           >
-                            {u.enabled ? '● Hoạt động' : '○ Tắt'}
+                            {u.enabled ? t('dev_page.status_active_dot') : t('dev_page.status_off_dot')}
                           </span>
                         </div>
                       </div>
@@ -727,14 +757,14 @@ export const Dev: React.FC<DevProps> = ({
                             onClick={() => handleToggleUser(u.telegram_user_id, u.enabled)}
                             className="text-[0.6875rem] h-7 px-2.5 rounded-lg"
                           >
-                            {u.enabled ? 'Tắt quyền' : 'Bật lại'}
+                            {u.enabled ? t('dev_page.btn_disable_user') : t('dev_page.btn_enable_user')}
                           </Button>
                           <Button
                             size="sm"
                             variant="ghost"
                             onClick={() => handleRemoveUser(u.telegram_user_id)}
                             className="text-[0.6875rem] h-7 px-2 text-text-muted hover:text-error rounded-lg"
-                            title="Xóa quyền"
+                            title={t('dev_page.btn_delete_user')}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -769,7 +799,7 @@ export const Dev: React.FC<DevProps> = ({
                   className="text-xs gap-1.5 rounded-xl"
                 >
                   <Database className="h-3 w-3 text-warning" />
-                  <span>{isVacuuming ? 'Đang tối ưu...' : t('dev_page.btn_vacuum')}</span>
+                  <span>{isVacuuming ? t('dev_page.btn_vacuuming') : t('dev_page.btn_vacuum')}</span>
                 </Button>
                 <Button
                   size="sm"
@@ -779,7 +809,7 @@ export const Dev: React.FC<DevProps> = ({
                   className="text-xs gap-1.5 rounded-xl bg-accent hover:bg-accent-hover text-white font-semibold"
                 >
                   <HardDrive className="h-3.5 w-3.5" />
-                  <span>{isBackingUp ? 'Đang tạo...' : t('dev_page.btn_backup_now')}</span>
+                  <span>{isBackingUp ? t('dev_page.btn_creating') : t('dev_page.btn_backup_now')}</span>
                 </Button>
               </div>
             </div>
@@ -789,18 +819,18 @@ export const Dev: React.FC<DevProps> = ({
           <div className="rounded-xl border border-border/60 bg-bg-surface overflow-hidden shadow-xs">
             <div className="p-3 border-b border-border/50 flex items-center justify-between bg-bg-elevated/40 text-xs">
               <span className="font-semibold text-text-primary">
-                Các bản sao lưu đã tạo ({backups.length})
+                {t('dev_page.backups_count').replace('{count}', String(backups.length))}
               </span>
-              <span className="text-text-muted text-[0.6875rem]">Lưu tại ~/.local/share/gdclone-bot/backups/</span>
+              <span className="text-text-muted text-[0.6875rem]">{t('dev_page.backups_path_note')}</span>
             </div>
 
             {isLoadingBackups ? (
               <div className="p-8 text-center text-text-muted text-xs">
-                Đang tải danh sách bản sao lưu...
+                {t('dev_page.loading_backups')}
               </div>
             ) : backups.length === 0 ? (
               <div className="p-8 text-center text-text-muted text-xs">
-                Chưa có bản sao lưu nào. Hãy bấm "Tạo bản sao lưu ngay" để bảo vệ cơ sở dữ liệu.
+                {t('dev_page.empty_backups')}
               </div>
             ) : (
               <div className="divide-y divide-border/40">
@@ -858,13 +888,13 @@ export const Dev: React.FC<DevProps> = ({
               <div className="p-3 rounded-xl bg-bg-surface border border-border/50 space-y-1">
                 <p className="font-semibold text-warning">403 Rate Limit / User Rate Exceeded</p>
                 <p className="text-text-secondary leading-relaxed">
-                  Google Drive vượt quá 10 req/s. Khắc phục: Engine pacer tự động ngủ chờ; hoặc chuyển sang Service Accounts (SA).
+                  Google Drive vượt quá giới hạn request. Khắc phục: Engine pacer tự động ngủ chờ (exponential backoff) và retry.
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-bg-surface border border-border/50 space-y-1">
                 <p className="font-semibold text-accent">Hạn ngạch sao chép 750GB / ngày</p>
                 <p className="text-text-secondary leading-relaxed">
-                  Tài khoản cá nhân bị Google giới hạn 750GB. Khắc phục: Cấu hình thư mục SA JSON trong Cài đặt để nhân bản dung lượng.
+                  Tài khoản cá nhân có hạn mức tải lên tối đa 750GB/ngày do Google quy định. Khắc phục: Tác vụ sẽ tiếp tục sau khi Google reset hạn ngạch ngày mới.
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-bg-surface border border-border/50 space-y-1">
@@ -905,7 +935,7 @@ export const Dev: React.FC<DevProps> = ({
                 type="text"
                 value={logSearch}
                 onChange={(e) => setLogSearch(e.target.value)}
-                placeholder="Tìm kiếm log..."
+                placeholder={t('dev_page.search_logs_placeholder')}
                 className="w-full pl-8 pr-3 py-1 text-xs rounded-lg bg-bg-input border border-border/70 text-text-primary focus:outline-none focus:border-accent"
               />
             </div>
@@ -915,11 +945,13 @@ export const Dev: React.FC<DevProps> = ({
           <div className="rounded-xl bg-bg-input/60 border border-border/60 overflow-hidden font-mono text-xs shadow-card">
             <div className="bg-bg-elevated px-4 py-2 border-b border-border/50 flex items-center justify-between text-text-muted text-[0.6875rem]">
               <span className="text-text-secondary font-mono">~/.local/share/gdclone-bot/logs/502drive.log</span>
-              <span className="text-[0.625rem] text-text-muted font-mono">{filteredLogs.length} dòng</span>
+              <span className="text-[0.6875rem] text-text-muted font-mono">
+                {t('dev_page.logs_count_lines').replace('{count}', String(filteredLogs.length))}
+              </span>
             </div>
             <div className="p-3 space-y-1 overflow-y-auto max-h-[460px] select-text text-[0.6875rem] leading-relaxed">
               {filteredLogs.length === 0 ? (
-                <p className="text-text-muted p-2">Không có bản ghi nhật ký nào khớp bộ lọc.</p>
+                <p className="text-text-muted p-2">{t('dev_page.empty_filtered_logs')}</p>
               ) : (
                 filteredLogs.map((log, i) => {
                   const isError = log.includes('[ERROR]')
@@ -949,6 +981,42 @@ export const Dev: React.FC<DevProps> = ({
           </div>
         </div>
       )}
+
+      {/* ── Destructive Action ConfirmDialog ──────────────────────────────── */}
+      <ConfirmDialog
+        isOpen={pendingConfirm !== null}
+        isLoading={isConfirmLoading}
+        onClose={() => !isConfirmLoading && setPendingConfirm(null)}
+        onConfirm={handleConfirmAction}
+        title={
+          pendingConfirm?.type === 'delete_backup'
+            ? t('dev_page.delete_backup_confirm_title')
+            : pendingConfirm?.type === 'restore_backup'
+            ? t('dev_page.restore_confirm_title')
+            : pendingConfirm?.type === 'remove_user'
+            ? t('dev_page.remove_user_confirm_title')
+            : ''
+        }
+        description={
+          pendingConfirm?.type === 'delete_backup'
+            ? t('dev_page.delete_backup_confirm_desc').replace('{name}', pendingConfirm.name)
+            : pendingConfirm?.type === 'restore_backup'
+            ? t('dev_page.restore_confirm_desc').replace('{name}', pendingConfirm.name)
+            : pendingConfirm?.type === 'remove_user'
+            ? t('dev_page.remove_user_confirm_desc').replace('{id}', String(pendingConfirm.userId))
+            : ''
+        }
+        confirmText={
+          pendingConfirm?.type === 'delete_backup'
+            ? t('dev_page.btn_delete_backup')
+            : pendingConfirm?.type === 'restore_backup'
+            ? t('dev_page.btn_restore')
+            : pendingConfirm?.type === 'remove_user'
+            ? t('dev_page.btn_delete_user')
+            : undefined
+        }
+        variant={pendingConfirm?.type === 'restore_backup' ? 'warning' : 'danger'}
+      />
     </div>
   )
 }
