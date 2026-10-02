@@ -27,7 +27,9 @@ use tracing::{info, warn};
 
 use crate::{
     config::AppConfig,
-    drive::{client::DriveClient, links::DriveReference},
+    drive::{
+        client::DriveClient, links::DriveReference, token_manager::TokenManager,
+    },
     engine::copy::{CloneRequest, CloneService},
     state::{
         db::Database,
@@ -111,6 +113,10 @@ async fn run_initial_clone_inner(
     ));
 
     // ── Step 4: Catch-up: dispatch all events from baseline to current ─────────
+    // Reuse one token manager across catch-up cycles so a valid access token
+    // is not refreshed again for every batch.
+    let token_manager = TokenManager::new(config.clone(), db.clone());
+    let mut dispatch_state = DispatchState::new();
     // Drive up to 10 catch-up dispatch cycles to drain the backlog.
     for cycle in 0..10u32 {
         let watch = match repo::watch_for_user_unchecked(&db, &watch_id).await? {
@@ -131,10 +137,18 @@ async fn run_initial_clone_inner(
             break;
         }
 
-        // Dispatch one batch of pending events.
-        let mut dispatch_state = DispatchState::new();
+        // Dispatch one batch of pending events while preserving the
+        // scan/notification throttle state across catch-up cycles.
         if let Err(err) =
-            dispatch_pending(&config, &db, &drive, &notify_tx, &mut dispatch_state).await
+            dispatch_pending(
+                &config,
+                &db,
+                &drive,
+                &token_manager,
+                &notify_tx,
+                &mut dispatch_state,
+            )
+            .await
         {
             warn!(watch_id, error = %err, "catch-up dispatch error (will retry)");
         }

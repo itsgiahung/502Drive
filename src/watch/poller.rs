@@ -219,6 +219,7 @@ fn spawn_dispatch_loop(
         let prune_interval = Duration::from_secs(3600);
         let mut last_prune = Instant::now();
         let mut dispatch_state = DispatchState::new();
+        let token_manager = TokenManager::new(config.clone(), db.clone());
 
         loop {
             tokio::select! {
@@ -228,7 +229,15 @@ fn spawn_dispatch_loop(
             }
 
             if let Err(err) =
-                dispatch_pending(&config, &db, &drive, &notify_tx, &mut dispatch_state).await
+                dispatch_pending(
+                    &config,
+                    &db,
+                    &drive,
+                    &token_manager,
+                    &notify_tx,
+                    &mut dispatch_state,
+                )
+                .await
             {
                 warn!(error = %err, "dispatch_pending error");
             }

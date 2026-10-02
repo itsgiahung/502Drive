@@ -61,12 +61,15 @@ pub async fn dispatch_pending(
     config: &AppConfig,
     db: &Database,
     drive: &DriveClient,
+    token_manager: &TokenManager,
     notify_tx: &NotifySender,
     state: &mut DispatchState,
 ) -> anyhow::Result<()> {
     let watches = active_watches(db).await?;
     for watch in watches {
-        if let Err(err) = dispatch_one(config, db, drive, &watch, notify_tx, state).await {
+        if let Err(err) =
+            dispatch_one(config, db, drive, token_manager, &watch, notify_tx, state).await
+        {
             warn!(
                 watch_id = watch.id,
                 error = %err,
@@ -142,11 +145,11 @@ async fn dispatch_one(
     config: &AppConfig,
     db: &Database,
     drive: &DriveClient,
+    token_manager: &TokenManager,
     watch: &WatchSubscription,
     notify_tx: &NotifySender,
     state: &mut DispatchState,
 ) -> anyhow::Result<()> {
-    let token_manager = TokenManager::new(config.clone(), db.clone());
 
     let cursor = repo::cursor_by_id(db, &watch.cursor_id).await?;
     if backlog_exceeds_limit(
