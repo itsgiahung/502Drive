@@ -169,17 +169,35 @@ fn spawn_notify_forwarder(
             // Per-user preferences further narrow delivery. Missing preference
             // rows intentionally preserve the migration defaults (enabled).
             if event.telegram_user_id > 0 {
-                if let Ok(Some(prefs)) =
-                    gdclone_bot::state::repo::telegram_user_preferences(&db, event.telegram_user_id)
-                        .await
+                match gdclone_bot::state::repo::telegram_user_preferences(
+                    &db,
+                    event.telegram_user_id,
+                )
+                .await
                 {
-                    let enabled = match event.kind {
-                        NotificationKind::JobCompleted => prefs.notify_job_complete,
-                        NotificationKind::JobFailed => prefs.notify_job_error,
-                        NotificationKind::WatchConflict => prefs.notify_watch_conflicts,
-                        NotificationKind::WatchError | NotificationKind::WatchActivity => true,
-                    };
-                    if !enabled {
+                    Ok(Some(prefs)) => {
+                        let enabled = match event.kind {
+                            NotificationKind::JobCompleted => prefs.notify_job_complete,
+                            NotificationKind::JobFailed => prefs.notify_job_error,
+                            NotificationKind::WatchConflict => prefs.notify_watch_conflicts,
+                            NotificationKind::WatchError | NotificationKind::WatchActivity => true,
+                        };
+                        if !enabled {
+                            continue;
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(err) => {
+                        // Preference lookup is part of the privacy boundary.
+                        // On database failure, do not guess that delivery is
+                        // allowed; skip this notification and retry naturally
+                        // on a future event instead.
+                        tracing::warn!(
+                            telegram_user_id = event.telegram_user_id,
+                            kind = ?event.kind,
+                            error = %err,
+                            "notification preference lookup failed; suppressing delivery"
+                        );
                         continue;
                     }
                 }
