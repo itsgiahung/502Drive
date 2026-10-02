@@ -9,6 +9,16 @@ fn idempotency_key_is_deterministic_and_scope_sensitive() {
     assert_eq!(a, b);
     assert_ne!(a, c);
     assert!(a.starts_with("gdclone_"));
+    assert_ne!(
+        idempotency_key(
+            ScopeType::Watch,
+            "scope",
+            "source",
+            "parent",
+            u64::from(u32::MAX) + 1,
+        ),
+        idempotency_key(ScopeType::Watch, "scope", "source", "parent", 0),
+    );
 }
 
 #[test]

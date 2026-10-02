@@ -79,7 +79,7 @@ impl AppProperties {
         scope_id: &str,
         source_item_id: &str,
         destination_parent_id: &str,
-        generation: u32,
+        generation: u64,
     ) -> Self {
         let copy_key = idempotency_key(
             scope_type,
@@ -102,7 +102,7 @@ pub fn idempotency_key(
     scope_id: &str,
     source_item_id: &str,
     destination_parent_id: &str,
-    generation: u32,
+    generation: u64,
 ) -> String {
     let mut hasher = Sha256::new();
     hasher.update(scope_type.as_str().as_bytes());

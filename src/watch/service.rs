@@ -311,6 +311,7 @@ pub async fn resolve_pending(
                 drive,
                 &token_manager,
                 &override_watch,
+                event.sequence,
                 &event.file_id,
                 &classification,
                 file.as_ref(),

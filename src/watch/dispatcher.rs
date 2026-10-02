@@ -1,19 +1,17 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use tracing::{info, warn};
 
 use crate::{
     config::AppConfig,
     drive::{
-        client::DriveClient,
-        token_manager::TokenManager,
-        types::{DriveFile, FOLDER_MIME_TYPE},
+        client::DriveClient, links::DriveReference, token_manager::TokenManager, types::DriveFile,
     },
     engine::{
         mapping::{MappingRecord, record_mapping},
-        operation::ScopeType,
+        operation::{AppProperties, ScopeType},
         retry::{RetryDecision, backoff_delay, classify_http},
     },
     state::{
@@ -318,8 +316,9 @@ async fn dispatch_one(
             config,
             db,
             drive,
-            &token_manager,
+            token_manager,
             watch,
+            event.sequence,
             &event.file_id,
             &classification,
             file.as_ref(),
@@ -571,29 +570,17 @@ async fn scan_missing_children(
                 {
                     continue;
                 }
-                let destination = if child.mime_type == FOLDER_MIME_TYPE {
-                    let access_token = token_manager.access_token("default").await?;
-                    drive
-                        .create_folder(
-                            access_token.as_str(),
-                            &child.name,
-                            &folder.destination_item_id,
-                            None,
-                        )
-                        .await
-                        .context("create missing watched folder")?
-                } else {
-                    let access_token = token_manager.access_token("default").await?;
-                    drive_copy_with_retry(
-                        drive,
-                        access_token.as_str(),
-                        &child.id,
-                        &child.name,
-                        &folder.destination_item_id,
-                        config,
-                    )
-                    .await?
-                };
+                let access_token = token_manager.access_token("default").await?;
+                let destination = ensure_watch_destination_item_with_retry(
+                    drive,
+                    access_token.as_str(),
+                    &watch.id,
+                    &child,
+                    &folder.destination_item_id,
+                    1,
+                    config,
+                )
+                .await?;
                 record_mapping(
                     db,
                     MappingRecord {
@@ -647,6 +634,7 @@ pub(crate) async fn apply_classification(
     drive: &DriveClient,
     token_manager: &TokenManager,
     watch: &WatchSubscription,
+    event_sequence: i64,
     file_id: &str,
     classification: &Classification,
     file: Option<&crate::drive::types::DriveFile>,
@@ -753,12 +741,13 @@ pub(crate) async fn apply_classification(
                     repo::active_watch_mapping_destination(db, &watch.id, parent_id).await?
                 {
                     let access_token = token_manager.access_token("default").await?;
-                    let copied = drive_copy_with_retry(
+                    let copied = ensure_watch_destination_item_with_retry(
                         drive,
                         access_token.as_str(),
-                        file_id,
-                        &file.name,
+                        &watch.id,
+                        file,
                         &dest_parent,
+                        1,
                         config,
                     )
                     .await?;
@@ -818,17 +807,20 @@ pub(crate) async fn apply_classification(
         }
 
         Classification::ContentChanged => {
+            let generation = u64::try_from(event_sequence)
+                .context("watch event sequence must be non-negative")?;
             match watch.content_update_policy.as_str() {
                 "versioned_copy" => {
                     let Some(file) = file else { return Ok(()) };
                     if let Some(dest_parent) = get_dest_parent(db, watch, file_id, file).await? {
                         let access_token = token_manager.access_token("default").await?;
-                        let new_copy = drive_copy_with_retry(
+                        let new_copy = ensure_watch_destination_item_with_retry(
                             drive,
                             access_token.as_str(),
-                            file_id,
-                            &file.name,
+                            &watch.id,
+                            file,
                             &dest_parent,
+                            generation,
                             config,
                         )
                         .await?;
@@ -864,16 +856,25 @@ pub(crate) async fn apply_classification(
                         let access_token = token_manager.access_token("default").await?;
                         let old_dest =
                             repo::watch_mapping_destination(db, &watch.id, file_id).await?;
-                        let copied = drive_copy_with_retry(
+                        let copied = ensure_watch_destination_item_with_retry(
                             drive,
                             access_token.as_str(),
-                            file_id,
-                            &file.name,
+                            &watch.id,
+                            file,
                             &dest_parent,
+                            generation,
                             config,
                         )
                         .await?;
                         let new_dest_id = copied.id.clone();
+                        if let Some(old_dest_id) = old_dest
+                            && old_dest_id != new_dest_id
+                        {
+                            drive
+                                .trash_file(access_token.as_str(), &old_dest_id)
+                                .await
+                                .context("replace_copy: trash previous destination")?;
+                        }
                         record_mapping(
                             db,
                             MappingRecord {
@@ -891,19 +892,6 @@ pub(crate) async fn apply_classification(
                             },
                         )
                         .await?;
-                        if let Some(old_dest_id) = old_dest
-                            && old_dest_id != new_dest_id
-                            && let Err(err) =
-                                drive.trash_file(access_token.as_str(), &old_dest_id).await
-                        {
-                            warn!(
-                                watch_id = watch.id,
-                                file_id,
-                                old_dest_id,
-                                error = %err,
-                                "replace_copy: old destination trash failed after mapping update"
-                            );
-                        }
                         info!(
                             watch_id = watch.id,
                             file_id,
@@ -967,12 +955,13 @@ pub(crate) async fn apply_classification(
                         repo::active_watch_mapping_destination(db, &watch.id, parent_id).await?
                     {
                         let access_token = token_manager.access_token("default").await?;
-                        let copied = drive_copy_with_retry(
+                        let copied = ensure_watch_destination_item_with_retry(
                             drive,
                             access_token.as_str(),
-                            file_id,
-                            &file.name,
+                            &watch.id,
+                            file,
                             &dest_parent,
+                            1,
                             config,
                         )
                         .await?;
@@ -1046,25 +1035,44 @@ async fn get_dest_parent(
     repo::watch_mapping_destination(db, &watch.id, file_id).await
 }
 
-async fn drive_copy_with_retry(
+async fn ensure_watch_destination_item_with_retry(
     drive: &DriveClient,
     access_token: &str,
-    source_id: &str,
-    name: &str,
+    watch_id: &str,
+    source: &DriveFile,
     dest_parent: &str,
+    generation: u64,
     config: &AppConfig,
-) -> anyhow::Result<crate::drive::types::DriveFile> {
-    let source_ref = crate::drive::links::DriveReference {
-        file_id: source_id.into(),
-        resource_key: None,
+) -> anyhow::Result<DriveFile> {
+    let props = AppProperties::new(
+        ScopeType::Watch,
+        watch_id,
+        &source.id,
+        dest_parent,
+        generation,
+    );
+    let source_ref = DriveReference {
+        file_id: source.id.clone(),
+        resource_key: source.resource_key.clone(),
         hinted_kind: None,
     };
+
     for attempt in 0..=config.engine.max_retry_attempts {
+        // Recovery lookup comes before every side-effect attempt. If the
+        // previous request succeeded remotely but its response was lost (or
+        // the process crashed before the DB mapping commit), reuse that item.
         match drive
-            .copy_file(access_token, &source_ref, name, dest_parent, None)
+            .find_by_copy_key(access_token, dest_parent, &props.gdclone_copy_key)
             .await
         {
-            Ok(f) => return Ok(f),
+            Ok(existing) => match existing.as_slice() {
+                [one] => return Ok(one.clone()),
+                [] => {}
+                _ => bail!(
+                    "ambiguous watch recovery: multiple destination items share copy key {}",
+                    props.gdclone_copy_key
+                ),
+            },
             Err(err) => {
                 let decision = match &err {
                     crate::drive::client::DriveApiError::Api { status, reason, .. } => {
@@ -1081,12 +1089,73 @@ async fn drive_copy_with_retry(
                         Duration::from_millis(config.engine.retry_max_delay_ms),
                     ))
                     .await;
-                } else {
-                    return Err(err.into());
+                    continue;
                 }
+                return Err(err.into());
+            }
+        }
+
+        let result = if source.is_folder() {
+            drive
+                .create_folder(
+                    access_token,
+                    &source.name,
+                    dest_parent,
+                    Some(&props),
+                )
+                .await
+        } else if source.is_shortcut() {
+            let details = source
+                .shortcut_details
+                .as_ref()
+                .context("shortcut is missing shortcutDetails")?;
+            drive
+                .create_shortcut(
+                    access_token,
+                    &source.name,
+                    dest_parent,
+                    &details.target_id,
+                    details.target_resource_key.as_deref(),
+                    Some(&props),
+                )
+                .await
+        } else {
+            drive
+                .copy_file(
+                    access_token,
+                    &source_ref,
+                    &source.name,
+                    dest_parent,
+                    Some(&props),
+                )
+                .await
+        };
+
+        match result {
+            Ok(file) => return Ok(file),
+            Err(err) => {
+                let decision = match &err {
+                    crate::drive::client::DriveApiError::Api { status, reason, .. } => {
+                        classify_http(*status, reason.as_deref())
+                    }
+                    crate::drive::client::DriveApiError::Transport(_) => RetryDecision::Retry,
+                };
+                if matches!(decision, RetryDecision::Retry)
+                    && attempt < config.engine.max_retry_attempts
+                {
+                    tokio::time::sleep(backoff_delay(
+                        attempt,
+                        Duration::from_millis(config.engine.retry_base_delay_ms),
+                        Duration::from_millis(config.engine.retry_max_delay_ms),
+                    ))
+                    .await;
+                    continue;
+                }
+                return Err(err.into());
             }
         }
     }
+
     unreachable!("loop exits via return or error")
 }
 
