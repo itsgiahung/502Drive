@@ -705,12 +705,38 @@ async fn test_resolve_pending_and_conflict_details() {
         gdclone_bot::config::AppConfig::load(std::path::Path::new("config.sample.toml")).unwrap();
     let drive = gdclone_bot::watch::service::drive_client_for(&config);
 
-    // Resolve as Skip
+    // A stale callback must not resolve the current conflict.
+    let stale = gdclone_bot::watch::service::resolve_pending(
+        &config,
+        &db,
+        &drive,
+        &watch_id,
+        Some(seq + 1),
+        gdclone_bot::watch::service::PendingDecision::Skip,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(
+        stale,
+        gdclone_bot::watch::service::ConflictResolveError::StaleConflict {
+            expected,
+            actual
+        } if expected == seq + 1 && actual == seq
+    ));
+    assert_eq!(
+        repo::count_pending_confirmation_events(&db, &watch_id)
+            .await
+            .unwrap(),
+        1
+    );
+
+    // Resolve as Skip with the sequence carried by the callback.
     let outcome = gdclone_bot::watch::service::resolve_pending(
         &config,
         &db,
         &drive,
         &watch_id,
+        Some(seq),
         gdclone_bot::watch::service::PendingDecision::Skip,
     )
     .await

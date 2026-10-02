@@ -2310,7 +2310,10 @@ pub async fn handle_callback_query(
         }
         Some(("wres", code, rest)) => {
             let lang = ui_language(&config);
-            let Some((watch_id, _seq)) = rest.split_once(':') else {
+            let Some((watch_id, seq)) = rest.split_once(':') else {
+                return Ok(());
+            };
+            let Ok(expected_sequence) = seq.parse::<i64>() else {
                 return Ok(());
             };
             let watch = match resolve_watch_for_user(&db, user_id, watch_id, lang).await {
@@ -2336,12 +2339,39 @@ pub async fn handle_callback_query(
             let drive = DriveClient::with_timeout(Duration::from_secs(
                 config.engine.request_timeout_seconds,
             ));
-            let outcome =
-                crate::watch::service::resolve_pending(&config, &db, &drive, &watch.id, decision)
-                    .await;
+            let outcome = crate::watch::service::resolve_pending(
+                &config,
+                &db,
+                &drive,
+                &watch.id,
+                Some(expected_sequence),
+                decision,
+            )
+            .await;
 
             match outcome {
                 Ok(Some(res)) if res.remaining_pending > 0 => {
+                    if let Ok(Some(details)) =
+                        crate::watch::service::get_pending_conflict_details(&db, &watch.id).await
+                    {
+                        let card_text = render_conflict_card(lang, &details);
+                        let keyboard = keyboards::watch_resolve_conflict_keyboard(
+                            &watch.id,
+                            details.sequence,
+                            lang,
+                        );
+                        edit_or_send_with_keyboard(
+                            &bot,
+                            chat_id,
+                            query.message.as_ref().map(|m| m.id()),
+                            card_text,
+                            Some(keyboard),
+                        )
+                        .await?;
+                        return Ok(());
+                    }
+                }
+                Err(crate::watch::service::ConflictResolveError::StaleConflict { .. }) => {
                     if let Ok(Some(details)) =
                         crate::watch::service::get_pending_conflict_details(&db, &watch.id).await
                     {

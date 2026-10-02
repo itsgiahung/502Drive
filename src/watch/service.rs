@@ -228,16 +228,27 @@ pub async fn get_pending_conflict_details(
     }))
 }
 
+#[derive(Debug, Error)]
+pub enum ConflictResolveError {
+    #[error("watch subscription not found")]
+    WatchNotFound,
+    #[error("stale conflict: expected sequence {expected}, active sequence {actual}")]
+    StaleConflict { expected: i64, actual: i64 },
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
 pub async fn resolve_pending(
     config: &AppConfig,
     db: &Database,
     drive: &DriveClient,
     watch_id: &str,
+    expected_sequence: Option<i64>,
     decision: PendingDecision,
-) -> anyhow::Result<Option<ResolveOutcome>> {
+) -> Result<Option<ResolveOutcome>, ConflictResolveError> {
     let watch = match repo::watch_for_user_unchecked(db, watch_id).await? {
         Some(w) => w,
-        None => anyhow::bail!("Watch subscription not found"),
+        None => return Err(ConflictResolveError::WatchNotFound),
     };
 
     let Some(event) = repo::next_pending_confirmation_for_watch(db, watch_id).await? else {
@@ -246,6 +257,15 @@ pub async fn resolve_pending(
         }
         return Ok(None);
     };
+
+    if let Some(expected) = expected_sequence {
+        if expected != event.sequence {
+            return Err(ConflictResolveError::StaleConflict {
+                expected,
+                actual: event.sequence,
+            });
+        }
+    }
 
     match decision {
         PendingDecision::Skip => {
