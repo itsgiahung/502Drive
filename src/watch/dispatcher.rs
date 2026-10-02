@@ -32,6 +32,10 @@ use super::errors::format_anyhow_error;
 
 const DISPATCH_BATCH: usize = 200;
 
+#[derive(Debug, thiserror::Error)]
+#[error("watch status changed during dispatch")]
+struct WatchDispatchStopped;
+
 /// Minimum interval between user-facing watch notifications (activity summary
 /// or dispatch error) per watch. Best-effort spam guard: extra notifications
 /// within the window are dropped.
@@ -156,7 +160,16 @@ async fn dispatch_one(
         cursor.last_event_sequence,
         config.watch.max_backlog_events_per_watch,
     ) {
-        repo::update_watch_status(db, &watch.id, "needs_reconcile").await?;
+        if !repo::transition_watch_status(
+            db,
+            &watch.id,
+            "needs_reconcile",
+            &["active", "catching_up", "degraded"],
+        )
+        .await?
+        {
+            return Ok(());
+        }
         let msg = format!(
             "⚠️ Watch `{}` cần đồng bộ lại vì backlog vượt {} events.",
             &watch.id[..8.min(watch.id.len())],
@@ -246,7 +259,16 @@ async fn dispatch_one(
         );
 
         if classification == Classification::Ambiguous {
-            repo::update_watch_status(db, &watch.id, "needs_reconcile").await?;
+            if !repo::transition_watch_status(
+                db,
+                &watch.id,
+                "needs_reconcile",
+                &["active", "catching_up", "degraded"],
+            )
+            .await?
+            {
+                return Ok(());
+            }
             final_rows.push((
                 event.sequence,
                 classification.as_str().to_string(),
@@ -288,6 +310,21 @@ async fn dispatch_one(
             notify_tx,
         )
         .await;
+
+        if apply_result
+            .as_ref()
+            .err()
+            .and_then(|err| err.downcast_ref::<WatchDispatchStopped>())
+            .is_some()
+        {
+            final_rows.push((
+                event.sequence,
+                classification.as_str().to_string(),
+                "failed".into(),
+            ));
+            flush_final_rows!();
+            break;
+        }
 
         let applied = apply_result.is_ok();
         let final_status = match apply_result {
@@ -439,7 +476,7 @@ async fn finish_catch_up_if_current(
     }
     let cursor = repo::cursor_by_id(db, &watch.cursor_id).await?;
     if should_finish_catch_up(&watch.status, last_consumed, cursor.last_event_sequence) {
-        repo::update_watch_status(db, &watch.id, "active").await?;
+        let _ = repo::transition_watch_status(db, &watch.id, "active", &["catching_up"]).await?;
     }
     Ok(())
 }
@@ -614,7 +651,16 @@ pub(crate) async fn apply_classification(
                     // summary (see BatchCounts) to avoid per-event spam.
                 }
                 "manual_confirmation" => {
-                    repo::update_watch_status(db, &watch.id, "needs_reconcile").await?;
+                    if !repo::transition_watch_status(
+                        db,
+                        &watch.id,
+                        "needs_reconcile",
+                        &["active", "catching_up", "degraded"],
+                    )
+                    .await?
+                    {
+                        return Err(WatchDispatchStopped.into());
+                    }
                     let short_id = &watch.id[..8.min(watch.id.len())];
                     let msg = format!(
                         "⚠ Watch `{short_id}`: nguồn `{file_id}` bị xoá/vào thùng rác.\nDùng lệnh /watch_status {short_id} để chọn hành động.",
@@ -840,7 +886,16 @@ pub(crate) async fn apply_classification(
                     }
                 }
                 "manual_confirmation" => {
-                    repo::update_watch_status(db, &watch.id, "needs_reconcile").await?;
+                    if !repo::transition_watch_status(
+                        db,
+                        &watch.id,
+                        "needs_reconcile",
+                        &["active", "catching_up", "degraded"],
+                    )
+                    .await?
+                    {
+                        return Err(WatchDispatchStopped.into());
+                    }
                     let short_id = &watch.id[..8.min(watch.id.len())];
                     let file_name = file.map(|f| f.name.as_str()).unwrap_or(file_id);
                     let msg = format!(

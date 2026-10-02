@@ -320,6 +320,58 @@ async fn paused_watch_over_backlog_limit_needs_reconcile() {
 // ── stop ─────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
+async fn internal_watch_transitions_do_not_resurrect_user_stops() {
+    let (db, cursor_id) = test_db_with_cursor().await;
+
+    let watch_id = repo::create_watch_subscription(
+        &db,
+        repo::NewWatchSubscription {
+            google_account_id: "default".into(),
+            cursor_id,
+            telegram_user_id: 7,
+            chat_id: 7,
+            source_root_id: "s".into(),
+            source_resource_key: None,
+            source_drive_id: None,
+            source_name: None,
+            destination_root_id: "d".into(),
+            destination_drive_id: None,
+            destination_name: None,
+            content_update_policy: "versioned_copy".into(),
+            deletion_policy: "preserve_destination".into(),
+            move_out_policy: "detach".into(),
+            exclude_globs: "[]".to_string(),
+            baseline_sequence: 0,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(repo::stop_watch_for_user(&db, 7, &watch_id).await.unwrap());
+    assert!(
+        !repo::transition_watch_status(&db, &watch_id, "catching_up", &["initializing"])
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repo::transition_watch_status(
+            &db,
+            &watch_id,
+            "needs_reconcile",
+            &["active", "catching_up", "degraded"],
+        )
+        .await
+        .unwrap()
+    );
+
+    let watch = repo::watch_for_user_unchecked(&db, &watch_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(watch.status, "stopped");
+}
+
+#[tokio::test]
 async fn watch_stop() {
     let (db, cursor_id) = test_db_with_cursor().await;
 

@@ -2815,6 +2815,45 @@ pub async fn active_watches(db: &Database) -> anyhow::Result<Vec<WatchSubscripti
         .await?)
 }
 
+pub async fn transition_watch_status(
+    db: &Database,
+    watch_id: &str,
+    status: &str,
+    allowed_current: &[&str],
+) -> anyhow::Result<bool> {
+    if allowed_current.is_empty() {
+        return Ok(false);
+    }
+
+    let watch_id = watch_id.to_string();
+    let status = status.to_string();
+    let allowed_current: Vec<String> = allowed_current.iter().map(|s| (*s).to_string()).collect();
+    Ok(db
+        .conn()
+        .call(move |conn| {
+            use rusqlite::types::Value;
+
+            let placeholders = (0..allowed_current.len())
+                .map(|i| format!("?{}", i + 4))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "UPDATE watch_subscriptions
+                 SET status = ?1, updated_at_ms = ?2
+                 WHERE id = ?3 AND status IN ({placeholders})"
+            );
+            let mut values = vec![
+                Value::Text(status),
+                Value::Integer(now_ms()),
+                Value::Text(watch_id),
+            ];
+            values.extend(allowed_current.into_iter().map(Value::Text));
+            let changed = conn.execute(&sql, rusqlite::params_from_iter(values))?;
+            Ok::<bool, rusqlite::Error>(changed > 0)
+        })
+        .await?)
+}
+
 pub async fn update_watch_status(
     db: &Database,
     watch_id: &str,

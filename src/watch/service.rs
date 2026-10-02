@@ -253,7 +253,8 @@ pub async fn resolve_pending(
 
     let Some(event) = repo::next_pending_confirmation_for_watch(db, watch_id).await? else {
         if watch.status == "needs_reconcile" {
-            repo::update_watch_status(db, watch_id, "active").await?;
+            let _ =
+                repo::transition_watch_status(db, watch_id, "active", &["needs_reconcile"]).await?;
         }
         return Ok(None);
     };
@@ -334,7 +335,8 @@ pub async fn resolve_pending(
 
     let remaining = repo::count_pending_confirmation_events(db, watch_id).await?;
     if remaining == 0 && watch.status == "needs_reconcile" {
-        repo::update_watch_status(db, watch_id, "active").await?;
+        let _ =
+            repo::transition_watch_status(db, watch_id, "active", &["needs_reconcile"]).await?;
     }
 
     Ok(Some(ResolveOutcome {
