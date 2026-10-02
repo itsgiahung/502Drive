@@ -1049,9 +1049,10 @@ pub async fn handle_callback_query(
                 keyboards::UiLanguage::Vi => "vi",
                 keyboards::UiLanguage::En => "en",
             };
-            if let Err(err) =
-                repo::set_telegram_notification_preference(&db, user_id, language, preference, enabled)
-                    .await
+            if let Err(err) = repo::set_telegram_notification_preference(
+                &db, user_id, language, preference, enabled,
+            )
+            .await
             {
                 warn!(
                     user_id,
@@ -1162,8 +1163,7 @@ pub async fn handle_callback_query(
                 .await?;
                 return Ok(());
             }
-            let (text, keyboard) =
-                render_destination_panel(&db, user_id, chat_id.0, lang).await;
+            let (text, keyboard) = render_destination_panel(&db, user_id, chat_id.0, lang).await;
             edit_or_send_with_keyboard(
                 &bot,
                 chat_id,

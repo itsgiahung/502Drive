@@ -38,14 +38,14 @@ impl FileSecretStore {
                     bail!("refusing symlinked master key {}", self.key_path.display());
                 }
                 if !meta.is_file() {
-                    bail!("master key path is not a regular file: {}", self.key_path.display());
+                    bail!(
+                        "master key path is not a regular file: {}",
+                        self.key_path.display()
+                    );
                 }
-                tokio::fs::set_permissions(
-                    &self.key_path,
-                    std::fs::Permissions::from_mode(0o600),
-                )
-                .await
-                .with_context(|| format!("chmod 0600 {}", self.key_path.display()))?;
+                tokio::fs::set_permissions(&self.key_path, std::fs::Permissions::from_mode(0o600))
+                    .await
+                    .with_context(|| format!("chmod 0600 {}", self.key_path.display()))?;
             }
 
             let data = tokio::fs::read(&self.key_path)
@@ -122,7 +122,10 @@ mod tests {
         std::fs::write(&key_path, [7_u8; 32]).unwrap();
         std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o644)).unwrap();
 
-        let key = FileSecretStore::new(&dir).load_or_create_key().await.unwrap();
+        let key = FileSecretStore::new(&dir)
+            .load_or_create_key()
+            .await
+            .unwrap();
         assert_eq!(key, [7_u8; 32]);
         assert_eq!(
             std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
