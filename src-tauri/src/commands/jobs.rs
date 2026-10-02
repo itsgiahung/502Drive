@@ -42,7 +42,13 @@ pub async fn list_jobs(limit: Option<usize>) -> Result<Vec<JobSummary>, String> 
         .prepare(
             "SELECT id, kind, status, source_root_id, destination_parent_id,
                 total_discovered, completed_items, failed_items, skipped_items,
-                error_summary, created_at_ms, updated_at_ms, source_name, destination_name
+                error_summary, created_at_ms, updated_at_ms, source_name, destination_name,
+                COALESCE((
+                    SELECT SUM(job_items.size_bytes)
+                    FROM job_items
+                    WHERE job_items.job_id = jobs.id
+                      AND job_items.status = 'done'
+                ), 0) AS completed_bytes
          FROM jobs
          ORDER BY updated_at_ms DESC
          LIMIT ?1;",
@@ -64,6 +70,25 @@ pub async fn list_jobs(limit: Option<usize>) -> Result<Vec<JobSummary>, String> 
             } else {
                 0.0
             };
+            let created_at_ms: i64 = row.get(10)?;
+            let updated_at_ms: i64 = row.get(11)?;
+            let completed_bytes: i64 = row.get(14)?;
+            let elapsed_seconds = (updated_at_ms - created_at_ms).max(0) as f64 / 1000.0;
+            let speed_bytes_per_sec = if elapsed_seconds > 5.0 && completed_bytes > 0 {
+                Some(completed_bytes as f64 / elapsed_seconds)
+            } else {
+                None
+            };
+            let item_rate = if elapsed_seconds > 5.0 && completed > 0 {
+                completed as f64 / elapsed_seconds
+            } else {
+                0.0
+            };
+            let eta_seconds = if item_rate > 0.0 && total > completed {
+                Some((total - completed) as f64 / item_rate)
+            } else {
+                None
+            };
 
             Ok(JobSummary {
                 id,
@@ -80,10 +105,10 @@ pub async fn list_jobs(limit: Option<usize>) -> Result<Vec<JobSummary>, String> 
                 skipped_items: row.get(8)?,
                 progress_pct,
                 error_summary: row.get(9)?,
-                created_at_ms: row.get(10)?,
-                updated_at_ms: row.get(11)?,
-                speed_bytes_per_sec: None,
-                eta_seconds: None,
+                created_at_ms,
+                updated_at_ms,
+                speed_bytes_per_sec,
+                eta_seconds,
             })
         })
         .map_err(|e| e.to_string())?;
