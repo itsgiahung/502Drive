@@ -1,5 +1,13 @@
-use tokio::task::JoinHandle;
+use std::sync::OnceLock;
+
+use tokio::{sync::Mutex, task::JoinHandle};
 use tracing::{error, info, warn};
+
+static RESUME_WORKER_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn resume_worker_lock() -> &'static Mutex<()> {
+    RESUME_WORKER_LOCK.get_or_init(|| Mutex::new(()))
+}
 
 use crate::{
     config::AppConfig,
@@ -39,6 +47,10 @@ pub fn spawn_startup_resume_worker(
     drive: DriveClient,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
+        // GUI retry/resume requests can arrive back-to-back and each trigger
+        // this worker. Serializing the whole sweep prevents two workers from
+        // racing the same Drive copy before its idempotency marker is applied.
+        let _guard = resume_worker_lock().lock().await;
         match resume_startup_jobs(config, db, drive).await {
             Ok(summary) if summary != ResumeSummary::default() => {
                 info!(
