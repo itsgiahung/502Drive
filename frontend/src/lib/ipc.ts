@@ -215,6 +215,7 @@ let mockSystemStatus: SystemStatus = {
   db_integrity: 'ok',
   app_version: 'v0.2.0',
   bot_username: 'Drive502_Bot',
+  telegram_status: 'active',
   destination_label: 'My Drive / Backup 502',
   destination_id: '1aBcDeFgHiJkLmNoPqRsTuVwXyZ01234',
   stats: {

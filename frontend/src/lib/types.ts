@@ -32,6 +32,7 @@ export interface SystemStatus {
   db_integrity: string
   app_version: string
   bot_username?: string | null
+  telegram_status?: 'active' | 'no_token' | 'error' | null
   destination_label?: string | null
   destination_id?: string | null
   stats: {

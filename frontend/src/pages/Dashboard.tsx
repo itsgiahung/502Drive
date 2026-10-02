@@ -358,29 +358,43 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <span>{t('dashboard.tg_title')}</span>
                 </CardTitle>
                 <Badge
-                  variant={status?.bot_username && isServiceActive ? "active" : "paused"}
-                  pulse={!!status?.bot_username && isServiceActive}
+                  variant={
+                    status?.telegram_status === 'error'
+                      ? "failed"
+                      : status?.telegram_status === 'active' && isServiceActive
+                        ? "active"
+                        : "paused"
+                  }
+                  pulse={status?.telegram_status === 'active' && isServiceActive}
                 >
-                  {status?.bot_username
-                    ? (isServiceActive ? t('dashboard.tg_running') : t('dashboard.tg_paused'))
-                    : t('common.not_configured')}
+                  {status?.telegram_status === 'error'
+                    ? t('common.error')
+                    : status?.telegram_status === 'active'
+                      ? (isServiceActive ? t('dashboard.tg_running') : t('dashboard.tg_paused'))
+                      : t('common.not_configured')}
                 </Badge>
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-3">
               <div className="p-3 rounded-xl bg-bg-input/60 border border-border/40">
                 <p className="text-xs font-mono text-text-primary truncate font-medium">
-                  {status?.bot_username ? `@${status.bot_username}` : t('dashboard.tg_not_configured')}
+                  {status?.bot_username
+                    ? `@${status.bot_username}`
+                    : status?.telegram_status === 'error'
+                      ? t('common.error')
+                      : t('dashboard.tg_not_configured')}
                 </p>
                 <p className="text-[0.6875rem] text-text-muted mt-0.5">
-                  {status?.bot_username
+                  {status?.telegram_status === 'active'
                     ? (isServiceActive ? t('dashboard.tg_ready') : t('topbar.service_paused'))
-                    : t('settings_page.tg_owner_desc')}
+                    : status?.telegram_status === 'error'
+                      ? t('common.error')
+                      : t('settings_page.tg_owner_desc')}
                 </p>
               </div>
 
               <div className="flex items-center gap-2 pt-1">
-                {status?.bot_username ? (
+                {status?.telegram_status === 'active' && status?.bot_username ? (
                   <Button
                     size="sm"
                     variant="primary"
