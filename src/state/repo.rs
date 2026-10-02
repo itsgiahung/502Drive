@@ -1828,7 +1828,7 @@ pub async fn insert_item(db: &Database, item: NewItem) -> anyhow::Result<String>
     Ok(id)
 }
 
-pub async fn record_child_traversal_completion(
+pub async fn record_folder_traversal_completion(
     db: &Database,
     job_id: &str,
     source_folder_id: &str,

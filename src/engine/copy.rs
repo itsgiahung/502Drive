@@ -739,7 +739,7 @@ impl CloneService {
             },
         )
         .await?;
-        repo::record_traversal_folder(
+        repo::record_folder_traversal_completion(
             &self.db,
             job_id,
             &source.id,
@@ -751,7 +751,6 @@ impl CloneService {
             source.parents.first().map(String::as_str),
         )
         .await?;
-        repo::update_job_counts(&self.db, job_id, 1, 1, 0, 0).await?;
         self.transition_job_status_guarded(job_id, JobStatusValue::Discovering, None, &["running"])
             .await?;
         self.process_traversal(job_id).await?;
@@ -1043,7 +1042,7 @@ impl CloneService {
             repo::existing_dest_for_source(&self.db, ScopeType::Job.as_str(), job_id, &source.id)
                 .await?
         {
-            repo::record_child_traversal_completion(
+            repo::record_folder_traversal_completion(
                 &self.db,
                 job_id,
                 &source.id,
@@ -1101,7 +1100,7 @@ impl CloneService {
             },
         )
         .await?;
-        repo::record_child_traversal_completion(
+        repo::record_folder_traversal_completion(
             &self.db,
             job_id,
             &source.id,

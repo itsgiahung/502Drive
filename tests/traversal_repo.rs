@@ -20,11 +20,11 @@ async fn test_db() -> (Database, String) {
 }
 
 #[tokio::test]
-async fn child_traversal_completion_counts_once_and_reuses_existing_row() {
+async fn folder_traversal_completion_counts_once_and_reuses_existing_row() {
     let (db, job_id) = test_db().await;
 
     assert!(
-        repo::record_child_traversal_completion(
+        repo::record_folder_traversal_completion(
             &db,
             &job_id,
             "child-folder",
@@ -41,7 +41,7 @@ async fn child_traversal_completion_counts_once_and_reuses_existing_row() {
     assert_eq!(counts.completed_items, 1);
 
     assert!(
-        !repo::record_child_traversal_completion(
+        !repo::record_folder_traversal_completion(
             &db,
             &job_id,
             "child-folder",
