@@ -55,6 +55,36 @@ fn ensure_success(action: &str, output: Output) -> Result<(), String> {
     })
 }
 
+pub(crate) fn startup_enabled() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        return Command::new("systemctl")
+            .args(["--user", "is-enabled", "gdclone-bot.service"])
+            .output()
+            .map(|out| {
+                out.status.success()
+                    && String::from_utf8_lossy(&out.stdout)
+                        .trim()
+                        .eq_ignore_ascii_case("enabled")
+            })
+            .unwrap_or(false);
+    }
+
+    #[cfg(windows)]
+    {
+        return Command::new("schtasks")
+            .args(["/Query", "/TN", WINDOWS_TASK_NAME])
+            .output()
+            .map(|out| out.status.success())
+            .unwrap_or(false);
+    }
+
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        false
+    }
+}
+
 pub(crate) fn service_active() -> bool {
     #[cfg(target_os = "linux")]
     {
@@ -137,6 +167,85 @@ pub async fn restart_service() -> Result<(), String> {
     #[cfg(not(any(target_os = "linux", windows)))]
     {
         Err("background service control is unsupported on this platform".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn set_launch_at_startup(enabled: bool) -> Result<(), String> {
+    let cli = cli_binary_path();
+    let config_path = super::get_config_path();
+
+    #[cfg(target_os = "linux")]
+    {
+        if enabled {
+            let output = Command::new(&cli)
+                .arg("--config")
+                .arg(&config_path)
+                .arg("service-install")
+                .output()
+                .map_err(|e| format!("failed to run {} service-install: {e}", cli.display()))?;
+            ensure_success("502drive service-install", output)?;
+
+            let reload = Command::new("systemctl")
+                .args(["--user", "daemon-reload"])
+                .output()
+                .map_err(|e| format!("failed to reload user systemd: {e}"))?;
+            ensure_success("systemctl --user daemon-reload", reload)?;
+
+            let enable = Command::new("systemctl")
+                .args(["--user", "enable", "--now", "gdclone-bot.service"])
+                .output()
+                .map_err(|e| format!("failed to enable gdclone-bot: {e}"))?;
+            ensure_success("systemctl --user enable --now gdclone-bot.service", enable)?;
+        } else {
+            if startup_enabled() {
+                let disable = Command::new("systemctl")
+                    .args(["--user", "disable", "--now", "gdclone-bot.service"])
+                    .output()
+                    .map_err(|e| format!("failed to disable gdclone-bot: {e}"))?;
+                ensure_success("systemctl --user disable --now gdclone-bot.service", disable)?;
+            }
+
+            let output = Command::new(&cli)
+                .arg("service-uninstall")
+                .output()
+                .map_err(|e| format!("failed to run {} service-uninstall: {e}", cli.display()))?;
+            ensure_success("502drive service-uninstall", output)?;
+
+            let reload = Command::new("systemctl")
+                .args(["--user", "daemon-reload"])
+                .output()
+                .map_err(|e| format!("failed to reload user systemd: {e}"))?;
+            ensure_success("systemctl --user daemon-reload", reload)?;
+        }
+        return Ok(());
+    }
+
+    #[cfg(windows)]
+    {
+        let mut command = Command::new(&cli);
+        if enabled {
+            command.arg("--config").arg(&config_path).arg("service-install");
+        } else {
+            command.arg("service-uninstall");
+        }
+        let output = command
+            .output()
+            .map_err(|e| format!("failed to run {} startup configuration: {e}", cli.display()))?;
+        return ensure_success(
+            if enabled {
+                "502drive service-install"
+            } else {
+                "502drive service-uninstall"
+            },
+            output,
+        );
+    }
+
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        let _ = enabled;
+        Err("startup service configuration is unsupported on this platform".to_string())
     }
 }
 

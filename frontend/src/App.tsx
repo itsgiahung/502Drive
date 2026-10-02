@@ -361,7 +361,11 @@ const AppContent: React.FC = () => {
 
   const handleUpdateConfig = async (field: string, value: unknown) => {
     try {
-      await api.updateConfig(field, value)
+      if (field === 'launch_at_startup') {
+        await api.setLaunchAtStartup(Boolean(value))
+      } else {
+        await api.updateConfig(field, value)
+      }
       toast({
         title: t('toasts.config_saved_title'),
         description: t('toasts.config_saved_desc').replace('{field}', field),

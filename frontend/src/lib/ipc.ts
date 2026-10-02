@@ -392,7 +392,18 @@ export const api = {
     if (isTauri()) {
       return await invoke<void>('restart_service')
     }
-    if (USE_MOCKS) return console.log('[Dev Mock] Systemd service restarted')
+    if (USE_MOCKS) return console.log('[Dev Mock] Service restarted')
+    throw new Error(MOCK_UNAVAILABLE)
+  },
+
+  async setLaunchAtStartup(enabled: boolean): Promise<void> {
+    if (isTauri()) {
+      return await invoke<void>('set_launch_at_startup', { enabled })
+    }
+    if (USE_MOCKS) {
+      mockConfig.launch_at_startup = enabled
+      return
+    }
     throw new Error(MOCK_UNAVAILABLE)
   },
 

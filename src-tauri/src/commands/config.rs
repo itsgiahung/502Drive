@@ -1,4 +1,4 @@
-use crate::commands::{get_config_path, get_db_path, get_project_dirs};
+use crate::commands::{get_config_path, get_db_path, get_project_dirs, service};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -128,7 +128,7 @@ pub async fn get_config_summary() -> Result<ConfigSummary, String> {
     let mut oauth_client_id: Option<String> = None;
     let mut oauth_client_secret_configured = false;
     let mut language = "vi".to_string();
-    let mut launch_at_startup = true;
+    let launch_at_startup = service::startup_enabled();
 
     if cfg_path.exists() {
         if let Ok(content) = fs::read_to_string(&cfg_path) {
@@ -176,9 +176,6 @@ pub async fn get_config_summary() -> Result<ConfigSummary, String> {
                         if lang == "en" || lang == "vi" {
                             language = lang.to_string();
                         }
-                    }
-                    if let Some(startup) = app.get("launch_at_startup").and_then(|v| v.as_bool()) {
-                        launch_at_startup = startup;
                     }
                 }
             }
@@ -296,13 +293,9 @@ pub async fn update_config_field(field: String, value: String) -> Result<(), Str
             }
         }
         "launch_at_startup" => {
-            let b = parse_bool_setting(&value)?;
-            let app = table
-                .entry("app")
-                .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-            if let Some(t) = app.as_table_mut() {
-                t.insert("launch_at_startup".to_string(), toml::Value::Boolean(b));
-            }
+            return Err(
+                "launch_at_startup is runtime service state; use set_launch_at_startup".to_string(),
+            );
         }
         _ => return Err(format!("unsupported config field: {field}")),
     }

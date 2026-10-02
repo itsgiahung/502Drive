@@ -43,6 +43,7 @@ pub fn run() {
             commands::config::verify_telegram_bot,
             commands::service::start_service,
             commands::service::restart_service,
+            commands::service::set_launch_at_startup,
             commands::service::open_telegram_bot,
             commands::service::trigger_auth_login,
             commands::service::trigger_auth_revoke,
