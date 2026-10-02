@@ -1,6 +1,7 @@
 use crate::commands::{get_config_path, get_db_path, get_project_dirs, service};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 /// A value counts as configured when it is non-empty and not a `REPLACE_ME`
@@ -67,19 +68,61 @@ fn read_auto_confirm_clone(table: &toml::Table) -> bool {
         .unwrap_or(false)
 }
 
-/// Write the config file and restrict permissions to the owner on Unix so
-/// bot tokens / OAuth secrets are not world- or group-readable.
+/// Atomically write the config file and restrict permissions to the owner on
+/// Unix so bot tokens / OAuth secrets are not world- or group-readable.
+///
+/// Writing through a same-directory temporary file prevents both partial
+/// configs after a crash and following a pre-existing symlink at `path`.
 pub(crate) fn write_config_file(path: &Path, contents: &str) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "config path has no valid file name".to_string())?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let temp_path = parent.join(format!(
+        ".{file_name}.tmp.{}.{}",
+        std::process::id(),
+        nonce
+    ));
+
+    let write_result = (|| -> Result<(), String> {
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+
+        let mut file = options.open(&temp_path).map_err(|e| e.to_string())?;
+        file.write_all(contents.as_bytes())
+            .map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(fs::Permissions::from_mode(0o600))
+                .map_err(|e| e.to_string())?;
+        }
+
+        fs::rename(&temp_path, path).map_err(|e| e.to_string())?;
+        Ok(())
+    })();
+
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temp_path);
     }
-    fs::write(path, contents).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    write_result
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -529,7 +572,48 @@ pub async fn verify_telegram_bot(token: String) -> Result<TelegramBotCheckResult
 mod tests {
     use super::{
         looks_like_masked_secret, parse_bool_setting, parse_editable_config, read_auto_confirm_clone,
+        write_config_file,
     };
+
+    #[cfg(unix)]
+    #[test]
+    fn config_write_replaces_symlink_without_touching_target() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "502drive_config_write_{}_{}",
+            std::process::id(),
+            nonce
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let target = dir.join("target.txt");
+        let config = dir.join("config.toml");
+        std::fs::write(&target, "do-not-overwrite").unwrap();
+        symlink(&target, &config).unwrap();
+
+        write_config_file(&config, "[telegram]\nbot_token = \"secret\"\n").unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "do-not-overwrite"
+        );
+        assert!(!std::fs::symlink_metadata(&config)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(
+            std::fs::metadata(&config).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn masked_secrets_are_never_valid_update_values() {
