@@ -1,6 +1,8 @@
 const DOCKERFILE: &str = include_str!("../Dockerfile");
 const DOCKER_COMPOSE: &str = include_str!("../docker-compose.yml");
 const LINUX_INSTALLER: &str = include_str!("../packaging/install.sh");
+const BACKUP_SCRIPT: &str = include_str!("../scripts/backup.sh");
+const RESTORE_SCRIPT: &str = include_str!("../scripts/restore.sh");
 
 #[test]
 fn docker_uses_canonical_binary_and_creates_legacy_alias() {
@@ -43,4 +45,20 @@ fn linux_installer_keeps_secret_config_owner_only() {
         )
     );
     assert!(LINUX_INSTALLER.contains("chmod 600 \"$CONFIG_DIR/config.toml\""));
+}
+
+#[test]
+fn shell_backup_uses_consistent_cli_snapshot() {
+    assert!(
+        BACKUP_SCRIPT.contains("\"$BIN\" --config \"$CONFIG_PATH\" backup \"$SNAPSHOT_DIR\"")
+    );
+    assert!(!BACKUP_SCRIPT.contains("FILES+=(\"$DATA_DIR/\")"));
+}
+
+#[test]
+fn shell_restore_never_extracts_archive_into_filesystem_root() {
+    assert!(!RESTORE_SCRIPT.contains("tar -xzf \"$ARCHIVE\" -C /"));
+    assert!(RESTORE_SCRIPT.contains("--no-same-owner --no-same-permissions"));
+    assert!(RESTORE_SCRIPT.contains("Unexpected archive entry"));
+    assert!(RESTORE_SCRIPT.contains("service remains stopped for verification"));
 }
