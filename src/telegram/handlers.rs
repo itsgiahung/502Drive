@@ -1049,10 +1049,10 @@ pub async fn handle_callback_query(
                 keyboards::UiLanguage::Vi => "vi",
                 keyboards::UiLanguage::En => "en",
             };
-            let _ = repo::set_telegram_notification_preference(
+            repo::set_telegram_notification_preference(
                 &db, user_id, language, preference, enabled,
             )
-            .await;
+            .await?;
             let prefs = notification_preferences(&db, user_id, lang).await;
             let account = repo::account_status(&db)
                 .await
@@ -1129,7 +1129,7 @@ pub async fn handle_callback_query(
             return Ok(());
         }
         Some(("dest", "clear", "confirm")) => {
-            let _ = repo::clear_default_destination(&db, "default").await;
+            repo::clear_default_destination(&db, "default").await?;
             let (text, keyboard) =
                 render_destination_panel(&db, user_id, chat_id.0, ui_language(&config)).await;
             edit_or_send_with_keyboard(
@@ -1568,10 +1568,8 @@ pub async fn handle_callback_query(
                     }
                 };
             payload.content_policy = policy.to_string();
-            if let Ok(json) = serde_json::to_string(&payload) {
-                sess.payload_json = json;
-                let _ = repo::upsert_telegram_session(&db, sess).await;
-            }
+            sess.payload_json = serde_json::to_string(&payload)?;
+            repo::upsert_telegram_session(&db, sess).await?;
 
             let card_text = render_watch_options(lang);
             let keyboard =
