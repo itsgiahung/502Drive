@@ -57,6 +57,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0014_cursor_created_at",
         include_str!("../../migrations/0014_cursor_created_at.sql"),
     ),
+    (
+        "0015_hot_path_indexes",
+        include_str!("../../migrations/0015_hot_path_indexes.sql"),
+    ),
 ];
 
 #[derive(Clone)]
@@ -230,6 +234,38 @@ mod tests {
         assert!(old_owner.enabled);
         assert_eq!(new_owner.role, "owner");
         assert!(new_owner.enabled);
+    }
+
+    #[tokio::test]
+    async fn hot_path_indexes_are_installed_by_migrations() {
+        let db = Database::in_memory().await.unwrap();
+        db.run_migrations().await.unwrap();
+
+        let expected = [
+            "idx_jobs_updated",
+            "idx_watch_subscriptions_updated",
+            "idx_watch_subscriptions_status_id",
+            "idx_watch_subscriptions_cursor_status",
+            "idx_traversal_folders_pending",
+        ];
+        for name in expected {
+            let name = name.to_string();
+            let exists = db
+                .conn()
+                .call(move |conn| {
+                    conn.query_row(
+                        "SELECT EXISTS(
+                            SELECT 1 FROM sqlite_master
+                            WHERE type = 'index' AND name = ?1
+                         )",
+                        [name],
+                        |row| row.get::<_, bool>(0),
+                    )
+                })
+                .await
+                .unwrap();
+            assert!(exists);
+        }
     }
 
     #[tokio::test]
