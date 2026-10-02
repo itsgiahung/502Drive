@@ -221,8 +221,12 @@ impl AppConfig {
         if self.engine.request_timeout_seconds == 0 {
             bail!("engine.request_timeout_seconds must be > 0");
         }
-        if self.watch.active_poll_seconds == 0 || self.watch.scan_interval_ms == 0 {
-            bail!("watch.active_poll_seconds and watch.scan_interval_ms must be > 0");
+        if self.watch.active_poll_seconds == 0
+            || self.watch.warm_idle_poll_seconds == 0
+            || self.watch.cold_idle_poll_seconds == 0
+            || self.watch.scan_interval_ms == 0
+        {
+            bail!("watch poll intervals and watch.scan_interval_ms must be > 0");
         }
         validate_choice(
             "engine.default_duplicate_policy",
@@ -464,5 +468,25 @@ pub fn resolve_path(path: &Path) -> anyhow::Result<PathBuf> {
         Ok(path.to_path_buf())
     } else {
         Ok(env::current_dir()?.join(path))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppConfig;
+
+    fn sample_config() -> AppConfig {
+        AppConfig::load(std::path::Path::new("config.sample.toml")).expect("sample config")
+    }
+
+    #[test]
+    fn idle_watch_poll_intervals_must_be_nonzero() {
+        let mut config = sample_config();
+        config.watch.warm_idle_poll_seconds = 0;
+        assert!(config.validate_shape().is_err());
+
+        let mut config = sample_config();
+        config.watch.cold_idle_poll_seconds = 0;
+        assert!(config.validate_shape().is_err());
     }
 }
