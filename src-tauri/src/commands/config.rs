@@ -26,8 +26,7 @@ fn mask_secret(value: &str) -> String {
 
 fn looks_like_masked_secret(value: &str) -> bool {
     let trimmed = value.trim();
-    trimmed.contains('…')
-        || (!trimmed.is_empty() && trimmed.chars().all(|ch| ch == '•'))
+    trimmed.contains('…') || (!trimmed.is_empty() && trimmed.chars().all(|ch| ch == '•'))
 }
 
 fn parse_bool_setting(value: &str) -> Result<bool, String> {
@@ -571,8 +570,8 @@ pub async fn verify_telegram_bot(token: String) -> Result<TelegramBotCheckResult
 #[cfg(test)]
 mod tests {
     use super::{
-        looks_like_masked_secret, parse_bool_setting, parse_editable_config, read_auto_confirm_clone,
-        write_config_file,
+        looks_like_masked_secret, parse_bool_setting, parse_editable_config,
+        read_auto_confirm_clone, write_config_file,
     };
 
     #[cfg(unix)]

@@ -374,24 +374,35 @@ async fn internal_watch_transitions_do_not_resurrect_user_stops() {
         .unwrap();
 
     // Internal watch init work is not a generic user job/control target.
-    assert!(repo::list_active_jobs_for_user(&db, 7, 10, 0)
-        .await
-        .unwrap()
-        .is_empty());
-    assert!(repo::job_detail_for_user(&db, 7, &init_job.id)
-        .await
-        .unwrap()
-        .is_none());
-    assert!(!repo::pause_job_for_user(&db, 7, &init_job.id)
-        .await
-        .unwrap());
-    assert!(!repo::cancel_job_for_user(&db, 7, &init_job.id)
-        .await
-        .unwrap());
+    assert!(
+        repo::list_active_jobs_for_user(&db, 7, 10, 0)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        repo::job_detail_for_user(&db, 7, &init_job.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        !repo::pause_job_for_user(&db, 7, &init_job.id)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repo::cancel_job_for_user(&db, 7, &init_job.id)
+            .await
+            .unwrap()
+    );
 
     assert!(repo::stop_watch_for_user(&db, 7, &watch_id).await.unwrap());
     assert_eq!(
-        repo::job_status(&db, &init_job.id).await.unwrap().as_deref(),
+        repo::job_status(&db, &init_job.id)
+            .await
+            .unwrap()
+            .as_deref(),
         Some("cancelling")
     );
     assert!(
