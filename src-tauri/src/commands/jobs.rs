@@ -50,6 +50,7 @@ pub async fn list_jobs(limit: Option<usize>) -> Result<Vec<JobSummary>, String> 
                       AND job_items.status = 'done'
                 ), 0) AS completed_bytes
          FROM jobs
+         WHERE kind = 'one_shot'
          ORDER BY updated_at_ms DESC
          LIMIT ?1;",
         )

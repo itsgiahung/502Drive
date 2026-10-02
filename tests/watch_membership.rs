@@ -347,7 +347,51 @@ async fn internal_watch_transitions_do_not_resurrect_user_stops() {
     .await
     .unwrap();
 
+    let init_job = repo::get_or_create_watch_initial_clone_job(
+        &db,
+        &watch_id,
+        repo::NewJob {
+            chat_id: 7,
+            telegram_user_id: 7,
+            google_account_id: "default".to_string(),
+            source_root_id: "s".to_string(),
+            source_resource_key: None,
+            source_drive_id: None,
+            source_name: Some("source".to_string()),
+            destination_parent_id: "d".to_string(),
+            destination_drive_id: None,
+            destination_name: Some("destination".to_string()),
+            progress_message_id: None,
+            duplicate_policy: "skip_same_source".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    repo::update_job_status(&db, &init_job.id, repo::JobStatusValue::Running, None)
+        .await
+        .unwrap();
+
+    // Internal watch init work is not a generic user job/control target.
+    assert!(repo::list_active_jobs_for_user(&db, 7, 10, 0)
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(repo::job_detail_for_user(&db, 7, &init_job.id)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(!repo::pause_job_for_user(&db, 7, &init_job.id)
+        .await
+        .unwrap());
+    assert!(!repo::cancel_job_for_user(&db, 7, &init_job.id)
+        .await
+        .unwrap());
+
     assert!(repo::stop_watch_for_user(&db, 7, &watch_id).await.unwrap());
+    assert_eq!(
+        repo::job_status(&db, &init_job.id).await.unwrap().as_deref(),
+        Some("cancelling")
+    );
     assert!(
         !repo::transition_watch_status(&db, &watch_id, "catching_up", &["initializing"])
             .await

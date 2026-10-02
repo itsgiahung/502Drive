@@ -525,6 +525,7 @@ pub async fn list_active_jobs_for_user(
                         failed_items, skipped_items, updated_at_ms, source_name, destination_name
                  FROM jobs
                  WHERE telegram_user_id = ?1
+                   AND kind = 'one_shot'
                    AND status IN (
                        'queued', 'discovering', 'running', 'pausing',
                        'paused', 'cancelling', 'recovering'
@@ -565,6 +566,7 @@ pub async fn latest_reportable_job_for_user(
                         failed_items, skipped_items, updated_at_ms, source_name, destination_name
                  FROM jobs
                  WHERE telegram_user_id = ?1
+                   AND kind = 'one_shot'
                    AND status IN ('completed', 'partially_completed', 'failed')
                  ORDER BY updated_at_ms DESC, id
                  LIMIT 1",
@@ -600,6 +602,7 @@ pub async fn active_job_count_for_user(
                 "SELECT COUNT(*)
                  FROM jobs
                  WHERE telegram_user_id = ?1
+                   AND kind = 'one_shot'
                    AND status IN (
                        'queued', 'discovering', 'running', 'pausing',
                        'paused', 'cancelling', 'recovering'
@@ -622,6 +625,7 @@ pub async fn failed_job_count_for_user(
                 "SELECT COUNT(*)
                  FROM jobs
                  WHERE telegram_user_id = ?1
+                   AND kind = 'one_shot'
                    AND status = 'failed'",
                 params![telegram_user_id],
                 |row| row.get(0),
@@ -663,7 +667,9 @@ pub async fn job_detail_for_user(
                         error_summary, created_at_ms, updated_at_ms,
                         source_name, destination_name
                  FROM jobs
-                 WHERE telegram_user_id = ?1 AND id = ?2",
+                 WHERE telegram_user_id = ?1
+                   AND id = ?2
+                   AND kind = 'one_shot'",
                 params![telegram_user_id, job_id],
                 job_detail_from_row,
             )
@@ -688,7 +694,9 @@ pub async fn job_details_for_user_prefix(
                         error_summary, created_at_ms, updated_at_ms,
                         source_name, destination_name
                  FROM jobs
-                 WHERE telegram_user_id = ?1 AND id LIKE ?2
+                 WHERE telegram_user_id = ?1
+                   AND id LIKE ?2
+                   AND kind = 'one_shot'
                  ORDER BY updated_at_ms DESC, id
                  LIMIT ?3",
             )?;
@@ -717,7 +725,9 @@ pub async fn job_detail_for_progress_message(
                         error_summary, created_at_ms, updated_at_ms,
                         source_name, destination_name
                  FROM jobs
-                 WHERE telegram_user_id = ?1 AND progress_message_id = ?2
+                 WHERE telegram_user_id = ?1
+                   AND progress_message_id = ?2
+                   AND kind = 'one_shot'
                  ORDER BY created_at_ms DESC
                  LIMIT 1",
                 params![telegram_user_id, progress_message_id],
@@ -751,6 +761,7 @@ pub async fn list_running_jobs_with_progress_message(
                 "SELECT id, telegram_user_id, chat_id, progress_message_id, status, created_at_ms, updated_at_ms
                  FROM jobs
                  WHERE progress_message_id IS NOT NULL
+                   AND kind = 'one_shot'
                    AND chat_id > 0
                    AND status NOT IN ('completed', 'partially_completed', 'failed', 'cancelled')
                    AND updated_at_ms >= ?1
@@ -1433,6 +1444,7 @@ pub async fn cancel_job_for_user(
                  SET status = 'cancelled', updated_at_ms = ?1
                  WHERE telegram_user_id = ?2
                    AND id = ?3
+                   AND kind = 'one_shot'
                    AND status IN ('queued', 'paused')",
                 params![now, telegram_user_id, job_id],
             )?;
@@ -1441,6 +1453,7 @@ pub async fn cancel_job_for_user(
                  SET status = 'cancelling', updated_at_ms = ?1
                  WHERE telegram_user_id = ?2
                    AND id = ?3
+                   AND kind = 'one_shot'
                    AND status IN ('discovering', 'running', 'pausing', 'recovering')",
                 params![now, telegram_user_id, job_id],
             )?;
@@ -1532,7 +1545,9 @@ pub async fn retry_failed_job_for_user(
                 .query_row(
                     "SELECT status
                      FROM jobs
-                     WHERE telegram_user_id = ?1 AND id = ?2",
+                     WHERE telegram_user_id = ?1
+                       AND id = ?2
+                       AND kind = 'one_shot'",
                     params![telegram_user_id, job_id],
                     |row| row.get::<_, String>(0),
                 )
@@ -1615,6 +1630,7 @@ async fn update_job_status_for_user(
                  SET status = ?1, updated_at_ms = ?2
                  WHERE telegram_user_id = ?3
                    AND id = ?4
+                   AND kind = 'one_shot'
                    AND status IN ({allowed_current})"
             );
             let changed = conn.execute(
@@ -3280,13 +3296,38 @@ pub async fn stop_watch_for_user(
     Ok(db
         .conn()
         .call(move |conn| {
-            let changed = conn.execute(
+            let now = now_ms();
+            let tx = conn.transaction()?;
+            let changed = tx.execute(
                 "UPDATE watch_subscriptions
                  SET status = 'stopped', updated_at_ms = ?1
                  WHERE telegram_user_id = ?2 AND id = ?3
                    AND status != 'stopped'",
-                params![now_ms(), telegram_user_id, watch_id],
+                params![now, telegram_user_id, watch_id],
             )?;
+
+            if changed > 0 {
+                tx.execute(
+                    "UPDATE jobs
+                     SET status = 'cancelled', updated_at_ms = ?1
+                     WHERE kind = 'watch_initial_clone'
+                       AND watch_id = ?2
+                       AND status IN ('queued', 'paused')",
+                    params![now, watch_id],
+                )?;
+                tx.execute(
+                    "UPDATE jobs
+                     SET status = 'cancelling', updated_at_ms = ?1
+                     WHERE kind = 'watch_initial_clone'
+                       AND watch_id = ?2
+                       AND status IN (
+                           'discovering', 'running', 'pausing', 'recovering'
+                       )",
+                    params![now, watch_id],
+                )?;
+            }
+
+            tx.commit()?;
             Ok::<bool, rusqlite::Error>(changed > 0)
         })
         .await?)
