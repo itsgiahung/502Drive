@@ -9,8 +9,7 @@ pub mod status;
 pub mod watches;
 
 use directories::ProjectDirs;
-use gdclone_bot::config::AppConfig;
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension};
 use std::path::PathBuf;
 
 pub fn get_project_dirs() -> Option<ProjectDirs> {
@@ -65,38 +64,9 @@ pub(crate) fn open_queue_conn() -> Result<Connection, String> {
     Ok(conn)
 }
 
-/// Resolve the acting telegram user id for the local GUI: the configured
-/// owner (`telegram.owner_telegram_id`) wins; without a usable config, fall
-/// back to the enabled owner row in `authorized_users`.
-pub(crate) fn resolve_owner_id() -> Result<i64, String> {
-    if let Ok(config) = AppConfig::load(&get_config_path()) {
-        if config.telegram.owner_telegram_id > 0 {
-            return Ok(config.telegram.owner_telegram_id);
-        }
-    }
-    let db_path = get_db_path();
-    if !db_path.exists() {
-        return Err("Database does not exist".to_string());
-    }
-    let conn = Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(|e| e.to_string())?;
-    let owner: Option<i64> = conn
-        .query_row(
-            "SELECT telegram_user_id FROM authorized_users
-             WHERE role = 'owner' AND enabled = 1
-             ORDER BY telegram_user_id LIMIT 1",
-            [],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|e| e.to_string())?;
-    owner.ok_or_else(|| "no owner configured — finish the setup wizard first".to_string())
-}
-
-/// Resolve the actor for a job row. Jobs created by the GUI queue are owned
-/// by `telegram_user_id = 0`; jobs created by the telegram bot are owned by
-/// the requesting user. The local GUI is trusted to act as the configured
-/// owner for those rows, and as user `0` for its own.
+/// Resolve the actor for a job row. The shared JobService deliberately scopes
+/// every mutation by the row's telegram_user_id, so the desktop control plane
+/// must pass the row owner itself (including user 0 for GUI-created jobs).
 pub(crate) fn resolve_job_actor(conn: &Connection, job_id: &str) -> Result<i64, String> {
     let owner: Option<i64> = conn
         .query_row(
@@ -106,11 +76,7 @@ pub(crate) fn resolve_job_actor(conn: &Connection, job_id: &str) -> Result<i64, 
         )
         .optional()
         .map_err(|e| e.to_string())?;
-    match owner {
-        None => Err(format!("job {job_id} not found")),
-        Some(0) => Ok(0),
-        Some(_) => resolve_owner_id(),
-    }
+    owner.ok_or_else(|| format!("job {job_id} not found"))
 }
 
 /// [`resolve_job_actor`] for watch rows.
@@ -123,9 +89,31 @@ pub(crate) fn resolve_watch_actor(conn: &Connection, watch_id: &str) -> Result<i
         )
         .optional()
         .map_err(|e| e.to_string())?;
-    match owner {
-        None => Err(format!("watch {watch_id} not found")),
-        Some(0) => Ok(0),
-        Some(_) => resolve_owner_id(),
+    owner.ok_or_else(|| format!("watch {watch_id} not found"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_job_actor, resolve_watch_actor};
+    use rusqlite::Connection;
+
+    #[test]
+    fn desktop_controls_use_the_rows_real_actor() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE jobs (id TEXT PRIMARY KEY, telegram_user_id INTEGER NOT NULL);
+             CREATE TABLE watch_subscriptions (
+                 id TEXT PRIMARY KEY,
+                 telegram_user_id INTEGER NOT NULL
+             );
+             INSERT INTO jobs VALUES ('job-operator', 42), ('job-gui', 0);
+             INSERT INTO watch_subscriptions VALUES ('watch-operator', 77), ('watch-gui', 0);",
+        )
+        .unwrap();
+
+        assert_eq!(resolve_job_actor(&conn, "job-operator").unwrap(), 42);
+        assert_eq!(resolve_job_actor(&conn, "job-gui").unwrap(), 0);
+        assert_eq!(resolve_watch_actor(&conn, "watch-operator").unwrap(), 77);
+        assert_eq!(resolve_watch_actor(&conn, "watch-gui").unwrap(), 0);
     }
 }
