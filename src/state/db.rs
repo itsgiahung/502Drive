@@ -49,6 +49,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0012_retry_state_and_telegram_dedup",
         include_str!("../../migrations/0012_retry_state_and_telegram_dedup.sql"),
     ),
+    (
+        "0013_telegram_notification_preferences",
+        include_str!("../../migrations/0013_telegram_notification_preferences.sql"),
+    ),
 ];
 
 #[derive(Clone)]

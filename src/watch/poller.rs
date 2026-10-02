@@ -34,38 +34,43 @@ pub enum NotificationKind {
 
 #[derive(Debug, Clone)]
 pub struct NotificationEvent {
+    pub telegram_user_id: i64,
     pub chat_id: i64,
     pub kind: NotificationKind,
     pub text: String,
 }
 
 impl NotificationEvent {
-    pub fn job_completed(chat_id: i64, text: String) -> Self {
+    pub fn job_completed(telegram_user_id: i64, chat_id: i64, text: String) -> Self {
         Self {
+            telegram_user_id,
             chat_id,
             kind: NotificationKind::JobCompleted,
             text,
         }
     }
 
-    pub fn job_failed(chat_id: i64, text: String) -> Self {
+    pub fn job_failed(telegram_user_id: i64, chat_id: i64, text: String) -> Self {
         Self {
+            telegram_user_id,
             chat_id,
             kind: NotificationKind::JobFailed,
             text,
         }
     }
 
-    pub fn watch_error(chat_id: i64, text: String) -> Self {
+    pub fn watch_error(telegram_user_id: i64, chat_id: i64, text: String) -> Self {
         Self {
+            telegram_user_id,
             chat_id,
             kind: NotificationKind::WatchError,
             text,
         }
     }
 
-    pub fn watch_activity(chat_id: i64, text: String) -> Self {
+    pub fn watch_activity(telegram_user_id: i64, chat_id: i64, text: String) -> Self {
         Self {
+            telegram_user_id,
             chat_id,
             kind: NotificationKind::WatchActivity,
             text,
