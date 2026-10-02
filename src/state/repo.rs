@@ -510,7 +510,9 @@ pub async fn list_active_jobs_for_user(
     db: &Database,
     telegram_user_id: i64,
     limit: usize,
+    offset: i64,
 ) -> anyhow::Result<Vec<JobSummary>> {
+    let offset = offset.max(0);
     Ok(db
         .conn()
         .call(move |conn| {
@@ -524,10 +526,10 @@ pub async fn list_active_jobs_for_user(
                        'paused', 'cancelling', 'recovering'
                    )
                  ORDER BY updated_at_ms DESC, id
-                 LIMIT ?2",
+                 LIMIT ?2 OFFSET ?3",
             )?;
             let rows = stmt
-                .query_map(params![telegram_user_id, limit as i64], |row| {
+                .query_map(params![telegram_user_id, limit as i64, offset], |row| {
                     Ok(JobSummary {
                         id: row.get(0)?,
                         kind: row.get(1)?,

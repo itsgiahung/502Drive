@@ -11,7 +11,7 @@ pub(crate) async fn render_jobs_panel(
     telegram_user_id: i64,
     lang: keyboards::UiLanguage,
 ) -> anyhow::Result<(String, InlineKeyboardMarkup)> {
-    let jobs = repo::list_active_jobs_for_user(db, telegram_user_id, 10).await?;
+    let jobs = repo::list_active_jobs_for_user(db, telegram_user_id, 10, 0).await?;
     if jobs.is_empty() {
         return Ok((
             jobs_empty_text(lang).to_string(),

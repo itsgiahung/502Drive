@@ -90,7 +90,7 @@ impl JobService {
     ) -> Result<JobDetail, JobResolveError> {
         let job_id = input.trim();
         if job_id.is_empty() {
-            let latest = repo::list_active_jobs_for_user(db, actor_user_id, 1)
+            let latest = repo::list_active_jobs_for_user(db, actor_user_id, 1, 0)
                 .await
                 .map_err(JobResolveError::Db)?
                 .into_iter()
