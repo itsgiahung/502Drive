@@ -1261,10 +1261,7 @@ pub async fn transition_job_status(
 
     let job_id = job_id.to_string();
     let error_summary = error_summary.map(ToOwned::to_owned);
-    let allowed_current: Vec<String> = allowed_current
-        .iter()
-        .map(|s| (*s).to_string())
-        .collect();
+    let allowed_current: Vec<String> = allowed_current.iter().map(|s| (*s).to_string()).collect();
     Ok(db
         .conn()
         .call(move |conn| {

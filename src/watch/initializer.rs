@@ -27,9 +27,7 @@ use tracing::{info, warn};
 
 use crate::{
     config::AppConfig,
-    drive::{
-        client::DriveClient, links::DriveReference, token_manager::TokenManager,
-    },
+    drive::{client::DriveClient, links::DriveReference, token_manager::TokenManager},
     engine::copy::{CloneRequest, CloneService},
     state::{
         db::Database,
@@ -139,16 +137,15 @@ async fn run_initial_clone_inner(
 
         // Dispatch one batch of pending events while preserving the
         // scan/notification throttle state across catch-up cycles.
-        if let Err(err) =
-            dispatch_pending(
-                &config,
-                &db,
-                &drive,
-                &token_manager,
-                &notify_tx,
-                &mut dispatch_state,
-            )
-            .await
+        if let Err(err) = dispatch_pending(
+            &config,
+            &db,
+            &drive,
+            &token_manager,
+            &notify_tx,
+            &mut dispatch_state,
+        )
+        .await
         {
             warn!(watch_id, error = %err, "catch-up dispatch error (will retry)");
         }

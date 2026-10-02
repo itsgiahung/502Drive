@@ -228,16 +228,15 @@ fn spawn_dispatch_loop(
                 _ = dispatch_notify.notified() => {}
             }
 
-            if let Err(err) =
-                dispatch_pending(
-                    &config,
-                    &db,
-                    &drive,
-                    &token_manager,
-                    &notify_tx,
-                    &mut dispatch_state,
-                )
-                .await
+            if let Err(err) = dispatch_pending(
+                &config,
+                &db,
+                &drive,
+                &token_manager,
+                &notify_tx,
+                &mut dispatch_state,
+            )
+            .await
             {
                 warn!(error = %err, "dispatch_pending error");
             }

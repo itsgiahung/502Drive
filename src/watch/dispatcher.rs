@@ -150,7 +150,6 @@ async fn dispatch_one(
     notify_tx: &NotifySender,
     state: &mut DispatchState,
 ) -> anyhow::Result<()> {
-
     let cursor = repo::cursor_by_id(db, &watch.cursor_id).await?;
     if backlog_exceeds_limit(
         watch.last_consumed_sequence,

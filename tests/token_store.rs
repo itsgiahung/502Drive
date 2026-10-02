@@ -1,8 +1,6 @@
 use gdclone_bot::{
     config::GoogleOAuthConfig,
-    drive::auth::{
-        choose_redirect_port, decrypt_token, encrypt_token, wait_for_loopback_code,
-    },
+    drive::auth::{choose_redirect_port, decrypt_token, encrypt_token, wait_for_loopback_code},
     secrets::FileSecretStore,
     state::{db::Database, repo},
 };
@@ -69,9 +67,8 @@ async fn send_loopback_request(port: u16, path: &str) -> String {
         }
     }
     let mut stream = stream.expect("OAuth loopback listener did not start");
-    let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
-    );
+    let request =
+        format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
     stream.write_all(request.as_bytes()).await.unwrap();
     let mut response = Vec::new();
     stream.read_to_end(&mut response).await.unwrap();
@@ -87,7 +84,9 @@ async fn oauth_loopback_ignores_wrong_state_before_valid_callback() {
     drop(listener);
 
     let waiter = tokio::spawn(async move {
-        wait_for_loopback_code(port, "expected-state").await.unwrap()
+        wait_for_loopback_code(port, "expected-state")
+            .await
+            .unwrap()
     });
 
     let rejected =

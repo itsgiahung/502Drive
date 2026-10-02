@@ -1049,10 +1049,8 @@ pub async fn handle_callback_query(
                 keyboards::UiLanguage::Vi => "vi",
                 keyboards::UiLanguage::En => "en",
             };
-            repo::set_telegram_notification_preference(
-                &db, user_id, language, preference, enabled,
-            )
-            .await?;
+            repo::set_telegram_notification_preference(&db, user_id, language, preference, enabled)
+                .await?;
             let prefs = notification_preferences(&db, user_id, lang).await;
             let account = repo::account_status(&db)
                 .await

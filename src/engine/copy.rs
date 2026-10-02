@@ -430,9 +430,7 @@ impl CloneService {
                         });
                     }
                 }
-                if marked_failed
-                    && let Some(tx) = &self.notify_tx
-                {
+                if marked_failed && let Some(tx) = &self.notify_tx {
                     let _ = tx.try_send(crate::watch::NotificationEvent::job_failed(
                         request.telegram_user_id,
                         request.chat_id,
@@ -697,13 +695,8 @@ impl CloneService {
         )
         .await?;
         repo::update_job_counts(&self.db, job_id, 1, 1, 0, 0).await?;
-        self.transition_job_status_guarded(
-            job_id,
-            JobStatusValue::Discovering,
-            None,
-            &["running"],
-        )
-        .await?;
+        self.transition_job_status_guarded(job_id, JobStatusValue::Discovering, None, &["running"])
+            .await?;
         self.process_traversal(job_id).await?;
 
         self.finish_folder_job(job_id).await
@@ -825,13 +818,8 @@ impl CloneService {
         )
         .await?;
         repo::update_job_counts(&self.db, job_id, 1, 1, 0, 0).await?;
-        self.transition_job_status_guarded(
-            job_id,
-            JobStatusValue::Completed,
-            None,
-            &["running"],
-        )
-        .await?;
+        self.transition_job_status_guarded(job_id, JobStatusValue::Completed, None, &["running"])
+            .await?;
 
         Ok(format!(
             "Job {job_id} đã hoàn tất. Đã copy file: {}",
@@ -933,14 +921,8 @@ impl CloneService {
         error_summary: Option<&str>,
         allowed_current: &[&str],
     ) -> anyhow::Result<()> {
-        if repo::transition_job_status(
-            &self.db,
-            job_id,
-            next,
-            error_summary,
-            allowed_current,
-        )
-        .await?
+        if repo::transition_job_status(&self.db, job_id, next, error_summary, allowed_current)
+            .await?
         {
             return Ok(());
         }
