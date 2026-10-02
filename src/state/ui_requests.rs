@@ -9,8 +9,8 @@
 //! `rusqlite::Connection` so the GUI crate can reuse the exact same statements
 //! against its own (read-write or read-only) connection, while the daemon
 //! wraps them with the tokio_rusqlite pool. All access stays WAL/multi-process
-//! safe; the consumer claims a row atomically by flipping
-//! `status='pending' → 'accepted'/'rejected'` in a single conditional UPDATE.
+//! safe; the consumer first claims a pending row with a conditional UPDATE,
+//! then only the claim winner may perform engine side effects and finalize it.
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
@@ -23,6 +23,8 @@ pub const KIND_RETRY: &str = "retry";
 /// GUI-initiated job resume: the repo transition (`paused` → `recovering`)
 /// plus the daemon-side resume worker must both run in the daemon process.
 pub const KIND_RESUME: &str = "resume";
+
+const PROCESSING_NOTE: &str = "__processing__";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UiRequest {
@@ -102,14 +104,15 @@ pub async fn get(db: &Database, id: &str) -> anyhow::Result<Option<UiRequest>> {
     Ok(db.conn().call(move |conn| get_sync(conn, &id)).await?)
 }
 
-/// All pending requests, oldest first.
+/// Unclaimed pending requests, oldest first.
 pub async fn pending(db: &Database) -> anyhow::Result<Vec<UiRequest>> {
     Ok(db
         .conn()
         .call(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, kind, payload_json, status, requested_by, created_at_ms, decided_at_ms, note
-                 FROM ui_requests WHERE status = 'pending'
+                 FROM ui_requests
+                 WHERE status = 'pending' AND note IS NULL
                  ORDER BY created_at_ms, id",
             )?;
             let rows = stmt
@@ -120,8 +123,73 @@ pub async fn pending(db: &Database) -> anyhow::Result<Vec<UiRequest>> {
         .await?)
 }
 
-/// Atomically decide a pending request. Returns false when the row is gone or
-/// was already decided (lost claim), so concurrent consumers never double-run.
+/// Atomically claim an unclaimed pending request before any side effect.
+/// Returns false when another consumer already won the claim.
+pub async fn claim(db: &Database, id: &str) -> anyhow::Result<bool> {
+    let id = id.to_string();
+    let changed = db
+        .conn()
+        .call(move |conn| {
+            let changed = conn.execute(
+                "UPDATE ui_requests
+                 SET note = ?1, decided_at_ms = ?2
+                 WHERE id = ?3 AND status = 'pending' AND note IS NULL",
+                params![PROCESSING_NOTE, now_ms(), id],
+            )?;
+            Ok::<usize, rusqlite::Error>(changed)
+        })
+        .await?;
+    Ok(changed > 0)
+}
+
+/// Complete a request that this consumer previously claimed.
+pub async fn finish_claim(
+    db: &Database,
+    id: &str,
+    accepted: bool,
+    note: &str,
+) -> anyhow::Result<bool> {
+    let id = id.to_string();
+    let status = if accepted { "accepted" } else { "rejected" };
+    let note = note.to_string();
+    let changed = db
+        .conn()
+        .call(move |conn| {
+            let changed = conn.execute(
+                "UPDATE ui_requests
+                 SET status = ?1, decided_at_ms = ?2, note = ?3
+                 WHERE id = ?4 AND status = 'pending' AND note = ?5",
+                params![status, now_ms(), note, id, PROCESSING_NOTE],
+            )?;
+            Ok::<usize, rusqlite::Error>(changed)
+        })
+        .await?;
+    Ok(changed > 0)
+}
+
+/// Requeue a claim that has been abandoned for longer than the supplied age.
+/// A conservative timeout prevents a crashed consumer from wedging a request
+/// forever while still keeping live concurrent consumers mutually exclusive.
+pub async fn requeue_stale_claims(db: &Database, stale_after_ms: i64) -> anyhow::Result<usize> {
+    let cutoff = now_ms().saturating_sub(stale_after_ms.max(0));
+    Ok(db
+        .conn()
+        .call(move |conn| {
+            conn.execute(
+                "UPDATE ui_requests
+                 SET note = NULL, decided_at_ms = NULL
+                 WHERE status = 'pending'
+                   AND note = ?1
+                   AND decided_at_ms IS NOT NULL
+                   AND decided_at_ms < ?2",
+                params![PROCESSING_NOTE, cutoff],
+            )
+        })
+        .await?)
+}
+
+/// Atomically decide an unclaimed pending request. Returns false when the row
+/// is gone, claimed by a consumer, or already decided.
 pub async fn decide(db: &Database, id: &str, accepted: bool, note: &str) -> anyhow::Result<bool> {
     let id = id.to_string();
     let status = if accepted { "accepted" } else { "rejected" };
@@ -132,7 +200,7 @@ pub async fn decide(db: &Database, id: &str, accepted: bool, note: &str) -> anyh
             let changed = conn.execute(
                 "UPDATE ui_requests
                  SET status = ?1, decided_at_ms = ?2, note = ?3
-                 WHERE id = ?4 AND status = 'pending'",
+                 WHERE id = ?4 AND status = 'pending' AND note IS NULL",
                 params![status, now_ms(), note, id],
             )?;
             Ok::<usize, rusqlite::Error>(changed)

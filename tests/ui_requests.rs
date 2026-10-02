@@ -103,6 +103,49 @@ async fn decide_is_atomic_and_single_shot() {
 }
 
 #[tokio::test]
+async fn claim_is_single_winner_and_blocks_direct_decide() {
+    let db = test_db().await;
+    let id = ui_requests::enqueue(&db, KIND_CLONE, "{}", None)
+        .await
+        .unwrap();
+
+    assert!(ui_requests::claim(&db, &id).await.unwrap());
+    assert!(!ui_requests::claim(&db, &id).await.unwrap());
+    assert!(ui_requests::pending(&db).await.unwrap().is_empty());
+
+    // A validation-path decision cannot steal an in-flight claim.
+    assert!(
+        !ui_requests::decide(&db, &id, false, "late rejection")
+            .await
+            .unwrap()
+    );
+
+    assert!(
+        ui_requests::finish_claim(&db, &id, true, "accepted")
+            .await
+            .unwrap()
+    );
+    let request = ui_requests::get(&db, &id).await.unwrap().unwrap();
+    assert_eq!(request.status, "accepted");
+    assert_eq!(request.note.as_deref(), Some("accepted"));
+}
+
+#[tokio::test]
+async fn stale_claim_can_be_requeued_after_timeout() {
+    let db = test_db().await;
+    let id = ui_requests::enqueue(&db, KIND_CLONE, "{}", None)
+        .await
+        .unwrap();
+    assert!(ui_requests::claim(&db, &id).await.unwrap());
+
+    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+    assert_eq!(ui_requests::requeue_stale_claims(&db, 0).await.unwrap(), 1);
+    let pending = ui_requests::pending(&db).await.unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].id, id);
+}
+
+#[tokio::test]
 async fn reject_records_note() {
     let db = test_db().await;
     let id = ui_requests::enqueue(&db, KIND_WATCH, "{}", None)

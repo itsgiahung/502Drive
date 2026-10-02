@@ -42,6 +42,7 @@ use crate::{
 
 /// Poll interval for the queue consumer.
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
+const CLAIM_STALE_AFTER_MS: i64 = 10 * 60 * 1000;
 
 // ── Payloads ─────────────────────────────────────────────────────────────────
 
@@ -94,15 +95,26 @@ pub fn spawn_ui_request_consumer(
     })
 }
 
-/// Decide helpers that swallow the claim bool (a false means another consumer
-/// already decided the row — nothing to do).
+/// Reject an unclaimed request during validation. A lost race is harmless
+/// because no side effect has happened yet.
 async fn reject(db: &Database, id: &str, note: &str) -> anyhow::Result<()> {
     ui_requests::decide(db, id, false, note).await?;
     Ok(())
 }
 
-async fn accept(db: &Database, id: &str, note: &str) -> anyhow::Result<()> {
-    ui_requests::decide(db, id, true, note).await?;
+async fn claim(db: &Database, id: &str) -> anyhow::Result<bool> {
+    ui_requests::claim(db, id).await
+}
+
+async fn finish_claim(
+    db: &Database,
+    id: &str,
+    accepted: bool,
+    note: &str,
+) -> anyhow::Result<()> {
+    if !ui_requests::finish_claim(db, id, accepted, note).await? {
+        anyhow::bail!("ui_request claim lost before completion: {id}");
+    }
     Ok(())
 }
 
@@ -111,6 +123,11 @@ async fn process_pending(
     db: &Database,
     drive: &DriveClient,
 ) -> anyhow::Result<()> {
+    let requeued = ui_requests::requeue_stale_claims(db, CLAIM_STALE_AFTER_MS).await?;
+    if requeued > 0 {
+        warn!(requeued, "requeued stale ui_request claims");
+    }
+
     for request in ui_requests::pending(db).await? {
         let result = match request.kind.as_str() {
             ui_requests::KIND_CLONE => process_clone(config, db, drive, &request).await,
@@ -123,7 +140,12 @@ async fn process_pending(
                     kind = other,
                     "unknown ui_requests kind"
                 );
-                Ok(())
+                reject(
+                    db,
+                    &request.id,
+                    &format!("unsupported ui_request kind: {other}"),
+                )
+                .await
             }
         };
         if let Err(err) = result {
@@ -201,10 +223,12 @@ async fn process_clone(
         .await;
     }
 
-    // Phase 2 — accept and execute in a spawned task so a long clone never
-    // blocks the queue. Outcome is written back into `note` (the status stays
-    // 'accepted'; the jobs table carries the authoritative job state).
-    accept(db, &request.id, "accepted; clone queued").await?;
+    // Phase 2 — claim before any side effect. Only the consumer that wins
+    // the CAS may spawn the clone.
+    if !claim(db, &request.id).await? {
+        return Ok(());
+    }
+    finish_claim(db, &request.id, true, "accepted; clone queued").await?;
 
     let db2 = db.clone();
     let config2 = config.clone();
@@ -291,6 +315,10 @@ async fn process_watch(
         },
     };
 
+    if !claim(db, &request.id).await? {
+        return Ok(());
+    }
+
     let created = match watch::create_watch(
         config,
         db,
@@ -308,13 +336,15 @@ async fn process_watch(
     {
         Ok(created) => created,
         Err(err) => {
-            return reject(db, &request.id, &format!("{err:#}")).await;
+            finish_claim(db, &request.id, false, &format!("{err:#}")).await?;
+            return Ok(());
         }
     };
 
-    accept(
+    finish_claim(
         db,
         &request.id,
+        true,
         &format!(
             "watch {} created ({} → {}); initial clone running",
             created.watch_id, created.source_name, created.destination_name
@@ -361,12 +391,16 @@ async fn process_retry(
     let Some(owner) = owner else {
         return reject(db, &request.id, "job not found").await;
     };
+    if !claim(db, &request.id).await? {
+        return Ok(());
+    }
 
-    match services::JobService::retry(db, owner, &job_id).await? {
-        Some(summary) => {
-            accept(
+    match services::JobService::retry(db, owner, &job_id).await {
+        Ok(Some(summary)) => {
+            finish_claim(
                 db,
                 &request.id,
+                true,
                 &format!(
                     "retry queued — folders {}, items {}, operations {}",
                     summary.traversal_folders_requeued,
@@ -383,8 +417,17 @@ async fn process_retry(
                 drive_client_for(config),
             );
         }
-        None => {
-            reject(db, &request.id, "job not retryable or has no failed items").await?;
+        Ok(None) => {
+            finish_claim(
+                db,
+                &request.id,
+                false,
+                "job not retryable or has no failed items",
+            )
+            .await?;
+        }
+        Err(err) => {
+            finish_claim(db, &request.id, false, &format!("retry failed: {err:#}")).await?;
         }
     }
     Ok(())
@@ -413,22 +456,37 @@ async fn process_resume(
     let Some(owner) = owner else {
         return reject(db, &request.id, "job not found").await;
     };
+    if !claim(db, &request.id).await? {
+        return Ok(());
+    }
 
-    if services::JobService::resume(db, owner, &job_id).await? {
-        accept(
-            db,
-            &request.id,
-            &format!("resume accepted for job {job_id}"),
-        )
-        .await?;
-        recovery::spawn_startup_resume_worker(config.clone(), db.clone(), drive_client_for(config));
-    } else {
-        reject(
-            db,
-            &request.id,
-            "job is not paused (resume requires status 'paused')",
-        )
-        .await?;
+    match services::JobService::resume(db, owner, &job_id).await {
+        Ok(true) => {
+            finish_claim(
+                db,
+                &request.id,
+                true,
+                &format!("resume accepted for job {job_id}"),
+            )
+            .await?;
+            recovery::spawn_startup_resume_worker(
+                config.clone(),
+                db.clone(),
+                drive_client_for(config),
+            );
+        }
+        Ok(false) => {
+            finish_claim(
+                db,
+                &request.id,
+                false,
+                "job is not paused (resume requires status 'paused')",
+            )
+            .await?;
+        }
+        Err(err) => {
+            finish_claim(db, &request.id, false, &format!("resume failed: {err:#}")).await?;
+        }
     }
     Ok(())
 }
