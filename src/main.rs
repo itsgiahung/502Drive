@@ -150,6 +150,16 @@ fn spawn_notify_forwarder(
 ) {
     let bot_token = config.telegram.bot_token.clone();
     let notifications = config.notifications.clone();
+    let request_timeout = Duration::from_secs(config.engine.request_timeout_seconds.clamp(1, 10));
+    let client = match reqwest::Client::builder().timeout(request_timeout).build() {
+        Ok(client) => client,
+        Err(_) => {
+            tracing::error!("failed to initialize Telegram notification HTTP client");
+            return;
+        }
+    };
+    let url = format!("https://api.telegram.org/bot{bot_token}/sendMessage");
+
     tokio::spawn(async move {
         while let Some(event) = notify_rx.recv().await {
             // Daemon-level flags are the outer kill switch.
@@ -180,13 +190,28 @@ fn spawn_notify_forwarder(
             if chat_id <= 0 {
                 continue;
             }
-            let url = format!("https://api.telegram.org/bot{}/sendMessage", bot_token);
             let body = serde_json::json!({
                 "chat_id": chat_id,
                 "text": event.text,
             });
-            // Best-effort; ignore errors (bot may not be running yet).
-            let _ = reqwest::Client::new().post(&url).json(&body).send().await;
+            match client.post(&url).json(&body).send().await {
+                Ok(response) if !response.status().is_success() => {
+                    tracing::warn!(
+                        status = %response.status(),
+                        "Telegram notification API returned a non-success status"
+                    );
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    // Do not log the reqwest error itself: its URL contains the
+                    // bot token. Only emit non-sensitive failure metadata.
+                    tracing::warn!(
+                        timeout = err.is_timeout(),
+                        status = ?err.status(),
+                        "Telegram notification send failed"
+                    );
+                }
+            }
         }
     });
 }
