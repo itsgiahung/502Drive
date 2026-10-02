@@ -269,9 +269,10 @@ async fn poll_one_cursor(
     let mut error_count = 0u32;
     // Track whether this cycle had any events for adaptive poll scheduling.
     let mut had_events_this_cycle = false;
-    // Use the persisted timestamp of the last event page so compute_next_poll_ms
-    // can back off correctly when the feed has been quiet for a long time.
-    let idle_since_ms: i64 = cursor.last_event_at_ms.unwrap_or(0);
+    // Use the most recent event as the idle anchor. If this cursor has
+    // never received an event, fall back to its stable creation timestamp so
+    // a permanently quiet feed can still progress to warm/cold polling.
+    let idle_since_ms = cursor.last_event_at_ms.unwrap_or(cursor.created_at_ms);
 
     loop {
         let access_token = match token_manager.access_token("default").await {
@@ -432,7 +433,7 @@ async fn poll_one_cursor(
 /// - consecutive errors                          → exponential backoff
 ///
 /// `idle_since_ms` is the timestamp of the last page that contained events,
-/// or 0 if always idle.
+/// falling back to the cursor creation timestamp when no event has ever arrived.
 fn compute_next_poll_ms(
     config: &AppConfig,
     consecutive_errors: i64,
@@ -461,4 +462,40 @@ fn compute_next_poll_ms(
         }
     };
     now_ms + (secs as i64) * 1000
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compute_next_poll_ms;
+    use crate::{config::AppConfig, state::db::now_ms};
+
+    fn test_config() -> AppConfig {
+        let mut config =
+            AppConfig::load(std::path::Path::new("config.sample.toml")).expect("sample config");
+        config.watch.active_poll_seconds = 5;
+        config.watch.warm_idle_after_seconds = 60;
+        config.watch.warm_idle_poll_seconds = 30;
+        config.watch.cold_idle_after_seconds = 300;
+        config.watch.cold_idle_poll_seconds = 120;
+        config
+    }
+
+    fn delay_seconds(next_poll_at_ms: i64) -> i64 {
+        ((next_poll_at_ms - now_ms()) / 1000).max(0)
+    }
+
+    #[test]
+    fn never_active_cursor_still_backs_off_to_warm_and_cold_polling() {
+        let config = test_config();
+        let now = now_ms();
+
+        let warm = compute_next_poll_ms(&config, 0, false, now - 120_000);
+        assert!((29..=30).contains(&delay_seconds(warm)));
+
+        let cold = compute_next_poll_ms(&config, 0, false, now - 600_000);
+        assert!((119..=120).contains(&delay_seconds(cold)));
+
+        let active = compute_next_poll_ms(&config, 0, true, now - 600_000);
+        assert!((4..=5).contains(&delay_seconds(active)));
+    }
 }

@@ -53,6 +53,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0013_telegram_notification_preferences",
         include_str!("../../migrations/0013_telegram_notification_preferences.sql"),
     ),
+    (
+        "0014_cursor_created_at",
+        include_str!("../../migrations/0014_cursor_created_at.sql"),
+    ),
 ];
 
 #[derive(Clone)]
