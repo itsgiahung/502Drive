@@ -1797,6 +1797,76 @@ pub async fn insert_item(db: &Database, item: NewItem) -> anyhow::Result<String>
     Ok(id)
 }
 
+pub async fn record_child_traversal_completion(
+    db: &Database,
+    job_id: &str,
+    source_folder_id: &str,
+    source_resource_key: Option<&str>,
+    destination_folder_id: &str,
+    source_parent_id: Option<&str>,
+) -> anyhow::Result<bool> {
+    let job_id = job_id.to_string();
+    let source_folder_id = source_folder_id.to_string();
+    let source_resource_key = source_resource_key.map(ToOwned::to_owned);
+    let destination_folder_id = destination_folder_id.to_string();
+    let source_parent_id = source_parent_id.map(ToOwned::to_owned);
+    Ok(db
+        .conn()
+        .call(move |conn| {
+            let now = now_ms();
+            let tx = conn.transaction()?;
+            let inserted = tx.execute(
+                "INSERT OR IGNORE INTO traversal_folders (
+                    job_id, source_folder_id, source_resource_key,
+                    destination_folder_id, source_parent_id,
+                    scan_state, updated_at_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6)",
+                params![
+                    job_id,
+                    source_folder_id,
+                    source_resource_key,
+                    destination_folder_id,
+                    source_parent_id,
+                    now
+                ],
+            )?;
+
+            if inserted > 0 {
+                tx.execute(
+                    "UPDATE jobs
+                     SET total_discovered = total_discovered + 1,
+                         completed_items = completed_items + 1,
+                         updated_at_ms = ?1
+                     WHERE id = ?2",
+                    params![now, job_id],
+                )?;
+            } else {
+                // Preserve scan_state/page progress on replay; only refresh
+                // metadata needed to continue traversal.
+                tx.execute(
+                    "UPDATE traversal_folders
+                     SET destination_folder_id = ?1,
+                         source_resource_key = ?2,
+                         source_parent_id = ?3,
+                         updated_at_ms = ?4
+                     WHERE job_id = ?5 AND source_folder_id = ?6",
+                    params![
+                        destination_folder_id,
+                        source_resource_key,
+                        source_parent_id,
+                        now,
+                        job_id,
+                        source_folder_id
+                    ],
+                )?;
+            }
+
+            tx.commit()?;
+            Ok::<bool, rusqlite::Error>(inserted > 0)
+        })
+        .await?)
+}
+
 pub async fn record_traversal_folder(
     db: &Database,
     job_id: &str,

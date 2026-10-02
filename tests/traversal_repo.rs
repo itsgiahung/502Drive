@@ -20,6 +20,53 @@ async fn test_db() -> (Database, String) {
 }
 
 #[tokio::test]
+async fn child_traversal_completion_counts_once_and_reuses_existing_row() {
+    let (db, job_id) = test_db().await;
+
+    assert!(
+        repo::record_child_traversal_completion(
+            &db,
+            &job_id,
+            "child-folder",
+            Some("rk-1"),
+            "dst-child",
+            Some("src-parent"),
+        )
+        .await
+        .unwrap()
+    );
+
+    let counts = repo::job_counts(&db, &job_id).await.unwrap();
+    assert_eq!(counts.total_discovered, 1);
+    assert_eq!(counts.completed_items, 1);
+
+    assert!(
+        !repo::record_child_traversal_completion(
+            &db,
+            &job_id,
+            "child-folder",
+            Some("rk-2"),
+            "dst-child-recovered",
+            Some("src-parent"),
+        )
+        .await
+        .unwrap()
+    );
+
+    let counts = repo::job_counts(&db, &job_id).await.unwrap();
+    assert_eq!(counts.total_discovered, 1);
+    assert_eq!(counts.completed_items, 1);
+
+    let claimed = repo::next_pending_traversal_folder(&db, &job_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(claimed.source_folder_id, "child-folder");
+    assert_eq!(claimed.source_resource_key.as_deref(), Some("rk-2"));
+    assert_eq!(claimed.destination_folder_id, "dst-child-recovered");
+}
+
+#[tokio::test]
 async fn traversal_folder_claim_requeue_and_finish() {
     let (db, job_id) = test_db().await;
 

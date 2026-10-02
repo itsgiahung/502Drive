@@ -1020,10 +1020,19 @@ impl CloneService {
         parent: &TraversalFolder,
         source: &DriveFile,
     ) -> anyhow::Result<()> {
-        if repo::existing_dest_for_source(&self.db, ScopeType::Job.as_str(), job_id, &source.id)
-            .await?
-            .is_some()
+        if let Some(destination_folder_id) =
+            repo::existing_dest_for_source(&self.db, ScopeType::Job.as_str(), job_id, &source.id)
+                .await?
         {
+            repo::record_child_traversal_completion(
+                &self.db,
+                job_id,
+                &source.id,
+                source.resource_key.as_deref(),
+                &destination_folder_id,
+                Some(&parent.source_folder_id),
+            )
+            .await?;
             return Ok(());
         }
         validate_source_for_clone(source)?;
@@ -1073,7 +1082,7 @@ impl CloneService {
             },
         )
         .await?;
-        repo::record_traversal_folder(
+        repo::record_child_traversal_completion(
             &self.db,
             job_id,
             &source.id,
@@ -1082,7 +1091,6 @@ impl CloneService {
             Some(&parent.source_folder_id),
         )
         .await?;
-        repo::increment_job_counts(&self.db, job_id, 1, 1, 0, 0).await?;
         Ok(())
     }
 
