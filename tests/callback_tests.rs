@@ -245,7 +245,7 @@ fn all_keyboards_callback_data_within_64_bytes() {
         let mut test_keyboards = vec![
             main_menu_keyboard(true, lang),
             main_menu_keyboard(false, lang),
-            settings_keyboard(lang),
+            settings_keyboard(lang, true, true, true),
             account_keyboard(lang),
             account_disconnect_confirm_keyboard(lang),
             confirm_clear_destination_keyboard(lang),
