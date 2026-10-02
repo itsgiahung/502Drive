@@ -487,6 +487,9 @@ async fn advance_consumed_sequence() {
     repo::advance_watch_consumed_sequence(&db, &watch_id, 42)
         .await
         .unwrap();
+    repo::advance_watch_consumed_sequence(&db, &watch_id, 7)
+        .await
+        .unwrap();
 
     let watches = repo::list_watches_for_user(&db, 9).await.unwrap();
     assert_eq!(watches[0].last_consumed_sequence, 42);

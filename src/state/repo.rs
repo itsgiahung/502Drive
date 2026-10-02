@@ -3173,7 +3173,8 @@ pub async fn advance_watch_consumed_sequence(
             conn.execute(
                 "UPDATE watch_subscriptions
                  SET last_consumed_sequence = ?1, last_consumed_at_ms = ?2, updated_at_ms = ?2
-                 WHERE id = ?3",
+                 WHERE id = ?3
+                   AND last_consumed_sequence < ?1",
                 params![last_consumed_sequence, now, watch_id],
             )?;
             Ok::<(), rusqlite::Error>(())
