@@ -41,6 +41,8 @@ pub struct JobCounts {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StartupRecoverySummary {
     pub jobs_marked_recovering: usize,
+    pub jobs_marked_paused: usize,
+    pub jobs_marked_cancelled: usize,
     pub traversal_folders_requeued: usize,
     pub operation_intents_replanned: usize,
     pub job_items_requeued: usize,
@@ -784,9 +786,19 @@ pub async fn recover_interrupted_state(db: &Database) -> anyhow::Result<StartupR
             let jobs_marked_recovering = tx.execute(
                 "UPDATE jobs
                  SET status = 'recovering', updated_at_ms = ?1
-                 WHERE status IN (
-                    'discovering', 'running', 'pausing', 'cancelling'
-                 )",
+                 WHERE status IN ('discovering', 'running')",
+                params![now],
+            )?;
+            let jobs_marked_paused = tx.execute(
+                "UPDATE jobs
+                 SET status = 'paused', updated_at_ms = ?1
+                 WHERE status = 'pausing'",
+                params![now],
+            )?;
+            let jobs_marked_cancelled = tx.execute(
+                "UPDATE jobs
+                 SET status = 'cancelled', updated_at_ms = ?1
+                 WHERE status = 'cancelling'",
                 params![now],
             )?;
 
@@ -815,6 +827,8 @@ pub async fn recover_interrupted_state(db: &Database) -> anyhow::Result<StartupR
 
             Ok::<StartupRecoverySummary, rusqlite::Error>(StartupRecoverySummary {
                 jobs_marked_recovering,
+                jobs_marked_paused,
+                jobs_marked_cancelled,
                 traversal_folders_requeued,
                 operation_intents_replanned,
                 job_items_requeued,

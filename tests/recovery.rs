@@ -36,6 +36,34 @@ async fn startup_recovery_requeues_interrupted_work() {
         .await
         .unwrap();
 
+    let pausing_job = repo::create_job(
+        &db,
+        1,
+        2,
+        "default",
+        "pause-source",
+        "dest-parent",
+    )
+    .await
+    .unwrap();
+    repo::update_job_status(&db, &pausing_job, JobStatusValue::Pausing, None)
+        .await
+        .unwrap();
+
+    let cancelling_job = repo::create_job(
+        &db,
+        1,
+        2,
+        "default",
+        "cancel-source",
+        "dest-parent",
+    )
+    .await
+    .unwrap();
+    repo::update_job_status(&db, &cancelling_job, JobStatusValue::Cancelling, None)
+        .await
+        .unwrap();
+
     repo::record_traversal_folder(&db, &job_id, "src-folder", None, "dst-folder", None)
         .await
         .unwrap();
@@ -83,6 +111,8 @@ async fn startup_recovery_requeues_interrupted_work() {
 
     let summary = recovery::recover_on_startup(&db).await.unwrap();
     assert_eq!(summary.jobs_marked_recovering, 1);
+    assert_eq!(summary.jobs_marked_paused, 1);
+    assert_eq!(summary.jobs_marked_cancelled, 1);
     assert_eq!(summary.traversal_folders_requeued, 1);
     assert_eq!(summary.operation_intents_replanned, 1);
     assert_eq!(summary.job_items_requeued, 1);
@@ -91,10 +121,25 @@ async fn startup_recovery_requeues_interrupted_work() {
         repo::job_status(&db, &job_id).await.unwrap().as_deref(),
         Some("recovering")
     );
+    assert_eq!(
+        repo::job_status(&db, &pausing_job).await.unwrap().as_deref(),
+        Some("paused")
+    );
+    assert_eq!(
+        repo::job_status(&db, &cancelling_job).await.unwrap().as_deref(),
+        Some("cancelled")
+    );
     let counts = repo::job_status_counts(&db).await.unwrap();
-    assert_eq!(counts.len(), 1);
-    assert_eq!(counts[0].status, "recovering");
-    assert_eq!(counts[0].count, 1);
+    assert_eq!(counts.len(), 3);
+    for status in ["recovering", "paused", "cancelled"] {
+        assert_eq!(
+            counts
+                .iter()
+                .find(|row| row.status == status)
+                .map(|row| row.count),
+            Some(1)
+        );
+    }
     assert_eq!(
         repo::item_status(&db, &job_id, "src-file")
             .await
@@ -118,6 +163,8 @@ async fn startup_recovery_requeues_interrupted_work() {
 
     let second = recovery::recover_on_startup(&db).await.unwrap();
     assert_eq!(second.jobs_marked_recovering, 0);
+    assert_eq!(second.jobs_marked_paused, 0);
+    assert_eq!(second.jobs_marked_cancelled, 0);
     assert_eq!(second.traversal_folders_requeued, 1);
     assert_eq!(second.operation_intents_replanned, 0);
     assert_eq!(second.job_items_requeued, 0);

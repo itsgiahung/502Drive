@@ -32,6 +32,8 @@ pub async fn recover_on_startup(db: &Database) -> anyhow::Result<StartupRecovery
     if summary != StartupRecoverySummary::default() {
         info!(
             jobs_marked_recovering = summary.jobs_marked_recovering,
+            jobs_marked_paused = summary.jobs_marked_paused,
+            jobs_marked_cancelled = summary.jobs_marked_cancelled,
             traversal_folders_requeued = summary.traversal_folders_requeued,
             operation_intents_replanned = summary.operation_intents_replanned,
             job_items_requeued = summary.job_items_requeued,
