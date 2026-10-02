@@ -303,11 +303,11 @@ export const WatchCard: React.FC<WatchCardProps> = ({
 
       <div className="flex items-center gap-2 text-xs bg-bg-input/60 p-2 rounded-lg font-mono text-text-secondary overflow-hidden select-text">
         <span className="text-text-muted truncate max-w-[42%]" title={watch.source_root_id}>
-          src: {watch.source_root_id}
+          {watch.source_name ?? watch.source_root_id}
         </span>
         <ArrowRight className="h-3 w-3 shrink-0 text-text-muted" />
         <span className="text-text-primary truncate max-w-[42%]" title={watch.destination_root_id}>
-          dst: {watch.destination_root_id}
+          {watch.destination_name ?? watch.destination_root_id}
         </span>
       </div>
 
