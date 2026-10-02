@@ -108,12 +108,12 @@ if command -v update-desktop-database &>/dev/null; then
 fi
 ok "Installed desktop launcher to ~/.local/share/applications/502drive.desktop"
 
-# 5. Install systemd user services
+# 5. Install the tray systemd user service. The daemon unit is generated
+# after config setup so its sandbox can allow the effective storage paths.
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 mkdir -p "$SYSTEMD_USER_DIR"
-cp "$SCRIPT_DIR/gdclone-bot.service" "$SYSTEMD_USER_DIR/gdclone-bot.service"
 cp "$SCRIPT_DIR/502drive-tray.service" "$SYSTEMD_USER_DIR/502drive-tray.service"
-ok "Installed systemd user services to ~/.config/systemd/user/"
+ok "Installed tray service to ~/.config/systemd/user/"
 
 # 6. Setup default config if absent
 CONFIG_DIR="$HOME/.config/gdclone-bot"
@@ -124,11 +124,18 @@ if [ ! -f "$CONFIG_DIR/config.toml" ]; then
         install -m 600 "$REPO_DIR/config.sample.toml" "$CONFIG_DIR/config.toml"
         info "Created default config at ~/.config/gdclone-bot/config.toml"
         warn "Vui lòng mở ~/.config/gdclone-bot/config.toml để điền Telegram Bot Token và Google Client ID!"
+    else
+        error_exit "config.sample.toml not found; cannot generate a valid service config"
     fi
 else
     chmod 600 "$CONFIG_DIR/config.toml"
     ok "Existing configuration file found at ~/.config/gdclone-bot/config.toml"
 fi
+
+# 6b. Generate daemon unit from the effective config. This preserves systemd
+# hardening while allowing custom db/log/report paths through ReadWritePaths.
+"$HOME/.local/bin/502drive" --config "$CONFIG_DIR/config.toml" service-install
+ok "Generated daemon service from effective storage paths"
 
 # 7. Reload systemd daemon
 if command -v systemctl &>/dev/null; then

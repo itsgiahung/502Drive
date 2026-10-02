@@ -16,24 +16,28 @@ ok()   { printf "${GREEN}    ok:${RESET} %s\n" "$*"; }
 fail() { printf "${RED}    ERROR:${RESET} %s\n" "$*" >&2; exit 1; }
 
 SERVICE_NAME="gdclone-bot"
-SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/gdclone-bot"
-DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gdclone-bot"
-LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/gdclone-bot"
 BINARY_PATH="${BINARY_PATH:-$HOME/.local/bin/gdclone-bot}"
 CONFIG_PATH="${CONFIG_PATH:-$CONFIG_DIR/config.toml}"
 
 # ── 1. Binary ────────────────────────────────────────────────────────────────
 say "Checking binary"
-if [[ -f "target/release/$SERVICE_NAME" ]]; then
+SOURCE_BINARY=""
+if [[ -f "target/release/502drive" ]]; then
+    SOURCE_BINARY="target/release/502drive"
+elif [[ -f "target/release/$SERVICE_NAME" ]]; then
+    SOURCE_BINARY="target/release/$SERVICE_NAME"
+fi
+
+if [[ -n "$SOURCE_BINARY" ]]; then
     say "Installing release binary → $BINARY_PATH"
     mkdir -p "$(dirname "$BINARY_PATH")"
-    install -m 755 "target/release/$SERVICE_NAME" "$BINARY_PATH"
+    install -m 755 "$SOURCE_BINARY" "$BINARY_PATH"
     ok "$BINARY_PATH installed"
 elif [[ -f "$BINARY_PATH" ]]; then
     ok "Using existing binary at $BINARY_PATH"
 else
-    fail "Binary not found. Run: cargo build --release"
+    fail "Binary not found. Run: cargo build --release --bin 502drive"
 fi
 
 # ── 2. Config ────────────────────────────────────────────────────────────────
@@ -56,56 +60,18 @@ else
     fi
 fi
 
-# ── 3. Directories ──────────────────────────────────────────────────────────
-say "Creating data/log directories"
-mkdir -p "$DATA_DIR" "$CONFIG_DIR" "$LOG_DIR"
-chmod 700 "$DATA_DIR" "$CONFIG_DIR"
-ok "Directories ready"
+# ── 3. Private config directory ──────────────────────────────────────────────
+mkdir -p "$CONFIG_DIR"
+chmod 700 "$CONFIG_DIR"
+chmod 600 "$CONFIG_PATH"
+ok "Config permissions ready"
 
-# ── 4. Write unit file ──────────────────────────────────────────────────────
-say "Writing systemd unit → $SERVICE_DIR/$SERVICE_NAME.service"
-mkdir -p "$SERVICE_DIR"
-cat > "$SERVICE_DIR/$SERVICE_NAME.service" <<EOF
-[Unit]
-Description=gdclone-bot — Google Drive clone/watch Telegram bot
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=simple
-ExecStart=$BINARY_PATH --config $CONFIG_PATH run
-Restart=on-failure
-RestartSec=10s
-RestartSteps=3
-RestartMaxDelaySec=60s
-TimeoutStartSec=30
-TimeoutStopSec=30
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=gdclone-bot
-Environment=RUST_LOG=gdclone_bot=info,warn
-
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=strict
-ProtectHome=read-only
-ProtectKernelTunables=yes
-ProtectControlGroups=yes
-RestrictSUIDSGID=yes
-LockPersonality=yes
-MemoryDenyWriteExecute=yes
-RestrictRealtime=yes
-SystemCallFilter=@system-service
-SystemCallErrorNumber=EPERM
-
-ReadWritePaths=$DATA_DIR
-ReadWritePaths=$CONFIG_DIR
-ReadWritePaths=$LOG_DIR
-
-[Install]
-WantedBy=default.target
-EOF
-ok "Unit file written"
+# ── 4. Generate unit from effective config ──────────────────────────────────
+# Delegate to the Rust platform implementation so service hardening and
+# ReadWritePaths stay in sync with custom storage.db_path/log_dir/report_dir.
+say "Generating hardened systemd unit from effective config"
+"$BINARY_PATH" --config "$CONFIG_PATH" service-install
+ok "Unit file generated"
 
 # ── 5. Stop any foreground process ─────────────────────────────────────────
 if pgrep -u "$USER" -f "$SERVICE_NAME .* run" > /dev/null 2>&1; then

@@ -1,6 +1,8 @@
 const DOCKERFILE: &str = include_str!("../Dockerfile");
 const DOCKER_COMPOSE: &str = include_str!("../docker-compose.yml");
 const LINUX_INSTALLER: &str = include_str!("../packaging/install.sh");
+const LINUX_PACKAGER: &str = include_str!("../packaging/package.sh");
+const SYSTEMD_INSTALLER: &str = include_str!("../scripts/install-systemd-user.sh");
 const BACKUP_SCRIPT: &str = include_str!("../scripts/backup.sh");
 const RESTORE_SCRIPT: &str = include_str!("../scripts/restore.sh");
 
@@ -44,6 +46,23 @@ fn linux_installer_keeps_secret_config_owner_only() {
         )
     );
     assert!(LINUX_INSTALLER.contains("chmod 600 \"$CONFIG_DIR/config.toml\""));
+}
+
+#[test]
+fn linux_installer_generates_daemon_unit_from_effective_config() {
+    assert!(LINUX_INSTALLER.contains(
+        "\"$HOME/.local/bin/502drive\" --config \"$CONFIG_DIR/config.toml\" service-install"
+    ));
+    assert!(!LINUX_INSTALLER.contains(
+        "cp \"$SCRIPT_DIR/gdclone-bot.service\" \"$SYSTEMD_USER_DIR/gdclone-bot.service\""
+    ));
+    assert!(!LINUX_PACKAGER.contains(
+        "cp packaging/gdclone-bot.service \"$TAR_DIR/packaging/\""
+    ));
+    assert!(SYSTEMD_INSTALLER.contains(
+        "\"$BINARY_PATH\" --config \"$CONFIG_PATH\" service-install"
+    ));
+    assert!(!SYSTEMD_INSTALLER.contains("ReadWritePaths=$DATA_DIR"));
 }
 
 #[test]

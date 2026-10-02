@@ -51,7 +51,6 @@ cp packaging/502drive.svg "$TAR_DIR/packaging/"
 cp packaging/502drive.png "$TAR_DIR/packaging/"
 cp packaging/502drive.ico "$TAR_DIR/packaging/"
 cp -r packaging/icons "$TAR_DIR/packaging/"
-cp packaging/gdclone-bot.service "$TAR_DIR/packaging/"
 cp packaging/502drive-tray.service "$TAR_DIR/packaging/"
 cp scripts/502drive-tray.py "$TAR_DIR/scripts/"
 

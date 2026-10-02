@@ -26,7 +26,7 @@ journalctl --user -u gdclone-bot -n 50
 
 - After editing/reinstalling the unit, run `systemctl --user daemon-reload` first.
 - Service dies at logout: `loginctl enable-linger "$USER"` (the install script does this when permitted; on some hosts PAM/policy blocks linger for non-logged-in users).
-- The hardened unit uses `ProtectSystem=strict` with `ReadWritePaths` limited to config/data/log dirs — if you moved `storage.db_path` elsewhere, add that path to `ReadWritePaths=` in `~/.config/systemd/user/gdclone-bot.service`.
+- The hardened unit uses `ProtectSystem=strict`. Its `ReadWritePaths` entries are generated from the effective config, including the config directory, the parent of `storage.db_path`, `storage.log_dir`, and `storage.report_dir`. If you change any storage path, rerun `502drive --config <path> service-install` and then `systemctl --user daemon-reload`.
 
 ## 4. Telegram: bot does not respond, HTTP 401 / 409
 

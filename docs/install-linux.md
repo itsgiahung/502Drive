@@ -64,7 +64,7 @@ At minimum set `telegram.bot_token`, `telegram.owner_telegram_id`, `google_oauth
 
 ## 6. Run as a systemd user service
 
-`packaging/install.sh` already copied the unit file. To start it:
+`packaging/install.sh` already generated the daemon unit from the effective config (plus the tray unit). To start it:
 
 ```bash
 systemctl --user daemon-reload
@@ -75,7 +75,7 @@ journalctl --user -u gdclone-bot.service -f
 
 ### Alternative: hardened script installer
 
-`scripts/install-systemd-user.sh` writes a hardened unit (system-call filter, `ProtectSystem=strict`, writable paths limited to config/data/log dirs), enables linger so the service survives logout, and starts the service:
+`scripts/install-systemd-user.sh` delegates unit generation to `502drive service-install` (system-call filter, `ProtectSystem=strict`, writable paths derived from the effective config), enables linger so the service survives logout, and starts the service:
 
 ```bash
 bash scripts/install-systemd-user.sh
@@ -83,7 +83,7 @@ systemctl --user status gdclone-bot --no-pager
 journalctl --user -u gdclone-bot -f
 ```
 
-It installs `target/release/gdclone-bot` to `~/.local/bin/gdclone-bot` (same binary, alias name), writes `~/.config/systemd/user/gdclone-bot.service`, and enables linger via `loginctl enable-linger "$USER"` when permitted.
+It accepts the canonical `target/release/502drive` build (falling back to the legacy alias), installs it at the configured binary path, generates `~/.config/systemd/user/gdclone-bot.service`, and enables linger via `loginctl enable-linger "$USER"` when permitted.
 
 Manual controls:
 
