@@ -117,11 +117,23 @@ const AppContent: React.FC = () => {
       setUpdateInfo(info)
     }).catch(() => {})
 
+    const pollIfVisible = () => {
+      if (!isWizardOpen && document.visibilityState === 'visible') {
+        refreshData(true)
+      }
+    }
+
     const interval = setInterval(() => {
       // Background polling is silent — no spinner flicker every 3 seconds.
-      if (!isWizardOpen) refreshData(true)
+      // Suspend DB/IPC churn while the desktop window is hidden/minimized.
+      pollIfVisible()
     }, 3000)
-    return () => clearInterval(interval)
+    document.addEventListener('visibilitychange', pollIfVisible)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', pollIfVisible)
+    }
   }, [refreshConfig, refreshData, isWizardOpen])
 
   // Sync lang from config on initial load
