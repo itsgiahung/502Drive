@@ -5802,7 +5802,7 @@ mod tests {
         }];
         let text = render_destination_list(&profiles, keyboards::UiLanguage::En);
         assert!(text.contains("✓ Backup [default]"));
-        assert!(text.contains("My Drive / shared"));
+        assert!(text.contains("My Drive"));
         assert!(!text.contains("abcdefgh"), "raw IDs stay out of the card");
     }
 

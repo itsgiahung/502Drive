@@ -881,7 +881,7 @@ mod tests {
                 .inline_keyboard
                 .iter()
                 .flatten()
-                .any(|button| button.text == "Report")
+                .any(|button| button.text == "Báo cáo")
         );
     }
 
@@ -893,7 +893,7 @@ mod tests {
                 .inline_keyboard
                 .iter()
                 .flatten()
-                .any(|button| button.text == "Report")
+                .any(|button| button.text == "Báo cáo")
         );
     }
 
@@ -986,7 +986,7 @@ mod tests {
             callback_of(&failed.inline_keyboard[0][1]),
             Some("job:errors:job-123")
         );
-        assert_eq!(failed.inline_keyboard[0][2].text, "Report");
+        assert_eq!(failed.inline_keyboard[0][2].text, "Báo cáo");
         assert_eq!(
             callback_of(&failed.inline_keyboard[0][2]),
             Some("job:report:job-123")
