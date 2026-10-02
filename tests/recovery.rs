@@ -294,6 +294,74 @@ async fn watch_initial_clone_job_is_unique_and_excluded_from_generic_resume() {
 }
 
 #[tokio::test]
+async fn failed_watch_initial_clone_job_can_recover_without_failed_children() {
+    let db = Database::in_memory().await.unwrap();
+    db.run_migrations().await.unwrap();
+    repo::upsert_google_account(
+        &db,
+        "default",
+        Some("user@example.com"),
+        vec![1, 2, 3],
+        "test",
+        r#"["https://www.googleapis.com/auth/drive"]"#,
+    )
+    .await
+    .unwrap();
+
+    let job_spec = repo::NewJob {
+        chat_id: 100,
+        telegram_user_id: 200,
+        google_account_id: "default".to_string(),
+        source_root_id: "source-root".to_string(),
+        source_resource_key: None,
+        source_drive_id: None,
+        source_name: Some("Source".to_string()),
+        destination_parent_id: "dest-parent".to_string(),
+        destination_drive_id: None,
+        destination_name: None,
+        progress_message_id: None,
+        duplicate_policy: "skip_same_source".to_string(),
+    };
+    let failed =
+        repo::get_or_create_watch_initial_clone_job(&db, "watch-retry", job_spec.clone())
+            .await
+            .unwrap();
+    repo::update_job_status(
+        &db,
+        &failed.id,
+        JobStatusValue::Failed,
+        Some("transient startup failure"),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        repo::retry_failed_watch_initial_clone_job(&db, "watch-retry", &failed.id)
+            .await
+            .unwrap()
+    );
+    let recovered =
+        repo::get_or_create_watch_initial_clone_job(&db, "watch-retry", job_spec.clone())
+            .await
+            .unwrap();
+    assert_eq!(recovered.id, failed.id);
+    assert_eq!(recovered.status, "recovering");
+
+    repo::update_job_status(&db, &failed.id, JobStatusValue::Cancelled, None)
+        .await
+        .unwrap();
+    assert!(
+        !repo::retry_failed_watch_initial_clone_job(&db, "watch-retry", &failed.id)
+            .await
+            .unwrap()
+    );
+    let cancelled = repo::get_or_create_watch_initial_clone_job(&db, "watch-retry", job_spec)
+        .await
+        .unwrap();
+    assert_eq!(cancelled.status, "cancelled");
+}
+
+#[tokio::test]
 async fn job_visibility_queries_are_scoped_to_user() {
     let (db, active_job_id) = test_db().await;
     repo::update_job_counts(&db, &active_job_id, 3, 2, 1, 0)

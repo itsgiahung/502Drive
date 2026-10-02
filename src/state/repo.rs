@@ -1450,6 +1450,73 @@ pub async fn cancel_job_for_user(
         .await?)
 }
 
+pub async fn retry_failed_watch_initial_clone_job(
+    db: &Database,
+    watch_id: &str,
+    job_id: &str,
+) -> anyhow::Result<bool> {
+    let watch_id = watch_id.to_string();
+    let job_id = job_id.to_string();
+    Ok(db
+        .conn()
+        .call(move |conn| {
+            let now = now_ms();
+            let tx = conn.transaction()?;
+
+            let eligible: bool = tx.query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM jobs
+                    WHERE id = ?1
+                      AND kind = 'watch_initial_clone'
+                      AND watch_id = ?2
+                      AND status = 'failed'
+                 )",
+                params![job_id, watch_id],
+                |row| row.get(0),
+            )?;
+            if !eligible {
+                return Ok::<bool, rusqlite::Error>(false);
+            }
+
+            tx.execute(
+                "UPDATE traversal_folders
+                 SET scan_state = 'pending', last_error = NULL, updated_at_ms = ?1
+                 WHERE job_id = ?2 AND scan_state = 'failed'",
+                params![now, job_id],
+            )?;
+            tx.execute(
+                "UPDATE job_items
+                 SET status = 'ready',
+                     attempts = 0,
+                     last_error_code = NULL,
+                     last_error_message = NULL
+                 WHERE job_id = ?1 AND status = 'failed'",
+                params![job_id],
+            )?;
+            tx.execute(
+                "UPDATE operation_intents
+                 SET status = 'planned', last_error = NULL, updated_at_ms = ?1
+                 WHERE job_id = ?2 AND status = 'failed'",
+                params![now, job_id],
+            )?;
+            let changed = tx.execute(
+                "UPDATE jobs
+                 SET status = 'recovering',
+                     failed_items = 0,
+                     error_summary = NULL,
+                     updated_at_ms = ?1
+                 WHERE id = ?2
+                   AND kind = 'watch_initial_clone'
+                   AND watch_id = ?3
+                   AND status = 'failed'",
+                params![now, job_id, watch_id],
+            )?;
+            tx.commit()?;
+            Ok(changed > 0)
+        })
+        .await?)
+}
+
 pub async fn retry_failed_job_for_user(
     db: &Database,
     telegram_user_id: i64,

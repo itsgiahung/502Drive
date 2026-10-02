@@ -460,29 +460,43 @@ impl CloneService {
         validate_source_for_clone(&source)?;
 
         if let Some(watch_id) = watch_id {
-            let job = repo::get_or_create_watch_initial_clone_job(
-                &self.db,
-                &watch_id,
-                repo::NewJob {
-                    chat_id: request.chat_id,
-                    telegram_user_id: request.telegram_user_id,
-                    google_account_id: "default".to_string(),
-                    source_root_id: source.id.clone(),
-                    source_resource_key: request
-                        .source
-                        .resource_key
-                        .clone()
-                        .or(source.resource_key.clone()),
-                    source_drive_id: source.drive_id.clone(),
-                    destination_parent_id: destination_parent_id.clone(),
-                    destination_drive_id,
-                    progress_message_id: request.progress_message_id,
-                    duplicate_policy: self.config.engine.default_duplicate_policy.clone(),
-                    source_name: Some(source.name.clone()),
-                    destination_name: None,
-                },
-            )
-            .await?;
+            let job_spec = repo::NewJob {
+                chat_id: request.chat_id,
+                telegram_user_id: request.telegram_user_id,
+                google_account_id: "default".to_string(),
+                source_root_id: source.id.clone(),
+                source_resource_key: request
+                    .source
+                    .resource_key
+                    .clone()
+                    .or(source.resource_key.clone()),
+                source_drive_id: source.drive_id.clone(),
+                destination_parent_id: destination_parent_id.clone(),
+                destination_drive_id,
+                progress_message_id: request.progress_message_id,
+                duplicate_policy: self.config.engine.default_duplicate_policy.clone(),
+                source_name: Some(source.name.clone()),
+                destination_name: None,
+            };
+            let mut job =
+                repo::get_or_create_watch_initial_clone_job(&self.db, &watch_id, job_spec.clone())
+                    .await?;
+
+            if job.status == "failed" {
+                if repo::retry_failed_watch_initial_clone_job(&self.db, &watch_id, &job.id).await? {
+                    job.status = "recovering".to_string();
+                } else {
+                    // Another process may have changed the job between the
+                    // initial read and retry CAS. Re-read the canonical row
+                    // instead of acting on the stale failed status.
+                    job = repo::get_or_create_watch_initial_clone_job(
+                        &self.db,
+                        &watch_id,
+                        job_spec,
+                    )
+                    .await?;
+                }
+            }
 
             return match job.status.as_str() {
                 "queued" | "recovering" => self.resume_one_shot_job(&job).await,
