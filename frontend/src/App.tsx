@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Shell } from '@/components/layout/Shell'
-import { TabId } from '@/components/layout/Sidebar'
+import type { TabId } from '@/components/layout/Sidebar'
 import { Dashboard } from '@/pages/Dashboard'
-import { Jobs } from '@/pages/Jobs'
-import { Settings } from '@/pages/Settings'
-import { Dev, DevSubTab } from '@/pages/Dev'
+import type { DevSubTab } from '@/pages/Dev'
 import { PreflightSplash } from '@/components/layout/PreflightSplash'
 import { SetupWizardModal } from '@/components/setup/SetupWizardModal'
 import { QuickCloneModal } from '@/components/modals/QuickCloneModal'
@@ -13,9 +11,15 @@ import { UpdateModal } from '@/components/modals/UpdateModal'
 import { ToastProvider, useToast } from '@/components/primitives/Toast'
 import { ThemeProvider } from '@/hooks/useTheme'
 import { I18nProvider, useI18n } from '@/hooks/useI18n'
-import { Language } from '@/lib/i18n'
+import type { Language } from '@/lib/i18n'
 import { api, getErrorMessage } from '@/lib/ipc'
-import { SystemStatus, JobSummary, WatchSummary, ConfigSummary, WatchPolicyKind, RemoteUpdateInfo } from '@/lib/types'
+import type { SystemStatus, JobSummary, WatchSummary, ConfigSummary, WatchPolicyKind, RemoteUpdateInfo } from '@/lib/types'
+
+const Jobs = React.lazy(() => import('@/pages/Jobs').then(({ Jobs }) => ({ default: Jobs })))
+const Settings = React.lazy(() =>
+  import('@/pages/Settings').then(({ Settings }) => ({ default: Settings }))
+)
+const Dev = React.lazy(() => import('@/pages/Dev').then(({ Dev }) => ({ default: Dev })))
 
 const AppContent: React.FC = () => {
   const [isPreflightDone, setIsPreflightDone] = useState(false)
@@ -429,66 +433,68 @@ const AppContent: React.FC = () => {
           onOpenCreateWatch={() => setIsWatchOpen(true)}
           isStale={statusStale || jobsStale || watchesStale}
         >
-          {activeTab === 'dashboard' && (
-            <Dashboard
-              status={status}
-              recentJobs={jobs}
-              onOpenBot={handleOpenBot}
-              onTriggerLogin={handleTriggerLogin}
-              onTriggerRevoke={handleTriggerRevoke}
-              onRestartService={handleRestartService}
-              onPauseJob={handlePauseJob}
-              onResumeJob={handleResumeJob}
-              onCancelJob={handleCancelJob}
-              onNavigateToJobs={() => setActiveTab('jobs')}
-              onNavigateToSettings={() => setActiveTab('settings')}
-              onOpenWizard={() => setIsWizardOpen(true)}
-              onOpenQuickClone={() => setIsCloneOpen(true)}
-              isStale={statusStale || jobsStale || watchesStale}
-              lastRuntimeSuccessAt={lastRuntimeSuccessAt}
-              staleDomains={{ status: statusStale, jobs: jobsStale, watches: watchesStale }}
-            />
-          )}
+          <React.Suspense fallback={<div className="min-h-[240px]" aria-busy="true" />}>
+            {activeTab === 'dashboard' && (
+              <Dashboard
+                status={status}
+                recentJobs={jobs}
+                onOpenBot={handleOpenBot}
+                onTriggerLogin={handleTriggerLogin}
+                onTriggerRevoke={handleTriggerRevoke}
+                onRestartService={handleRestartService}
+                onPauseJob={handlePauseJob}
+                onResumeJob={handleResumeJob}
+                onCancelJob={handleCancelJob}
+                onNavigateToJobs={() => setActiveTab('jobs')}
+                onNavigateToSettings={() => setActiveTab('settings')}
+                onOpenWizard={() => setIsWizardOpen(true)}
+                onOpenQuickClone={() => setIsCloneOpen(true)}
+                isStale={statusStale || jobsStale || watchesStale}
+                lastRuntimeSuccessAt={lastRuntimeSuccessAt}
+                staleDomains={{ status: statusStale, jobs: jobsStale, watches: watchesStale }}
+              />
+            )}
 
-          {activeTab === 'jobs' && (
-            <Jobs
-              jobs={jobs}
-              watches={watches}
-              onPauseJob={handlePauseJob}
-              onResumeJob={handleResumeJob}
-              onCancelJob={handleCancelJob}
-              onPauseWatch={handlePauseWatch}
-              onResumeWatch={handleResumeWatch}
-              onRetryJob={handleRetryJob}
-              onSetWatchPolicy={handleSetWatchPolicy}
-              onUnwatch={handleUnwatch}
-              onCreateWatch={() => setIsWatchOpen(true)}
-              onRefresh={refreshData}
-              isRefreshing={isRefreshing}
-            />
-          )}
+            {activeTab === 'jobs' && (
+              <Jobs
+                jobs={jobs}
+                watches={watches}
+                onPauseJob={handlePauseJob}
+                onResumeJob={handleResumeJob}
+                onCancelJob={handleCancelJob}
+                onPauseWatch={handlePauseWatch}
+                onResumeWatch={handleResumeWatch}
+                onRetryJob={handleRetryJob}
+                onSetWatchPolicy={handleSetWatchPolicy}
+                onUnwatch={handleUnwatch}
+                onCreateWatch={() => setIsWatchOpen(true)}
+                onRefresh={refreshData}
+                isRefreshing={isRefreshing}
+              />
+            )}
 
-          {activeTab === 'settings' && (
-            <Settings
-              config={config}
-              status={status}
-              onUpdateConfig={handleUpdateConfig}
-              onTriggerLogin={handleTriggerLogin}
-              onTriggerRevoke={handleTriggerRevoke}
-              onRestartService={handleRestartService}
-              onCheckUpdate={handleCheckRemoteUpdate}
-              onOpenWizard={() => setIsWizardOpen(true)}
-            />
-          )}
+            {activeTab === 'settings' && (
+              <Settings
+                config={config}
+                status={status}
+                onUpdateConfig={handleUpdateConfig}
+                onTriggerLogin={handleTriggerLogin}
+                onTriggerRevoke={handleTriggerRevoke}
+                onRestartService={handleRestartService}
+                onCheckUpdate={handleCheckRemoteUpdate}
+                onOpenWizard={() => setIsWizardOpen(true)}
+              />
+            )}
 
-          {activeTab === 'dev' && (
-            <Dev
-              onRunDoctor={api.runDoctor}
-              onGetLogs={api.getLogs}
-              activeSubTab={devSubTab}
-              onSubTabChange={setDevSubTab}
-            />
-          )}
+            {activeTab === 'dev' && (
+              <Dev
+                onRunDoctor={api.runDoctor}
+                onGetLogs={api.getLogs}
+                activeSubTab={devSubTab}
+                onSubTabChange={setDevSubTab}
+              />
+            )}
+          </React.Suspense>
         </Shell>
       )}
 
