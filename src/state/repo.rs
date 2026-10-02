@@ -2652,12 +2652,14 @@ pub struct NewChangeEventRow {
 pub async fn commit_change_page(
     db: &Database,
     cursor_id: &str,
+    expected_page_token: &str,
     events: Vec<NewChangeEventRow>,
     next_page_token: Option<&str>,
     new_start_page_token: Option<&str>,
     next_poll_at_ms: i64,
-) -> anyhow::Result<i64> {
+) -> anyhow::Result<Option<i64>> {
     let cursor_id = cursor_id.to_string();
+    let expected_page_token = expected_page_token.to_string();
     let next_page_token = next_page_token.map(ToOwned::to_owned);
     let new_start_page_token = new_start_page_token.map(ToOwned::to_owned);
     Ok(db
@@ -2667,17 +2669,13 @@ pub async fn commit_change_page(
             let tx = conn.transaction()?;
 
             // Insert events — IGNORE on duplicate (page re-fetched after crash).
-            // The table's sequence is INTEGER PRIMARY KEY AUTOINCREMENT, so
-            // last_insert_rowid() after each INSERT gives the row's sequence
-            // without a per-row SELECT round-trip. For an INSERT OR IGNORE that
-            // skipped a duplicate, the value stays at the previous insert's
-            // rowid, which is safe: any pre-existing sequence is already <= the
-            // cursor's stored last_event_sequence (inserts and the cursor
-            // update commit in the same transaction), so MAX() below is
-            // unaffected either way.
+            // Only read last_insert_rowid() when SQLite confirms that this
+            // statement inserted a row. On an ignored duplicate the connection
+            // retains an unrelated previous rowid, which must never advance a
+            // cursor sequence.
             let mut last_sequence: i64 = 0;
             for event in &events {
-                tx.execute(
+                let inserted = tx.execute(
                     "INSERT OR IGNORE INTO change_events (
                         cursor_id, request_page_token, ordinal_in_page,
                         file_id, removed, file_json, received_at_ms
@@ -2692,40 +2690,57 @@ pub async fn commit_change_page(
                         now,
                     ],
                 )?;
-                // Track the max sequence inserted.
-                last_sequence = last_sequence.max(tx.last_insert_rowid());
+                if inserted > 0 {
+                    last_sequence = last_sequence.max(tx.last_insert_rowid());
+                }
             }
 
-            // Advance cursor token. Use newStartPageToken only at end of list.
+            // A valid Drive changes page always advances to either a next page
+            // token or a new start token. Fail closed rather than committing
+            // events without advancing the cursor.
             let new_token = new_start_page_token
                 .as_deref()
                 .or(next_page_token.as_deref())
-                .unwrap_or("");
-            if !new_token.is_empty() {
-                // Write last_event_at_ms only when this page contained events.
-                let new_last_event_at: Option<i64> =
-                    if events.is_empty() { None } else { Some(now) };
-                tx.execute(
-                    "UPDATE change_cursors
-                     SET current_page_token = ?1,
-                         last_event_sequence = MAX(last_event_sequence, ?2),
-                         next_poll_at_ms = ?3,
-                         last_success_at_ms = ?4,
-                         consecutive_error_count = 0,
-                         last_event_at_ms = COALESCE(?6, last_event_at_ms)
-                     WHERE id = ?5",
-                    params![
-                        new_token,
-                        last_sequence,
-                        next_poll_at_ms,
-                        now,
-                        cursor_id,
-                        new_last_event_at,
-                    ],
-                )?;
+                .filter(|token| !token.is_empty())
+                .ok_or_else(|| {
+                    rusqlite::Error::InvalidParameterName(
+                        "changes page missing continuation token".to_string(),
+                    )
+                })?;
+
+            // Compare-and-swap the cursor token. Multiple daemon processes may
+            // fetch the same page concurrently; only the process whose request
+            // token is still current may commit. A stale transaction rolls
+            // back its event inserts as well.
+            let new_last_event_at: Option<i64> =
+                if events.is_empty() { None } else { Some(now) };
+            let changed = tx.execute(
+                "UPDATE change_cursors
+                 SET current_page_token = ?1,
+                     last_event_sequence = MAX(last_event_sequence, ?2),
+                     next_poll_at_ms = ?3,
+                     last_success_at_ms = ?4,
+                     consecutive_error_count = 0,
+                     last_event_at_ms = COALESCE(?6, last_event_at_ms)
+                 WHERE id = ?5
+                   AND current_page_token = ?7",
+                params![
+                    new_token,
+                    last_sequence,
+                    next_poll_at_ms,
+                    now,
+                    cursor_id,
+                    new_last_event_at,
+                    expected_page_token,
+                ],
+            )?;
+            if changed == 0 {
+                tx.rollback()?;
+                return Ok::<Option<i64>, rusqlite::Error>(None);
             }
+
             tx.commit()?;
-            Ok::<i64, rusqlite::Error>(last_sequence)
+            Ok::<Option<i64>, rusqlite::Error>(Some(last_sequence))
         })
         .await?)
 }

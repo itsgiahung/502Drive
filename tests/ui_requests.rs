@@ -232,7 +232,7 @@ async fn watch_summaries_backlog_uses_cursor_not_baseline() {
             file_json: None,
         })
         .collect();
-    repo::commit_change_page(&db, &cursor.id, events, None, Some("tok2"), 1000)
+    repo::commit_change_page(&db, &cursor.id, "tok", events, None, Some("tok2"), 1000)
         .await
         .unwrap();
 
@@ -307,7 +307,7 @@ async fn watch_summaries_counts_pending_backlog() {
             file_json: None,
         })
         .collect();
-    repo::commit_change_page(&db, &cursor.id, events, None, Some("tok2"), 1000)
+    repo::commit_change_page(&db, &cursor.id, "tok", events, None, Some("tok2"), 1000)
         .await
         .unwrap();
     // Consumed 3 of 7.

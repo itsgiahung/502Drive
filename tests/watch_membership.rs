@@ -203,6 +203,7 @@ async fn watch_resume_over_backlog_limit_needs_reconcile() {
     repo::commit_change_page(
         &db,
         &cursor_id,
+        "tok",
         vec![
             repo::NewChangeEventRow {
                 cursor_id: cursor_id.clone(),
@@ -279,6 +280,7 @@ async fn paused_watch_over_backlog_limit_needs_reconcile() {
     repo::commit_change_page(
         &db,
         &cursor_id,
+        "tok",
         vec![
             repo::NewChangeEventRow {
                 cursor_id: cursor_id.clone(),
@@ -526,6 +528,7 @@ async fn watch_backlog_tracks_cursor_gap() {
     repo::commit_change_page(
         &db,
         &cursor_id,
+        "tok",
         vec![
             repo::NewChangeEventRow {
                 cursor_id: cursor_id.clone(),
@@ -739,8 +742,9 @@ async fn test_resolve_pending_and_conflict_details() {
             r#"{"id":"file-xyz","name":"doc.pdf","mimeType":"application/pdf","size":"1024","modifiedTime":"2026-09-17T12:00:00Z"}"#.into(),
         ),
     }];
-    let seq = repo::commit_change_page(&db, &cursor_id, events, None, Some("tok-2"), 0)
+    let seq = repo::commit_change_page(&db, &cursor_id, "tok", events, None, Some("tok-2"), 0)
         .await
+        .unwrap()
         .unwrap();
 
     // Save mapping for file-xyz

@@ -312,18 +312,18 @@ async fn poll_one_cursor(
                     })
                     .collect();
 
-                if !events.is_empty() {
-                    had_events_this_cycle = true;
-                    // Realtime trigger: wake the dispatch loop right away so
-                    // fresh events don't wait for the next heartbeat tick.
-                    dispatch_notify.notify_one();
-                }
-                let next_poll_at =
-                    compute_next_poll_ms(config, 0, had_events_this_cycle, idle_since_ms);
+                let page_had_events = !events.is_empty();
+                let next_poll_at = compute_next_poll_ms(
+                    config,
+                    0,
+                    had_events_this_cycle || page_had_events,
+                    idle_since_ms,
+                );
 
-                if let Err(err) = repo::commit_change_page(
+                match repo::commit_change_page(
                     db,
                     &cursor.id,
+                    &request_page_token,
                     events,
                     page.next_page_token.as_deref(),
                     page.new_start_page_token.as_deref(),
@@ -331,19 +331,36 @@ async fn poll_one_cursor(
                 )
                 .await
                 {
-                    let next = compute_next_poll_ms(
-                        config,
-                        cursor.consecutive_error_count + 1,
-                        false,
-                        idle_since_ms,
-                    );
-                    let _ = record_cursor_error(db, &cursor.id, next).await;
-                    warn!(
-                        cursor_id = cursor.id,
-                        error = %err,
-                        "failed to commit changes page, will retry page later"
-                    );
-                    return;
+                    Ok(Some(_)) => {
+                        if page_had_events {
+                            had_events_this_cycle = true;
+                            // Wake dispatch only after the page is durable.
+                            dispatch_notify.notify_one();
+                        }
+                    }
+                    Ok(None) => {
+                        info!(
+                            cursor_id = cursor.id,
+                            request_page_token,
+                            "changes page lost cursor CAS race; another poller advanced it"
+                        );
+                        return;
+                    }
+                    Err(err) => {
+                        let next = compute_next_poll_ms(
+                            config,
+                            cursor.consecutive_error_count + 1,
+                            false,
+                            idle_since_ms,
+                        );
+                        let _ = record_cursor_error(db, &cursor.id, next).await;
+                        warn!(
+                            cursor_id = cursor.id,
+                            error = %err,
+                            "failed to commit changes page, will retry page later"
+                        );
+                        return;
+                    }
                 }
                 match repo::mark_paused_watches_over_backlog_limit(
                     db,

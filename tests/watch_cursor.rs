@@ -83,7 +83,7 @@ async fn commit_page_advances_token() {
         },
     ];
 
-    repo::commit_change_page(&db, &cursor.id, events, None, Some("next-start-tok"), 0)
+    repo::commit_change_page(&db, &cursor.id, "start-tok", events, None, Some("next-start-tok"), 0)
         .await
         .unwrap();
 
@@ -97,31 +97,72 @@ async fn commit_page_advances_token() {
 // ── duplicate event rows are ignored (crash-safe) ────────────────────────────
 
 #[tokio::test]
-async fn commit_page_dedupe_on_replay() {
+async fn stale_change_page_cannot_overwrite_cursor_or_insert_events() {
     let db = test_db().await;
 
     let cursor = repo::upsert_change_cursor(&db, "default", "user", None, "tok")
         .await
         .unwrap();
 
-    let event = repo::NewChangeEventRow {
-        cursor_id: cursor.id.clone(),
-        request_page_token: "tok".into(),
-        ordinal_in_page: 0,
-        file_id: "file-x".into(),
-        removed: false,
-        file_json: None,
-    };
+    let first = repo::commit_change_page(
+        &db,
+        &cursor.id,
+        "tok",
+        vec![repo::NewChangeEventRow {
+            cursor_id: cursor.id.clone(),
+            request_page_token: "tok".into(),
+            ordinal_in_page: 0,
+            file_id: "file-x".into(),
+            removed: false,
+            file_json: None,
+        }],
+        None,
+        Some("tok-2"),
+        0,
+    )
+    .await
+    .unwrap();
+    assert!(first.is_some());
 
-    // First commit — should succeed.
-    repo::commit_change_page(&db, &cursor.id, vec![event.clone()], None, Some("tok-2"), 0)
+    // Simulate another daemon finishing a response fetched from the old token
+    // after the first daemon already advanced the cursor.
+    let stale = repo::commit_change_page(
+        &db,
+        &cursor.id,
+        "tok",
+        vec![repo::NewChangeEventRow {
+            cursor_id: cursor.id.clone(),
+            request_page_token: "tok".into(),
+            ordinal_in_page: 1,
+            file_id: "stale-file".into(),
+            removed: false,
+            file_json: None,
+        }],
+        None,
+        Some("stale-token"),
+        0,
+    )
+    .await
+    .unwrap();
+    assert_eq!(stale, None);
+
+    let cursors = repo::all_change_cursors(&db).await.unwrap();
+    let current = cursors.iter().find(|c| c.id == cursor.id).unwrap();
+    assert_eq!(current.current_page_token, "tok-2");
+
+    let cursor_id = cursor.id.clone();
+    let event_count: i64 = db
+        .conn()
+        .call(move |conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM change_events WHERE cursor_id = ?1",
+                [cursor_id],
+                |row| row.get(0),
+            )
+        })
         .await
         .unwrap();
-
-    // Second commit with same page — should succeed via OR IGNORE.
-    repo::commit_change_page(&db, &cursor.id, vec![event], None, Some("tok-2"), 0)
-        .await
-        .unwrap();
+    assert_eq!(event_count, 1);
 }
 
 #[tokio::test]
@@ -157,6 +198,7 @@ async fn failed_event_application_stays_pending() {
     let seq = repo::commit_change_page(
         &db,
         &cursor.id,
+        "tok",
         vec![repo::NewChangeEventRow {
             cursor_id: cursor.id.clone(),
             request_page_token: "tok".into(),
@@ -170,6 +212,7 @@ async fn failed_event_application_stays_pending() {
         0,
     )
     .await
+    .unwrap()
     .unwrap();
 
     repo::upsert_event_application(&db, &watch_id, seq, "new_item", "failed")
@@ -230,6 +273,7 @@ async fn watch_event_claim_is_exclusive_and_recoverable() {
     let seq = repo::commit_change_page(
         &db,
         &cursor.id,
+        "tok",
         vec![repo::NewChangeEventRow {
             cursor_id: cursor.id.clone(),
             request_page_token: "tok".into(),
@@ -243,6 +287,7 @@ async fn watch_event_claim_is_exclusive_and_recoverable() {
         0,
     )
     .await
+    .unwrap()
     .unwrap();
 
     assert!(
@@ -306,6 +351,7 @@ async fn needs_reconcile_watch_does_not_block_event_prune() {
     repo::commit_change_page(
         &db,
         &cursor.id,
+        "tok",
         vec![repo::NewChangeEventRow {
             cursor_id: cursor.id.clone(),
             request_page_token: "tok".into(),
