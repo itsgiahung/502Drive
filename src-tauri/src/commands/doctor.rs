@@ -543,12 +543,15 @@ pub async fn run_doctor() -> Result<DoctorResult, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_newer_release, parse_release_version, DEFAULT_CONFIG_TEMPLATE};
+    use super::{DEFAULT_CONFIG_TEMPLATE, is_newer_release, parse_release_version};
 
     #[test]
     fn preflight_template_matches_runtime_config_schema() {
         let parsed = toml::from_str::<gdclone_bot::config::AppConfig>(DEFAULT_CONFIG_TEMPLATE);
-        assert!(parsed.is_ok(), "preflight template must deserialize as AppConfig");
+        assert!(
+            parsed.is_ok(),
+            "preflight template must deserialize as AppConfig"
+        );
     }
 
     #[test]

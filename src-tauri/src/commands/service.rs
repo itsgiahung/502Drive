@@ -62,8 +62,7 @@ pub(crate) fn service_active() -> bool {
             .args(["--user", "is-active", "gdclone-bot"])
             .output()
             .map(|out| {
-                out.status.success()
-                    && String::from_utf8_lossy(&out.stdout).trim() == "active"
+                out.status.success() && String::from_utf8_lossy(&out.stdout).trim() == "active"
             })
             .unwrap_or(false);
     }
