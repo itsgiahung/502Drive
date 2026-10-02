@@ -617,7 +617,7 @@ pub(crate) async fn apply_classification(
                     let msg = format!(
                         "⚠ Watch `{short_id}`: nguồn `{file_id}` bị xoá/vào thùng rác.\nDùng lệnh /watch_status {short_id} để chọn hành động.",
                     );
-                    let _ = notify_tx.try_send(NotificationEvent::watch_error(
+                    let _ = notify_tx.try_send(NotificationEvent::watch_conflict(
                         watch.telegram_user_id,
                         watch.chat_id,
                         msg,
@@ -844,7 +844,7 @@ pub(crate) async fn apply_classification(
                     let msg = format!(
                         "⚠ Watch `{short_id}`: tệp `{file_name}` có phiên bản mới.\nDùng lệnh /watch_status {short_id} để chọn hành động.",
                     );
-                    let _ = notify_tx.try_send(NotificationEvent::watch_error(
+                    let _ = notify_tx.try_send(NotificationEvent::watch_conflict(
                         watch.telegram_user_id,
                         watch.chat_id,
                         msg,

@@ -166,8 +166,8 @@ fn spawn_notify_forwarder(
                     let enabled = match event.kind {
                         NotificationKind::JobCompleted => prefs.notify_job_complete,
                         NotificationKind::JobFailed => prefs.notify_job_error,
-                        NotificationKind::WatchError => prefs.notify_watch_conflicts,
-                        NotificationKind::WatchActivity => true,
+                        NotificationKind::WatchConflict => prefs.notify_watch_conflicts,
+                        NotificationKind::WatchError | NotificationKind::WatchActivity => true,
                     };
                     if !enabled {
                         continue;
