@@ -118,13 +118,15 @@ ok "Installed systemd user services to ~/.config/systemd/user/"
 # 6. Setup default config if absent
 CONFIG_DIR="$HOME/.config/gdclone-bot"
 mkdir -p "$CONFIG_DIR"
+chmod 700 "$CONFIG_DIR"
 if [ ! -f "$CONFIG_DIR/config.toml" ]; then
     if [ -f "$REPO_DIR/config.sample.toml" ]; then
-        cp "$REPO_DIR/config.sample.toml" "$CONFIG_DIR/config.toml"
+        install -m 600 "$REPO_DIR/config.sample.toml" "$CONFIG_DIR/config.toml"
         info "Created default config at ~/.config/gdclone-bot/config.toml"
         warn "Vui lòng mở ~/.config/gdclone-bot/config.toml để điền Telegram Bot Token và Google Client ID!"
     fi
 else
+    chmod 600 "$CONFIG_DIR/config.toml"
     ok "Existing configuration file found at ~/.config/gdclone-bot/config.toml"
 fi
 
