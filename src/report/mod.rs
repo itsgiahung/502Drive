@@ -32,11 +32,18 @@ pub async fn write_job_reports(
     job_id: &str,
 ) -> anyhow::Result<ReportPaths> {
     let items = collect_job_items(db, job_id).await?;
-    let json = report_dir.join(format!("{job_id}.json"));
-    let csv = report_dir.join(format!("{job_id}.csv"));
-    write_json(&json, &items)?;
-    write_csv(&csv, &items)?;
-    Ok(ReportPaths { json, csv })
+    let report_dir = report_dir.to_path_buf();
+    let job_id = job_id.to_string();
+
+    tokio::task::spawn_blocking(move || {
+        let json = report_dir.join(format!("{job_id}.json"));
+        let csv = report_dir.join(format!("{job_id}.csv"));
+        write_json(&json, &items)?;
+        write_csv(&csv, &items)?;
+        Ok::<ReportPaths, anyhow::Error>(ReportPaths { json, csv })
+    })
+    .await
+    .map_err(|err| anyhow::anyhow!("report writer task failed: {err}"))?
 }
 
 pub async fn collect_job_items(db: &Database, job_id: &str) -> anyhow::Result<Vec<ReportItem>> {
