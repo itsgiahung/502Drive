@@ -450,34 +450,45 @@ async fn poll_one_cursor(
 ///
 /// `idle_since_ms` is the timestamp of the last page that contained events,
 /// falling back to the cursor creation timestamp when no event has ever arrived.
+fn next_poll_at_after_seconds(now_ms: i64, seconds: u64) -> i64 {
+    let delay_ms = seconds
+        .saturating_mul(1000)
+        .min(i64::MAX as u64) as i64;
+    now_ms.saturating_add(delay_ms)
+}
+
 fn compute_next_poll_ms(
     config: &AppConfig,
     consecutive_errors: i64,
     had_events: bool,
     idle_since_ms: i64,
 ) -> i64 {
+    let now_ms = crate::state::db::now_ms();
     if consecutive_errors > 0 {
         // Exponential back-off, capped at cold_idle_poll_seconds.
         let shifted = consecutive_errors.min(6) as u32;
-        let secs =
-            (config.watch.active_poll_seconds << shifted).min(config.watch.cold_idle_poll_seconds);
-        return crate::state::db::now_ms() + (secs as i64) * 1000;
+        let multiplier = 1_u64 << shifted;
+        let secs = config
+            .watch
+            .active_poll_seconds
+            .saturating_mul(multiplier)
+            .min(config.watch.cold_idle_poll_seconds);
+        return next_poll_at_after_seconds(now_ms, secs);
     }
 
-    let now_ms = crate::state::db::now_ms();
     let secs = if had_events || idle_since_ms == 0 {
         config.watch.active_poll_seconds
     } else {
-        let idle_secs = ((now_ms - idle_since_ms) / 1000).max(0);
-        if idle_secs >= config.watch.cold_idle_after_seconds as i64 {
+        let idle_secs = now_ms.saturating_sub(idle_since_ms).max(0) as u64 / 1000;
+        if idle_secs >= config.watch.cold_idle_after_seconds {
             config.watch.cold_idle_poll_seconds
-        } else if idle_secs >= config.watch.warm_idle_after_seconds as i64 {
+        } else if idle_secs >= config.watch.warm_idle_after_seconds {
             config.watch.warm_idle_poll_seconds
         } else {
             config.watch.active_poll_seconds
         }
     };
-    now_ms + (secs as i64) * 1000
+    next_poll_at_after_seconds(now_ms, secs)
 }
 
 #[cfg(test)]
@@ -513,5 +524,20 @@ mod tests {
 
         let active = compute_next_poll_ms(&config, 0, true, now - 600_000);
         assert!((4..=5).contains(&delay_seconds(active)));
+    }
+
+    #[test]
+    fn extreme_poll_intervals_saturate_without_scheduling_in_the_past() {
+        let mut config = test_config();
+        config.watch.active_poll_seconds = u64::MAX;
+        config.watch.warm_idle_poll_seconds = u64::MAX;
+        config.watch.cold_idle_poll_seconds = u64::MAX;
+
+        let now = now_ms();
+        let active = compute_next_poll_ms(&config, 0, true, now);
+        let backed_off = compute_next_poll_ms(&config, 6, false, now);
+
+        assert!(active >= now);
+        assert!(backed_off >= now);
     }
 }
