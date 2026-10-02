@@ -23,6 +23,24 @@ fn mask_secret(value: &str) -> String {
     format!("{head}…{tail}")
 }
 
+fn parse_bool_setting(value: &str) -> Result<bool, String> {
+    match value.trim() {
+        "true" | "1" => Ok(true),
+        "false" | "0" => Ok(false),
+        _ => Err("expected boolean value true/false or 1/0".to_string()),
+    }
+}
+
+fn parse_editable_config(content: &str) -> Result<toml::Table, String> {
+    if content.trim().is_empty() {
+        Ok(toml::Table::new())
+    } else {
+        content
+            .parse::<toml::Table>()
+            .map_err(|e| format!("config.toml is invalid; refusing to overwrite it: {e}"))
+    }
+}
+
 /// Write the config file and restrict permissions to the owner on Unix so
 /// bot tokens / OAuth secrets are not world- or group-readable.
 pub(crate) fn write_config_file(path: &Path, contents: &str) -> Result<(), String> {
@@ -179,33 +197,32 @@ pub async fn get_config_summary() -> Result<ConfigSummary, String> {
 pub async fn update_config_field(field: String, value: String) -> Result<(), String> {
     let cfg_path = get_config_path();
     let content = if cfg_path.exists() {
-        fs::read_to_string(&cfg_path).unwrap_or_default()
+        fs::read_to_string(&cfg_path)
+            .map_err(|e| format!("cannot read config.toml before update: {e}"))?
     } else {
         String::new()
     };
-
-    let mut table: toml::Table = content.parse().unwrap_or_default();
+    let mut table = parse_editable_config(&content)?;
 
     match field.as_str() {
         "engine_concurrency" => {
-            if let Ok(num) = value.parse::<i64>() {
-                let engine = table
-                    .entry("engine")
-                    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-                if let Some(t) = engine.as_table_mut() {
-                    t.insert(
-                        "concurrency".to_string(),
-                        toml::Value::Integer(num.clamp(1, 32)),
-                    );
-                    t.insert(
-                        "max_write_concurrency".to_string(),
-                        toml::Value::Integer(num.clamp(1, 32)),
-                    );
-                }
+            let num = value
+                .trim()
+                .parse::<i64>()
+                .map_err(|_| "engine_concurrency must be an integer".to_string())?;
+            if !(1..=32).contains(&num) {
+                return Err("engine_concurrency must be between 1 and 32".to_string());
+            }
+            let engine = table
+                .entry("engine")
+                .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+            if let Some(t) = engine.as_table_mut() {
+                t.insert("concurrency".to_string(), toml::Value::Integer(num));
+                t.insert("max_write_concurrency".to_string(), toml::Value::Integer(num));
             }
         }
         "auto_confirm_clone" => {
-            let b = value == "true" || value == "1";
+            let b = parse_bool_setting(&value)?;
             let engine = table
                 .entry("engine")
                 .or_insert_with(|| toml::Value::Table(toml::Table::new()));
@@ -214,13 +231,18 @@ pub async fn update_config_field(field: String, value: String) -> Result<(), Str
             }
         }
         "owner_telegram_id" => {
-            if let Ok(id) = value.parse::<i64>() {
-                let tg = table
-                    .entry("telegram")
-                    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-                if let Some(t) = tg.as_table_mut() {
-                    t.insert("owner_telegram_id".to_string(), toml::Value::Integer(id));
-                }
+            let id = value
+                .trim()
+                .parse::<i64>()
+                .map_err(|_| "owner_telegram_id must be an integer".to_string())?;
+            if id <= 0 {
+                return Err("owner_telegram_id must be positive".to_string());
+            }
+            let tg = table
+                .entry("telegram")
+                .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+            if let Some(t) = tg.as_table_mut() {
+                t.insert("owner_telegram_id".to_string(), toml::Value::Integer(id));
             }
         }
         "bot_token" => {
@@ -235,22 +257,22 @@ pub async fn update_config_field(field: String, value: String) -> Result<(), Str
             }
         }
         "language" => {
-            // Stored in [app] section — GUI-only, not consumed by the engine daemon.
-            let valid = value == "vi" || value == "en";
-            if valid {
-                let app = table
-                    .entry("app")
-                    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-                if let Some(t) = app.as_table_mut() {
-                    t.insert(
-                        "language".to_string(),
-                        toml::Value::String(value.trim().to_string()),
-                    );
-                }
+            let language = value.trim();
+            if !matches!(language, "vi" | "en") {
+                return Err("language must be 'vi' or 'en'".to_string());
+            }
+            let app = table
+                .entry("app")
+                .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+            if let Some(t) = app.as_table_mut() {
+                t.insert(
+                    "language".to_string(),
+                    toml::Value::String(language.to_string()),
+                );
             }
         }
         "launch_at_startup" => {
-            let b = value == "true" || value == "1";
+            let b = parse_bool_setting(&value)?;
             let app = table
                 .entry("app")
                 .or_insert_with(|| toml::Value::Table(toml::Table::new()));
@@ -258,27 +280,33 @@ pub async fn update_config_field(field: String, value: String) -> Result<(), Str
                 t.insert("launch_at_startup".to_string(), toml::Value::Boolean(b));
             }
         }
-        _ => {}
+        _ => return Err(format!("unsupported config field: {field}")),
     }
 
     write_config_file(
         &cfg_path,
         &toml::to_string_pretty(&table).map_err(|e| e.to_string())?,
-    )?;
-
-    Ok(())
+    )
 }
 
 #[tauri::command]
 pub async fn save_wizard_config(input: WizardConfigInput) -> Result<(), String> {
     let cfg_path = get_config_path();
     let content = if cfg_path.exists() {
-        fs::read_to_string(&cfg_path).unwrap_or_default()
+        fs::read_to_string(&cfg_path)
+            .map_err(|e| format!("cannot read config.toml before update: {e}"))?
     } else {
         String::new()
     };
 
-    let mut table: toml::Table = content.parse().unwrap_or_default();
+    if matches!(input.owner_telegram_id, Some(id) if id <= 0) {
+        return Err("owner_telegram_id must be positive".to_string());
+    }
+    if matches!(input.engine_concurrency, Some(value) if !(1..=32).contains(&value)) {
+        return Err("engine_concurrency must be between 1 and 32".to_string());
+    }
+
+    let mut table = parse_editable_config(&content)?;
 
     if input.oauth_client_id.is_some() || input.oauth_client_secret.is_some() {
         let oauth = table
@@ -339,11 +367,11 @@ pub async fn save_wizard_config(input: WizardConfigInput) -> Result<(), String> 
         if let Some(t) = eng.as_table_mut() {
             t.insert(
                 "concurrency".to_string(),
-                toml::Value::Integer(concurrency.clamp(1, 32) as i64),
+                toml::Value::Integer(concurrency as i64),
             );
             t.insert(
                 "max_write_concurrency".to_string(),
-                toml::Value::Integer(concurrency.clamp(1, 32) as i64),
+                toml::Value::Integer(concurrency as i64),
             );
         }
     }
@@ -455,4 +483,22 @@ pub(crate) async fn verify_telegram_bot_token(
 #[tauri::command]
 pub async fn verify_telegram_bot(token: String) -> Result<TelegramBotCheckResult, String> {
     verify_telegram_bot_token(&token).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_bool_setting, parse_editable_config};
+
+    #[test]
+    fn editable_config_rejects_invalid_existing_toml() {
+        assert!(parse_editable_config("[telegram\nbot_token = 'x'").is_err());
+        assert!(parse_editable_config("").is_ok());
+    }
+
+    #[test]
+    fn boolean_setting_parser_is_strict() {
+        assert_eq!(parse_bool_setting("true").unwrap(), true);
+        assert_eq!(parse_bool_setting("0").unwrap(), false);
+        assert!(parse_bool_setting("yes").is_err());
+    }
 }
