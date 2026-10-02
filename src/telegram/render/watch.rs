@@ -268,10 +268,12 @@ pub(crate) fn render_watch_create_confirm(
     lines.join("\n")
 }
 
-pub(crate) fn watch_options_save_error(lang: keyboards::UiLanguage) -> &'static str {
+pub(crate) fn watch_options_save_error(lang: keyboards::UiLanguage) -> String {
     match lang {
-        keyboards::UiLanguage::Vi => "Không thể lưu tuỳ chọn watch. Vui lòng thử lại.",
-        keyboards::UiLanguage::En => "Could not save watch options. Please try again.",
+        keyboards::UiLanguage::Vi => {
+            "Không thể lưu tuỳ chọn watch. Vui lòng thử lại.".to_string()
+        }
+        keyboards::UiLanguage::En => "Could not save watch options. Please try again.".to_string(),
     }
 }
 
