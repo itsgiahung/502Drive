@@ -4,6 +4,14 @@ use serde::{Deserialize, Serialize};
 
 const BACKUP_NAME_PREFIX: &str = "backup_";
 
+fn validate_managed_role(role: &str) -> Result<(), String> {
+    if role == "operator" {
+        Ok(())
+    } else {
+        Err("desktop user management may only create operator accounts".to_string())
+    }
+}
+
 fn validate_backup_name(name: &str) -> Result<&str, String> {
     let bytes = name.as_bytes();
     let valid = bytes.len() == 22
@@ -152,6 +160,7 @@ pub async fn add_authorized_user(telegram_user_id: i64, role: String) -> Result<
     if telegram_user_id <= 0 {
         return Err("Telegram User ID phải là số nguyên dương".to_string());
     }
+    validate_managed_role(&role)?;
     let db = Database::open(&get_db_path())
         .await
         .map_err(|e| format!("cannot open state database: {e:#}"))?;
@@ -166,6 +175,7 @@ pub async fn batch_add_authorized_users(
     user_ids_text: String,
     role: String,
 ) -> Result<usize, String> {
+    validate_managed_role(&role)?;
     let db = Database::open(&get_db_path())
         .await
         .map_err(|e| format!("cannot open state database: {e:#}"))?;
@@ -200,6 +210,9 @@ pub async fn toggle_authorized_user(telegram_user_id: i64, enabled: bool) -> Res
         .await
         .map_err(|e| e.to_string())?
     {
+        if user.role == "owner" && !enabled {
+            return Err("owner account cannot be disabled".to_string());
+        }
         repo::upsert_authorized_user(&db, telegram_user_id, &user.role, enabled)
             .await
             .map_err(|e| format!("failed to toggle user: {e:#}"))?;
@@ -460,7 +473,14 @@ pub async fn apply_remote_update() -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_backup_name;
+    use super::{validate_backup_name, validate_managed_role};
+
+    #[test]
+    fn desktop_user_management_only_creates_operators() {
+        assert!(validate_managed_role("operator").is_ok());
+        assert!(validate_managed_role("owner").is_err());
+        assert!(validate_managed_role("admin").is_err());
+    }
 
     #[test]
     fn backup_name_validation_rejects_path_traversal() {
