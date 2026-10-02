@@ -30,9 +30,12 @@ RUN groupadd -g 10001 appuser && \
     useradd -u 10001 -g appuser -s /bin/sh -m appuser
 
 COPY --from=builder /app/target/release/502drive /usr/local/bin/502drive
-COPY --from=builder /app/target/release/gdclone-bot /usr/local/bin/gdclone-bot
 
-RUN mkdir -p /config /data && \
+# gdclone-bot is the legacy alias of the canonical 502drive binary. The
+# builder intentionally compiles only 502drive, so create the alias here
+# instead of trying to COPY a second, unbuilt binary from the builder stage.
+RUN ln -s /usr/local/bin/502drive /usr/local/bin/gdclone-bot && \
+    mkdir -p /config /data && \
     chown -R appuser:appuser /config /data
 
 USER appuser
