@@ -1,4 +1,4 @@
-use crate::commands::{get_config_path, get_db_path, get_project_dirs};
+use crate::commands::{get_config_path, get_db_path, get_project_dirs, service};
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -218,16 +218,13 @@ pub async fn run_preflight_check() -> Result<PreflightReport, String> {
     }
 
     // 4. Check Background Service
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     {
-        let output = Command::new("systemctl")
-            .args(["--user", "is-active", "gdclone-bot"])
-            .output();
-
-        let is_active = if let Ok(out) = output {
-            String::from_utf8_lossy(&out.stdout).trim() == "active"
+        let is_active = service::service_active();
+        let service_label = if cfg!(windows) {
+            "Scheduled Task 502Drive"
         } else {
-            false
+            "Service gdclone-bot"
         };
 
         steps.push(PreflightStep {
@@ -239,9 +236,9 @@ pub async fn run_preflight_check() -> Result<PreflightReport, String> {
                 "warning".to_string()
             },
             message: if is_active {
-                "Service gdclone-bot đang chạy ổn định".to_string()
+                format!("{service_label} đang chạy ổn định")
             } else {
-                "Service đang tạm dừng, có thể kích hoạt tự động".to_string()
+                format!("{service_label} chưa chạy hoặc chưa được cài đặt")
             },
             auto_fixed: false,
             fix_action: if !is_active {
@@ -370,7 +367,9 @@ pub async fn run_doctor() -> Result<DoctorResult, String> {
     let now = chrono::Utc::now().timestamp_millis();
     let mut checks = Vec::new();
 
-    let cli_output = Command::new("502drive").arg("doctor").output();
+    let cli_output = Command::new(service::cli_binary_path())
+        .arg("doctor")
+        .output();
 
     if let Ok(out) = cli_output {
         let raw = String::from_utf8_lossy(&out.stdout).to_string();

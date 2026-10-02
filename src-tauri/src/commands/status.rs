@@ -1,6 +1,6 @@
 use crate::commands::{
     config::{is_configured, verify_telegram_bot_token},
-    get_config_path, get_db_path,
+    get_config_path, get_db_path, service,
 };
 use gdclone_bot::{
     config::AppConfig,
@@ -10,7 +10,6 @@ use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 use std::{
     path::PathBuf,
-    process::Command,
     sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
@@ -68,20 +67,6 @@ pub struct SystemStatus {
     pub destination_label: Option<String>,
     pub destination_id: Option<String>,
     pub stats: SystemStats,
-}
-
-fn check_systemd_service_active(service_name: &str) -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        let output = Command::new("systemctl")
-            .args(["--user", "is-active", service_name])
-            .output();
-        if let Ok(out) = output {
-            let status = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            return status == "active";
-        }
-    }
-    false
 }
 
 fn cached_db_health(conn: &Connection, path: &PathBuf) -> String {
@@ -175,7 +160,7 @@ async fn cached_telegram_status(token: &str) -> (Option<String>, String) {
 #[tauri::command]
 pub async fn get_system_status() -> Result<SystemStatus, String> {
     let db_path = get_db_path();
-    let service_active = check_systemd_service_active("gdclone-bot");
+    let service_active = service::service_active();
 
     let mut google_account = None;
     let mut account_status = "disconnected".to_string();
@@ -249,7 +234,11 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
         google_account,
         account_status,
         service_active,
-        service_name: "gdclone-bot.service".to_string(),
+        service_name: if cfg!(windows) {
+            "502Drive".to_string()
+        } else {
+            "gdclone-bot.service".to_string()
+        },
         db_integrity,
         app_version: format!("v{}", env!("CARGO_PKG_VERSION")),
         bot_username,
