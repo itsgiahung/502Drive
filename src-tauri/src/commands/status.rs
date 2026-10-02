@@ -1,4 +1,7 @@
-use crate::commands::{config::verify_telegram_bot_token, get_config_path, get_db_path};
+use crate::commands::{
+    config::{is_configured, verify_telegram_bot_token},
+    get_config_path, get_db_path,
+};
 use gdclone_bot::{
     config::AppConfig,
     state::{db::Database, repo},
@@ -14,6 +17,7 @@ use std::{
 
 const TELEGRAM_STATUS_TTL: Duration = Duration::from_secs(60);
 const DB_HEALTH_TTL: Duration = Duration::from_secs(60);
+const TOTALS_TTL: Duration = Duration::from_secs(15);
 
 #[derive(Clone)]
 struct CachedTelegramStatus {
@@ -30,8 +34,17 @@ struct CachedDbHealth {
     value: String,
 }
 
+#[derive(Clone)]
+struct CachedTotals {
+    path: PathBuf,
+    checked_at: Instant,
+    files: i64,
+    bytes: i64,
+}
+
 static TELEGRAM_STATUS_CACHE: OnceLock<Mutex<Option<CachedTelegramStatus>>> = OnceLock::new();
 static DB_HEALTH_CACHE: OnceLock<Mutex<Option<CachedDbHealth>>> = OnceLock::new();
+static TOTALS_CACHE: OnceLock<Mutex<Option<CachedTotals>>> = OnceLock::new();
 
 #[derive(Debug, Serialize, Clone)]
 pub struct SystemStats {
@@ -95,6 +108,44 @@ fn cached_db_health(conn: &Connection, path: &PathBuf) -> String {
     value
 }
 
+fn cached_totals(conn: &Connection, path: &PathBuf) -> (i64, i64) {
+    let cache = TOTALS_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = cache.lock() {
+        if let Some(cached) = guard.as_ref() {
+            if cached.path == *path && cached.checked_at.elapsed() < TOTALS_TTL {
+                return (cached.files, cached.bytes);
+            }
+        }
+    }
+
+    let files = conn
+        .query_row(
+            "SELECT COALESCE(SUM(completed_items), 0) FROM jobs;",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(0);
+    let bytes = conn
+        .query_row(
+            "SELECT COALESCE(SUM(size_bytes), 0)
+             FROM job_items
+             WHERE status = 'done';",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(0);
+
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some(CachedTotals {
+            path: path.clone(),
+            checked_at: Instant::now(),
+            files,
+            bytes,
+        });
+    }
+    (files, bytes)
+}
+
 async fn cached_telegram_status(token: &str) -> (Option<String>, String) {
     let cache = TELEGRAM_STATUS_CACHE.get_or_init(|| Mutex::new(None));
     if let Ok(guard) = cache.lock() {
@@ -143,16 +194,7 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
         // and use quick_check here; the explicit Doctor flow can do deeper checks.
         if let Ok(conn) = Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY) {
             db_integrity = cached_db_health(&conn, &db_path);
-            if let Ok(mut stmt) =
-                conn.prepare("SELECT COALESCE(SUM(completed_items), 0) FROM jobs;")
-            {
-                total_cloned_files = stmt.query_row([], |r| r.get(0)).unwrap_or(0);
-            }
-            if let Ok(mut stmt) = conn.prepare(
-                "SELECT COALESCE(SUM(size_bytes), 0) FROM job_items WHERE status = 'done';",
-            ) {
-                total_cloned_bytes = stmt.query_row([], |r| r.get(0)).unwrap_or(0);
-            }
+            (total_cloned_files, total_cloned_bytes) = cached_totals(&conn, &db_path);
         }
 
         // Everything else goes through the shared repo layer so the GUI and
@@ -191,7 +233,7 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
             match AppConfig::load(&config_path) {
                 Ok(config) => {
                     let token = config.telegram.bot_token.trim();
-                    if token.is_empty() {
+                    if !is_configured(token) {
                         (None, Some("no_token".to_string()))
                     } else {
                         let (username, status) = cached_telegram_status(token).await;
