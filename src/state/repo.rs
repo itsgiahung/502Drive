@@ -170,23 +170,54 @@ pub async fn consume_callback_state(
         .await?)
 }
 
-pub async fn telegram_language_preference(
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TelegramUserPreferences {
+    pub language: String,
+    pub notify_job_complete: bool,
+    pub notify_job_error: bool,
+    pub notify_watch_conflicts: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TelegramNotificationPreference {
+    JobComplete,
+    JobError,
+    WatchConflicts,
+}
+
+pub async fn telegram_user_preferences(
     db: &Database,
     telegram_user_id: i64,
-) -> anyhow::Result<Option<String>> {
+) -> anyhow::Result<Option<TelegramUserPreferences>> {
     Ok(db
         .conn()
         .call(move |conn| {
             conn.query_row(
-                "SELECT language
+                "SELECT language, notify_job_complete, notify_job_error, notify_watch_conflicts
                  FROM telegram_user_preferences
                  WHERE telegram_user_id = ?1",
                 params![telegram_user_id],
-                |row| row.get(0),
+                |row| {
+                    Ok(TelegramUserPreferences {
+                        language: row.get(0)?,
+                        notify_job_complete: row.get::<_, i64>(1)? != 0,
+                        notify_job_error: row.get::<_, i64>(2)? != 0,
+                        notify_watch_conflicts: row.get::<_, i64>(3)? != 0,
+                    })
+                },
             )
             .optional()
         })
         .await?)
+}
+
+pub async fn telegram_language_preference(
+    db: &Database,
+    telegram_user_id: i64,
+) -> anyhow::Result<Option<String>> {
+    Ok(telegram_user_preferences(db, telegram_user_id)
+        .await?
+        .map(|prefs| prefs.language))
 }
 
 pub async fn set_telegram_language_preference(
@@ -206,6 +237,48 @@ pub async fn set_telegram_language_preference(
                     updated_at_ms = excluded.updated_at_ms",
                 params![telegram_user_id, language, now_ms()],
             )?;
+            Ok::<(), rusqlite::Error>(())
+        })
+        .await?;
+    Ok(())
+}
+
+pub async fn set_telegram_notification_preference(
+    db: &Database,
+    telegram_user_id: i64,
+    language_if_missing: &str,
+    preference: TelegramNotificationPreference,
+    enabled: bool,
+) -> anyhow::Result<()> {
+    let language_if_missing = language_if_missing.to_string();
+    db.conn()
+        .call(move |conn| {
+            let now = now_ms();
+            conn.execute(
+                "INSERT INTO telegram_user_preferences
+                    (telegram_user_id, language, updated_at_ms)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT(telegram_user_id) DO NOTHING",
+                params![telegram_user_id, language_if_missing, now],
+            )?;
+            let sql = match preference {
+                TelegramNotificationPreference::JobComplete => {
+                    "UPDATE telegram_user_preferences
+                     SET notify_job_complete = ?1, updated_at_ms = ?2
+                     WHERE telegram_user_id = ?3"
+                }
+                TelegramNotificationPreference::JobError => {
+                    "UPDATE telegram_user_preferences
+                     SET notify_job_error = ?1, updated_at_ms = ?2
+                     WHERE telegram_user_id = ?3"
+                }
+                TelegramNotificationPreference::WatchConflicts => {
+                    "UPDATE telegram_user_preferences
+                     SET notify_watch_conflicts = ?1, updated_at_ms = ?2
+                     WHERE telegram_user_id = ?3"
+                }
+            };
+            conn.execute(sql, params![enabled as i64, now, telegram_user_id])?;
             Ok::<(), rusqlite::Error>(())
         })
         .await?;

@@ -390,6 +390,7 @@ impl CloneService {
                 let report_paths = self.write_report_best_effort(&job_id).await;
                 if let Some(tx) = &self.notify_tx {
                     let _ = tx.try_send(crate::watch::NotificationEvent::job_completed(
+                        request.telegram_user_id,
                         request.chat_id,
                         format!("✅ Job {} completed: {}", job_id, message),
                     ));
@@ -417,6 +418,7 @@ impl CloneService {
                 .await;
                 if let Some(tx) = &self.notify_tx {
                     let _ = tx.try_send(crate::watch::NotificationEvent::job_failed(
+                        request.telegram_user_id,
                         request.chat_id,
                         format!("❌ Job {} failed: {}", job_id, err),
                     ));
@@ -574,6 +576,7 @@ impl CloneService {
 
         if let Some(tx) = &self.notify_tx {
             let _ = tx.try_send(crate::watch::NotificationEvent::job_completed(
+                job.telegram_user_id,
                 job.chat_id,
                 format!("✅ Job {} completed: {}", job.id, message),
             ));
