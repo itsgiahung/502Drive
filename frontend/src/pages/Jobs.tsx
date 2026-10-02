@@ -82,6 +82,10 @@ export const Jobs: React.FC<JobsProps> = ({
       (j) =>
         j.id.toLowerCase().includes(query) ||
         (j.short_id && j.short_id.toLowerCase().includes(query)) ||
+        j.source_root_id.toLowerCase().includes(query) ||
+        j.destination_parent_id.toLowerCase().includes(query) ||
+        (j.source_name?.toLowerCase().includes(query) ?? false) ||
+        (j.destination_name?.toLowerCase().includes(query) ?? false) ||
         j.status.toLowerCase().includes(query)
     )
   }, [jobs, query])
@@ -94,6 +98,8 @@ export const Jobs: React.FC<JobsProps> = ({
         (w.short_id && w.short_id.toLowerCase().includes(query)) ||
         w.source_root_id.toLowerCase().includes(query) ||
         w.destination_root_id.toLowerCase().includes(query) ||
+        (w.source_name?.toLowerCase().includes(query) ?? false) ||
+        (w.destination_name?.toLowerCase().includes(query) ?? false) ||
         w.status.toLowerCase().includes(query)
     )
   }, [watches, query])
