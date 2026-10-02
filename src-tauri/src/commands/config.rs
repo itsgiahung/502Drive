@@ -23,6 +23,12 @@ fn mask_secret(value: &str) -> String {
     format!("{head}…{tail}")
 }
 
+fn looks_like_masked_secret(value: &str) -> bool {
+    let trimmed = value.trim();
+    trimmed.contains('…')
+        || (!trimmed.is_empty() && trimmed.chars().all(|ch| ch == '•'))
+}
+
 fn parse_bool_setting(value: &str) -> Result<bool, String> {
     match value.trim() {
         "true" | "1" => Ok(true),
@@ -322,6 +328,20 @@ pub async fn save_wizard_config(input: WizardConfigInput) -> Result<(), String> 
     if matches!(input.engine_concurrency, Some(value) if !(1..=32).contains(&value)) {
         return Err("engine_concurrency must be between 1 and 32".to_string());
     }
+    if input
+        .oauth_client_secret
+        .as_deref()
+        .is_some_and(looks_like_masked_secret)
+    {
+        return Err("refusing to save a masked OAuth client secret".to_string());
+    }
+    if input
+        .bot_token
+        .as_deref()
+        .is_some_and(looks_like_masked_secret)
+    {
+        return Err("refusing to save a masked Telegram bot token".to_string());
+    }
 
     let mut table = parse_editable_config(&content)?;
 
@@ -507,7 +527,17 @@ pub async fn verify_telegram_bot(token: String) -> Result<TelegramBotCheckResult
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_bool_setting, parse_editable_config, read_auto_confirm_clone};
+    use super::{
+        looks_like_masked_secret, parse_bool_setting, parse_editable_config, read_auto_confirm_clone,
+    };
+
+    #[test]
+    fn masked_secrets_are_never_valid_update_values() {
+        assert!(looks_like_masked_secret("123456…abcd"));
+        assert!(looks_like_masked_secret("••••••••"));
+        assert!(!looks_like_masked_secret("123456789:AAExampleToken"));
+        assert!(!looks_like_masked_secret("GOCSPX-real-client-secret"));
+    }
 
     #[test]
     fn editable_config_rejects_invalid_existing_toml() {

@@ -58,8 +58,10 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
   const [driveVerified, setDriveVerified] = useState(status?.account_status === 'connected')
   const [driveVerifyError, setDriveVerifyError] = useState<string | null>(null)
 
-  // Step 3: Telegram bot form
-  const [botToken, setBotToken] = useState(config?.bot_token || '')
+  // Step 3: Telegram bot form. Never seed this field from the
+  // masked ConfigSummary value: masked secrets are display-only and must not
+  // round-trip back into config.toml.
+  const [botToken, setBotToken] = useState('')
   const [ownerId, setOwnerId] = useState(
     config?.owner_telegram_id && config.owner_telegram_id > 0 ? String(config.owner_telegram_id) : ''
   )
@@ -91,13 +93,10 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
   }, [status?.account_status])
 
   useEffect(() => {
-    if (config?.bot_token && !botToken) {
-      setBotToken(config.bot_token)
-    }
     if (config?.owner_telegram_id && !ownerId) {
       setOwnerId(String(config.owner_telegram_id))
     }
-  }, [config])
+  }, [config, ownerId])
 
   if (!isOpen) return null
 
@@ -211,9 +210,17 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
   }
 
   // Per-step completion gates — "Tiếp tục" only advances on verified state.
+  // An already-configured bot may be reused without asking the user to
+  // re-enter its secret. Once a replacement token is typed, it must be
+  // verified before the existing bot state can count as ready.
+  const usingExistingBot =
+    !botToken.trim() &&
+    config?.bot_token_configured === true &&
+    status?.telegram_status === 'active'
+  const botReady = botVerifyResult?.ok === true || usingExistingBot
   const canContinueStep2 = driveVerified
-  const canContinueStep3 = botVerifyResult?.ok === true && ownerId.trim().length > 0
-  const canFinish = driveVerified || botVerifyResult?.ok === true
+  const canContinueStep3 = botReady && ownerId.trim().length > 0
+  const canFinish = driveVerified && botReady && ownerId.trim().length > 0
 
   const steps = [
     { num: 1, label: 'Phương thức' },
@@ -471,14 +478,24 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
                       <input
                         type="text"
                         value={clientId}
-                        onChange={(e) => setClientId(e.target.value)}
-                          placeholder="VD: 937289685889-abcdefg1234567.apps.googleusercontent.com"
+                        onChange={(e) => {
+                          setClientId(e.target.value)
+                          setDriveVerified(false)
+                          setDriveVerifyError(null)
+                        }}
+                        placeholder="VD: 937289685889-abcdefg1234567.apps.googleusercontent.com"
                         className="flex-1 px-3 py-2 text-xs rounded-xl bg-bg-input border border-border/80 text-text-primary focus:outline-none focus:border-accent font-mono"
                       />
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={() => handlePaste(setClientId)}
+                        onClick={() =>
+                          handlePaste((value) => {
+                            setClientId(value)
+                            setDriveVerified(false)
+                            setDriveVerifyError(null)
+                          })
+                        }
                         className="text-xs px-2.5 rounded-xl gap-1"
                         title="Dán từ Clipboard"
                       >
@@ -495,7 +512,11 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
                         <input
                           type={showSecret ? 'text' : 'password'}
                           value={clientSecret}
-                          onChange={(e) => setClientSecret(e.target.value)}
+                          onChange={(e) => {
+                            setClientSecret(e.target.value)
+                            setDriveVerified(false)
+                            setDriveVerifyError(null)
+                          }}
                           placeholder="VD: GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxx (định dạng ví dụ)"
                           className="w-full px-3 py-2 pr-9 text-xs rounded-xl bg-bg-input border border-border/80 text-text-primary focus:outline-none focus:border-accent font-mono"
                         />
@@ -510,7 +531,13 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={() => handlePaste(setClientSecret)}
+                        onClick={() =>
+                          handlePaste((value) => {
+                            setClientSecret(value)
+                            setDriveVerified(false)
+                            setDriveVerifyError(null)
+                          })
+                        }
                         className="text-xs px-2.5 rounded-xl gap-1"
                         title="Dán từ Clipboard"
                       >
@@ -578,20 +605,39 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
                   <input
                     type="text"
                     value={botToken}
-                    onChange={(e) => setBotToken(e.target.value)}
-                    placeholder="VD: 123456789:AAExample_Token_Format_Only_xxxxxxxxx"
+                    onChange={(e) => {
+                      setBotToken(e.target.value)
+                      setBotVerifyResult(null)
+                    }}
+                    placeholder={
+                      usingExistingBot
+                        ? 'Để trống để giữ Bot Token hiện tại'
+                        : 'VD: 123456789:AAExample_Token_Format_Only_xxxxxxxxx'
+                    }
                     className="flex-1 px-3 py-2 text-xs rounded-xl bg-bg-input border border-border/80 text-text-primary focus:outline-none focus:border-accent font-mono"
                   />
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => handlePaste(setBotToken)}
+                    onClick={() =>
+                      handlePaste((value) => {
+                        setBotToken(value)
+                        setBotVerifyResult(null)
+                      })
+                    }
                     className="text-xs px-2.5 rounded-xl gap-1"
                   >
                     <Clipboard className="h-3.5 w-3.5" />
                     <span>Dán</span>
                   </Button>
                 </div>
+                {usingExistingBot && (
+                  <p className="text-[0.6875rem] text-success">
+                    Đang giữ Bot Token hiện tại
+                    {status?.bot_username ? ' cho @' + status.bot_username : ''}. Chỉ nhập token
+                    mới khi muốn thay bot.
+                  </p>
+                )}
               </div>
 
               {/* Owner Telegram ID Field */}
@@ -738,19 +784,25 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
                     <div>
                       <p className="font-medium text-text-primary">Telegram Bot Controller</p>
                       <p className="text-text-muted text-[0.6875rem] font-mono">
-                        {botVerifyResult?.username ? `@${botVerifyResult.username}` : botToken ? 'Đã nhập Token (chưa xác thực)' : 'Chưa cấu hình'}
-                        {ownerId ? ` (Owner: ${ownerId})` : ''}
+                        {botVerifyResult?.username
+                          ? '@' + botVerifyResult.username
+                          : usingExistingBot && status?.bot_username
+                            ? '@' + status.bot_username
+                            : botToken
+                              ? 'Đã nhập Token (chưa xác thực)'
+                              : 'Chưa cấu hình'}
+                        {ownerId ? ' (Owner: ' + ownerId + ')' : ''}
                       </p>
                     </div>
                   </div>
                   <span
                     className={`px-2 py-0.5 rounded-full text-[0.6875rem] font-medium border ${
-                      botVerifyResult?.ok
+                      botReady
                         ? 'bg-success/10 text-success border-success/25'
                         : 'bg-warning/10 text-warning border-warning/25'
                     }`}
                   >
-                    {botVerifyResult?.ok ? 'Sẵn sàng' : 'Chưa xong'}
+                    {botReady ? 'Sẵn sàng' : 'Chưa xong'}
                   </span>
                 </div>
 
@@ -776,7 +828,7 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
               <div className="p-3.5 rounded-xl bg-bg-card/50 border border-border/50 text-[0.6875rem] text-text-secondary flex items-start gap-2.5">
                 <ShieldCheck className="h-4 w-4 text-success shrink-0 mt-0.5" />
                 <p className="leading-relaxed">
-                  Toàn bộ thông tin bí mật (Token Google, Bot Token) được mã hóa an toàn trong cơ sở dữ liệu nội bộ trên máy bạn. Không có bất kỳ dữ liệu nào bị chuyển tiếp ra ngoài.
+                  Refresh token Google được mã hóa trong cơ sở dữ liệu. Bot Token và OAuth client secret được lưu trong config.toml cục bộ; trên Unix tệp này được giới hạn quyền 0600 và secret không được trả nguyên văn qua IPC.
                 </p>
               </div>
             </div>
