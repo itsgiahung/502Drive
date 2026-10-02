@@ -172,7 +172,9 @@ pub async fn run_preflight_check() -> Result<PreflightReport, String> {
                         )
                     } else {
                         let switched = conn
-                            .query_row("PRAGMA journal_mode=WAL;", [], |row| row.get::<_, String>(0))
+                            .query_row("PRAGMA journal_mode=WAL;", [], |row| {
+                                row.get::<_, String>(0)
+                            })
                             .ok()
                             .is_some_and(|mode| mode.eq_ignore_ascii_case("wal"));
                         if switched {
@@ -280,10 +282,7 @@ pub async fn run_preflight_check() -> Result<PreflightReport, String> {
                 } else {
                     (
                         "warning",
-                        format!(
-                            "Config đúng schema nhưng còn thiếu: {}",
-                            missing.join(", ")
-                        ),
+                        format!("Config đúng schema nhưng còn thiếu: {}", missing.join(", ")),
                         false,
                     )
                 }
