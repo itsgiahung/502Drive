@@ -166,11 +166,84 @@ async fn resumable_jobs_preserve_source_metadata() {
     assert_eq!(jobs[0].source_root_id, "source-root");
     assert_eq!(jobs[0].source_resource_key.as_deref(), Some("resource-key"));
     assert_eq!(jobs[0].destination_parent_id, "dest-parent");
+    assert_eq!(jobs[0].status, "queued");
+    assert_eq!(jobs[0].kind, "one_shot");
+    assert_eq!(jobs[0].watch_id, None);
 
     repo::update_job_status(&db, &job_id, JobStatusValue::Completed, None)
         .await
         .unwrap();
     assert!(repo::resumable_one_shot_jobs(&db).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn watch_initial_clone_job_is_unique_and_excluded_from_generic_resume() {
+    let db = Database::in_memory().await.unwrap();
+    db.run_migrations().await.unwrap();
+    repo::upsert_google_account(
+        &db,
+        "default",
+        Some("user@example.com"),
+        vec![1, 2, 3],
+        "test",
+        r#"["https://www.googleapis.com/auth/drive"]"#,
+    )
+    .await
+    .unwrap();
+
+    let job = repo::NewJob {
+        chat_id: 100,
+        telegram_user_id: 200,
+        google_account_id: "default".to_string(),
+        source_root_id: "source-root".to_string(),
+        source_resource_key: Some("resource-key".to_string()),
+        source_drive_id: Some("source-drive".to_string()),
+        source_name: Some("Source".to_string()),
+        destination_parent_id: "dest-parent".to_string(),
+        destination_drive_id: Some("dest-drive".to_string()),
+        destination_name: Some("Destination".to_string()),
+        progress_message_id: None,
+        duplicate_policy: "skip_same_source".to_string(),
+    };
+
+    let first = repo::get_or_create_watch_initial_clone_job(&db, "watch-1", job.clone())
+        .await
+        .unwrap();
+    let second = repo::get_or_create_watch_initial_clone_job(&db, "watch-1", job)
+        .await
+        .unwrap();
+
+    assert_eq!(first.id, second.id);
+    assert_eq!(first.kind, "watch_initial_clone");
+    assert_eq!(first.watch_id.as_deref(), Some("watch-1"));
+    assert_eq!(first.status, "queued");
+    assert!(repo::resumable_one_shot_jobs(&db).await.unwrap().is_empty());
+
+    repo::update_job_status(&db, &first.id, JobStatusValue::Completed, None)
+        .await
+        .unwrap();
+    let completed = repo::get_or_create_watch_initial_clone_job(
+        &db,
+        "watch-1",
+        repo::NewJob {
+            chat_id: 100,
+            telegram_user_id: 200,
+            google_account_id: "default".to_string(),
+            source_root_id: "source-root".to_string(),
+            source_resource_key: None,
+            source_drive_id: None,
+            source_name: None,
+            destination_parent_id: "dest-parent".to_string(),
+            destination_drive_id: None,
+            destination_name: None,
+            progress_message_id: None,
+            duplicate_policy: "skip_same_source".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(completed.id, first.id);
+    assert_eq!(completed.status, "completed");
 }
 
 #[tokio::test]

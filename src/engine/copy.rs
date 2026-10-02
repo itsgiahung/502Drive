@@ -445,16 +445,65 @@ impl CloneService {
     /// Like `start_one_shot` but uses an explicit destination parent instead of
     /// the configured default destination profile. Used by the watch initializer.
     ///
-    /// `watch_id` is stored as a tag on the job so recovery can associate it.
+    /// When `watch_id` is present, the job is persisted as
+    /// `watch_initial_clone` and uniquely associated with that watch. Recovery
+    /// reuses/resumes that exact job, including a completed job whose mappings
+    /// still need to be promoted after a crash.
     pub async fn start_one_shot_with_dest(
         &self,
         request: CloneRequest,
         destination_parent_id: String,
         destination_drive_id: Option<String>,
-        _watch_id: Option<String>,
+        watch_id: Option<String>,
     ) -> anyhow::Result<CloneOutcome> {
         let source = self.get_reference_retry(&request.source).await?;
         validate_source_for_clone(&source)?;
+
+        if let Some(watch_id) = watch_id {
+            let job = repo::get_or_create_watch_initial_clone_job(
+                &self.db,
+                &watch_id,
+                repo::NewJob {
+                    chat_id: request.chat_id,
+                    telegram_user_id: request.telegram_user_id,
+                    google_account_id: "default".to_string(),
+                    source_root_id: source.id.clone(),
+                    source_resource_key: request
+                        .source
+                        .resource_key
+                        .clone()
+                        .or(source.resource_key.clone()),
+                    source_drive_id: source.drive_id.clone(),
+                    destination_parent_id: destination_parent_id.clone(),
+                    destination_drive_id,
+                    progress_message_id: request.progress_message_id,
+                    duplicate_policy: self.config.engine.default_duplicate_policy.clone(),
+                    source_name: Some(source.name.clone()),
+                    destination_name: None,
+                },
+            )
+            .await?;
+
+            return match job.status.as_str() {
+                "queued" | "recovering" => self.resume_one_shot_job(&job).await,
+                "completed" | "partially_completed" => Ok(CloneOutcome {
+                    job_id: job.id.clone(),
+                    message: format!(
+                        "Watch initial clone job {} already completed; reusing persisted mappings.",
+                        job.id
+                    ),
+                    report_paths: self.write_report_best_effort(&job.id).await,
+                }),
+                "discovering" | "running" => {
+                    bail!("watch initial clone job {} is already in progress", job.id)
+                }
+                other => bail!(
+                    "watch initial clone job {} cannot resume from status '{}'",
+                    job.id,
+                    other
+                ),
+            };
+        }
 
         let job_id = repo::create_job_with_metadata(
             &self.db,

@@ -61,6 +61,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0015_hot_path_indexes",
         include_str!("../../migrations/0015_hot_path_indexes.sql"),
     ),
+    (
+        "0016_watch_initial_clone_jobs",
+        include_str!("../../migrations/0016_watch_initial_clone_jobs.sql"),
+    ),
 ];
 
 #[derive(Clone)]
@@ -247,6 +251,8 @@ mod tests {
             "idx_watch_subscriptions_status_id",
             "idx_watch_subscriptions_cursor_status",
             "idx_traversal_folders_pending",
+            "idx_jobs_watch_initial_clone_watch",
+            "idx_jobs_kind_status_watch",
         ];
         for name in expected {
             let name = name.to_string();

@@ -1217,6 +1217,24 @@ pub struct ResumableOneShotJob {
     pub source_root_id: String,
     pub source_resource_key: Option<String>,
     pub destination_parent_id: String,
+    pub status: String,
+    pub kind: String,
+    pub watch_id: Option<String>,
+}
+
+fn row_to_resumable_job(row: &Row<'_>) -> rusqlite::Result<ResumableOneShotJob> {
+    Ok(ResumableOneShotJob {
+        id: row.get(0)?,
+        telegram_user_id: row.get(1)?,
+        chat_id: row.get(2)?,
+        google_account_id: row.get(3)?,
+        source_root_id: row.get(4)?,
+        source_resource_key: row.get(5)?,
+        destination_parent_id: row.get(6)?,
+        status: row.get(7)?,
+        kind: row.get(8)?,
+        watch_id: row.get(9)?,
+    })
 }
 
 pub async fn resumable_one_shot_jobs(db: &Database) -> anyhow::Result<Vec<ResumableOneShotJob>> {
@@ -1225,25 +1243,75 @@ pub async fn resumable_one_shot_jobs(db: &Database) -> anyhow::Result<Vec<Resuma
         .call(move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, telegram_user_id, chat_id, google_account_id,
-                        source_root_id, source_resource_key, destination_parent_id
+                        source_root_id, source_resource_key, destination_parent_id,
+                        status, kind, watch_id
                  FROM jobs
                  WHERE kind = 'one_shot' AND status IN ('queued', 'recovering')
                  ORDER BY created_at_ms, id",
             )?;
             let rows = stmt
-                .query_map([], |row| {
-                    Ok(ResumableOneShotJob {
-                        id: row.get(0)?,
-                        telegram_user_id: row.get(1)?,
-                        chat_id: row.get(2)?,
-                        google_account_id: row.get(3)?,
-                        source_root_id: row.get(4)?,
-                        source_resource_key: row.get(5)?,
-                        destination_parent_id: row.get(6)?,
-                    })
-                })?
+                .query_map([], row_to_resumable_job)?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok::<Vec<ResumableOneShotJob>, rusqlite::Error>(rows)
+        })
+        .await?)
+}
+
+pub async fn get_or_create_watch_initial_clone_job(
+    db: &Database,
+    watch_id: &str,
+    job: NewJob,
+) -> anyhow::Result<ResumableOneShotJob> {
+    let watch_id = watch_id.to_string();
+    Ok(db
+        .conn()
+        .call(move |conn| {
+            let id = Uuid::new_v4().to_string();
+            let now = now_ms();
+            conn.execute(
+                "INSERT OR IGNORE INTO jobs (
+                    id, kind, telegram_user_id, chat_id, google_account_id,
+                    source_root_id, source_resource_key, source_drive_id,
+                    destination_parent_id, destination_drive_id, status,
+                    duplicate_policy, shortcut_policy, progress_message_id,
+                    source_name, destination_name, created_at_ms, updated_at_ms,
+                    watch_id
+                 ) VALUES (
+                    ?1, 'watch_initial_clone', ?2, ?3, ?4,
+                    ?5, ?6, ?7,
+                    ?8, ?9, 'queued',
+                    ?10, 'preserve', ?11,
+                    ?12, ?13, ?14, ?14,
+                    ?15
+                 )",
+                params![
+                    id,
+                    job.telegram_user_id,
+                    job.chat_id,
+                    job.google_account_id,
+                    job.source_root_id,
+                    job.source_resource_key,
+                    job.source_drive_id,
+                    job.destination_parent_id,
+                    job.destination_drive_id,
+                    job.duplicate_policy,
+                    job.progress_message_id,
+                    job.source_name,
+                    job.destination_name,
+                    now,
+                    watch_id,
+                ],
+            )?;
+
+            conn.query_row(
+                "SELECT id, telegram_user_id, chat_id, google_account_id,
+                        source_root_id, source_resource_key, destination_parent_id,
+                        status, kind, watch_id
+                 FROM jobs
+                 WHERE kind = 'watch_initial_clone' AND watch_id = ?1",
+                [watch_id],
+                row_to_resumable_job,
+            )
         })
         .await?)
 }
