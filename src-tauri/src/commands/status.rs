@@ -1,5 +1,5 @@
-use crate::commands::get_db_path;
-use gdclone_bot::state::{db::Database, repo};
+use crate::commands::{config::verify_telegram_bot, get_config_path, get_db_path};
+use gdclone_bot::{config::AppConfig, state::{db::Database, repo}};
 use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 use std::process::Command;
@@ -22,6 +22,7 @@ pub struct SystemStatus {
     pub db_integrity: String,
     pub app_version: String,
     pub bot_username: Option<String>,
+    pub telegram_status: Option<String>,
     pub destination_label: Option<String>,
     pub destination_id: Option<String>,
     pub stats: SystemStats,
@@ -108,6 +109,30 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
         db_integrity = "no_db_yet".to_string();
     }
 
+    let (bot_username, telegram_status) = {
+        let config_path = get_config_path();
+        if !config_path.exists() {
+            (None, Some("no_token".to_string()))
+        } else {
+            match AppConfig::load(&config_path) {
+                Ok(config) => {
+                    let token = config.telegram.bot_token.trim();
+                    if token.is_empty() {
+                        (None, Some("no_token".to_string()))
+                    } else {
+                        match verify_telegram_bot(token.to_string()).await {
+                            Ok(check) if check.ok => {
+                                (check.username, Some("active".to_string()))
+                            }
+                            _ => (None, Some("error".to_string())),
+                        }
+                    }
+                }
+                Err(_) => (None, Some("error".to_string())),
+            }
+        }
+    };
+
     Ok(SystemStatus {
         google_account,
         account_status,
@@ -115,10 +140,8 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
         service_name: "gdclone-bot.service".to_string(),
         db_integrity,
         app_version: format!("v{}", env!("CARGO_PKG_VERSION")),
-        // No fake bot username: the real handle only exists after a getMe
-        // round-trip against the configured bot token, which the status panel
-        // does not perform. The frontend already tolerates `None`.
-        bot_username: None,
+        bot_username,
+        telegram_status,
         destination_label,
         destination_id,
         stats: SystemStats {
