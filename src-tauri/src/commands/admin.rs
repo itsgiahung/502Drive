@@ -1,6 +1,7 @@
 use crate::commands::{get_config_path, get_db_path, get_log_path, get_project_dirs};
 use gdclone_bot::state::{db::Database, repo};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 const BACKUP_NAME_PREFIX: &str = "backup_";
 
@@ -25,9 +26,104 @@ fn validate_backup_name(name: &str) -> Result<&str, String> {
     Ok(name)
 }
 
-fn backup_dir() -> Result<std::path::PathBuf, String> {
+fn backup_dir() -> Result<PathBuf, String> {
     let dirs = get_project_dirs().ok_or_else(|| "cannot locate project dirs".to_string())?;
     Ok(dirs.data_dir().join("backups"))
+}
+
+fn managed_backup_source_dir(root: &Path, backup_name: &str) -> Result<PathBuf, String> {
+    let source = root.join(backup_name);
+    let meta = std::fs::symlink_metadata(&source)
+        .map_err(|_| format!("bản sao lưu '{backup_name}' không tồn tại"))?;
+    if meta.file_type().is_symlink() || !meta.is_dir() {
+        return Err("backup snapshot must be a real directory".to_string());
+    }
+
+    let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
+    let source = std::fs::canonicalize(source).map_err(|e| e.to_string())?;
+    if source.parent() != Some(root.as_path()) {
+        return Err("backup snapshot escapes the managed backup directory".to_string());
+    }
+    Ok(source)
+}
+
+fn regular_backup_file(source_dir: &Path, name: &str) -> Result<Option<PathBuf>, String> {
+    let path = source_dir.join(name);
+    let meta = match std::fs::symlink_metadata(&path) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err.to_string()),
+    };
+    if meta.file_type().is_symlink() || !meta.is_file() {
+        return Err(format!("backup file '{name}' must be a regular file"));
+    }
+    Ok(Some(path))
+}
+
+fn validate_sqlite_backup(path: &Path) -> Result<(), String> {
+    let conn = rusqlite::Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .map_err(|e| format!("cannot open backup database: {e}"))?;
+    let quick_check: String = conn
+        .query_row("PRAGMA quick_check", [], |row| row.get(0))
+        .map_err(|e| format!("cannot validate backup database: {e}"))?;
+    if quick_check != "ok" {
+        return Err(format!("backup database quick_check failed: {quick_check}"));
+    }
+    Ok(())
+}
+
+fn read_valid_config_backup(path: &Path) -> Result<String, String> {
+    let contents = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read backup config: {e}"))?;
+    contents
+        .parse::<toml::Table>()
+        .map_err(|e| format!("backup config.toml is invalid: {e}"))?;
+    Ok(contents)
+}
+
+fn replace_private_file(source: &Path, destination: &Path) -> Result<(), String> {
+    let parent = destination
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+
+    let file_name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "restore destination has no valid file name".to_string())?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let temp = parent.join(format!(
+        ".{file_name}.restore.{}.{}",
+        std::process::id(),
+        nonce
+    ));
+
+    let result = (|| -> Result<(), String> {
+        std::fs::copy(source, &temp).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| e.to_string())?;
+        }
+        std::fs::File::open(&temp)
+            .and_then(|file| file.sync_all())
+            .map_err(|e| e.to_string())?;
+        std::fs::rename(&temp, destination).map_err(|e| e.to_string())?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
 }
 
 #[cfg(target_os = "linux")]
@@ -359,20 +455,29 @@ pub async fn list_backups() -> Result<Vec<BackupInfoDto>, String> {
 #[tauri::command]
 pub async fn restore_backup(backup_name: String) -> Result<(), String> {
     let backup_name = validate_backup_name(&backup_name)?;
-    let source_dir = backup_dir()?.join(backup_name);
-    if !source_dir.exists() {
-        return Err(format!("bản sao lưu '{backup_name}' không tồn tại"));
+    let backup_root = backup_dir()?;
+    let source_dir = managed_backup_source_dir(&backup_root, backup_name)?;
+
+    // Validate every restore input before stopping the daemon or touching live
+    // state. Backup entries must be regular files, not symlink indirections.
+    let src_db = regular_backup_file(&source_dir, "state.db")?;
+    if let Some(path) = src_db.as_deref() {
+        validate_sqlite_backup(path)?;
     }
+    let src_cfg = regular_backup_file(&source_dir, "config.toml")?;
+    let config_contents = src_cfg
+        .as_deref()
+        .map(read_valid_config_backup)
+        .transpose()?;
 
     let db_path = get_db_path();
     let cfg_path = get_config_path();
     let was_active = stop_daemon_for_restore()?;
 
     let restore_result = (|| -> Result<(), String> {
-        let src_db = source_dir.join("state.db");
-        if src_db.exists() {
+        if let Some(src_db) = src_db.as_deref() {
             // The backup is a single-file SQLite snapshot. Remove sidecar
-            // files from the old database before replacing it.
+            // files from the old database before atomically replacing it.
             for sidecar in [
                 db_path.with_extension("db-wal"),
                 db_path.with_extension("db-shm"),
@@ -381,24 +486,11 @@ pub async fn restore_backup(backup_name: String) -> Result<(), String> {
                     std::fs::remove_file(&sidecar).map_err(|e| e.to_string())?;
                 }
             }
-            std::fs::copy(&src_db, &db_path).map_err(|e| e.to_string())?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&db_path, std::fs::Permissions::from_mode(0o600))
-                    .map_err(|e| e.to_string())?;
-            }
+            replace_private_file(src_db, &db_path)?;
         }
 
-        let src_cfg = source_dir.join("config.toml");
-        if src_cfg.exists() {
-            std::fs::copy(&src_cfg, &cfg_path).map_err(|e| e.to_string())?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&cfg_path, std::fs::Permissions::from_mode(0o600))
-                    .map_err(|e| e.to_string())?;
-            }
+        if let Some(contents) = config_contents.as_deref() {
+            super::config::write_config_file(&cfg_path, contents)?;
         }
         Ok(())
     })();
@@ -478,7 +570,91 @@ pub async fn apply_remote_update() -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_backup_name, validate_managed_role};
+    use super::{
+        managed_backup_source_dir, read_valid_config_backup, regular_backup_file,
+        replace_private_file, validate_backup_name, validate_managed_role, validate_sqlite_backup,
+    };
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir(label: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "502drive_restore_{label}_{}_{}",
+            std::process::id(),
+            nonce
+        ))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restore_sources_reject_symlink_indirection() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_dir("symlink");
+        let outside = temp_dir("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+
+        let name = "backup_20261002_174500";
+        symlink(&outside, root.join(name)).unwrap();
+        assert!(managed_backup_source_dir(&root, name).is_err());
+
+        std::fs::remove_file(root.join(name)).unwrap();
+        let snapshot = root.join(name);
+        std::fs::create_dir_all(&snapshot).unwrap();
+        let target = outside.join("state.db");
+        std::fs::write(&target, b"outside").unwrap();
+        symlink(&target, snapshot.join("state.db")).unwrap();
+        assert!(regular_backup_file(&snapshot, "state.db").is_err());
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_restore_replaces_destination_symlink_not_target() {
+        use std::os::unix::fs::symlink;
+
+        let dir = temp_dir("replace");
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("snapshot.db");
+        let target = dir.join("target.db");
+        let destination = dir.join("state.db");
+        std::fs::write(&source, b"snapshot").unwrap();
+        std::fs::write(&target, b"keep").unwrap();
+        symlink(&target, &destination).unwrap();
+
+        replace_private_file(&source, &destination).unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"snapshot");
+        assert_eq!(std::fs::read(&target).unwrap(), b"keep");
+        assert!(!std::fs::symlink_metadata(&destination)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn corrupt_restore_inputs_are_rejected_before_apply() {
+        let dir = temp_dir("corrupt");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let db = dir.join("state.db");
+        std::fs::write(&db, b"not sqlite").unwrap();
+        assert!(validate_sqlite_backup(&db).is_err());
+
+        let cfg = dir.join("config.toml");
+        std::fs::write(&cfg, "[telegram\nbot_token='x'").unwrap();
+        assert!(read_valid_config_backup(&cfg).is_err());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn desktop_user_management_only_creates_operators() {
