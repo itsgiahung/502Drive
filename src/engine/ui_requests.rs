@@ -106,12 +106,7 @@ async fn claim(db: &Database, id: &str) -> anyhow::Result<bool> {
     ui_requests::claim(db, id).await
 }
 
-async fn finish_claim(
-    db: &Database,
-    id: &str,
-    accepted: bool,
-    note: &str,
-) -> anyhow::Result<()> {
+async fn finish_claim(db: &Database, id: &str, accepted: bool, note: &str) -> anyhow::Result<()> {
     if !ui_requests::finish_claim(db, id, accepted, note).await? {
         anyhow::bail!("ui_request claim lost before completion: {id}");
     }
