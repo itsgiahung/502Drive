@@ -87,11 +87,7 @@ pub(crate) fn write_config_file(path: &Path, contents: &str) -> Result<(), Strin
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| e.to_string())?
         .as_nanos();
-    let temp_path = parent.join(format!(
-        ".{file_name}.tmp.{}.{}",
-        std::process::id(),
-        nonce
-    ));
+    let temp_path = parent.join(format!(".{file_name}.tmp.{}.{}", std::process::id(), nonce));
 
     let write_result = (|| -> Result<(), String> {
         let mut options = fs::OpenOptions::new();
@@ -602,10 +598,12 @@ mod tests {
             std::fs::read_to_string(&target).unwrap(),
             "do-not-overwrite"
         );
-        assert!(!std::fs::symlink_metadata(&config)
-            .unwrap()
-            .file_type()
-            .is_symlink());
+        assert!(
+            !std::fs::symlink_metadata(&config)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
         assert_eq!(
             std::fs::metadata(&config).unwrap().permissions().mode() & 0o777,
             0o600

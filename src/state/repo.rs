@@ -2712,8 +2712,7 @@ pub async fn commit_change_page(
             // fetch the same page concurrently; only the process whose request
             // token is still current may commit. A stale transaction rolls
             // back its event inserts as well.
-            let new_last_event_at: Option<i64> =
-                if events.is_empty() { None } else { Some(now) };
+            let new_last_event_at: Option<i64> = if events.is_empty() { None } else { Some(now) };
             let changed = tx.execute(
                 "UPDATE change_cursors
                  SET current_page_token = ?1,

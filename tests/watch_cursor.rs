@@ -83,9 +83,17 @@ async fn commit_page_advances_token() {
         },
     ];
 
-    repo::commit_change_page(&db, &cursor.id, "start-tok", events, None, Some("next-start-tok"), 0)
-        .await
-        .unwrap();
+    repo::commit_change_page(
+        &db,
+        &cursor.id,
+        "start-tok",
+        events,
+        None,
+        Some("next-start-tok"),
+        0,
+    )
+    .await
+    .unwrap();
 
     // The cursor token should have advanced.
     let cursors = repo::all_change_cursors(&db).await.unwrap();

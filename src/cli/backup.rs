@@ -98,7 +98,10 @@ fn snapshot_temp_path(dest: &Path) -> PathBuf {
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("state.db");
-    dest.with_file_name(format!(".{file_name}.snapshot-{}-{nonce}", std::process::id()))
+    dest.with_file_name(format!(
+        ".{file_name}.snapshot-{}-{nonce}",
+        std::process::id()
+    ))
 }
 
 fn ensure_distinct_paths(source: &Path, dest: &Path) -> anyhow::Result<()> {
@@ -106,7 +109,10 @@ fn ensure_distinct_paths(source: &Path, dest: &Path) -> anyhow::Result<()> {
         let source = fs::canonicalize(source)?;
         let dest = fs::canonicalize(dest)?;
         if source == dest {
-            bail!("backup destination must not overwrite source {}", source.display());
+            bail!(
+                "backup destination must not overwrite source {}",
+                source.display()
+            );
         }
     }
     Ok(())
