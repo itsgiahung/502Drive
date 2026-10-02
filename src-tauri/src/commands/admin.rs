@@ -44,7 +44,16 @@ fn stop_daemon_for_restore() -> Result<bool, String> {
     Ok(was_active)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+fn stop_daemon_for_restore() -> Result<bool, String> {
+    let output = std::process::Command::new("schtasks")
+        .args(["/End", "/TN", "502Drive"])
+        .output()
+        .map_err(|e| format!("failed to stop scheduled task before restore: {e}"))?;
+    Ok(output.status.success())
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 fn stop_daemon_for_restore() -> Result<bool, String> {
     Ok(false)
 }
@@ -64,7 +73,22 @@ fn restart_daemon_after_restore() -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+fn restart_daemon_after_restore() -> Result<(), String> {
+    let output = std::process::Command::new("schtasks")
+        .args(["/Run", "/TN", "502Drive"])
+        .output()
+        .map_err(|e| format!("failed to restart scheduled task after restore: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "failed to restart scheduled task after restore: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 fn restart_daemon_after_restore() -> Result<(), String> {
     Ok(())
 }
