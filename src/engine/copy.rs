@@ -489,12 +489,9 @@ impl CloneService {
                     // Another process may have changed the job between the
                     // initial read and retry CAS. Re-read the canonical row
                     // instead of acting on the stale failed status.
-                    job = repo::get_or_create_watch_initial_clone_job(
-                        &self.db,
-                        &watch_id,
-                        job_spec,
-                    )
-                    .await?;
+                    job =
+                        repo::get_or_create_watch_initial_clone_job(&self.db, &watch_id, job_spec)
+                            .await?;
                 }
             }
 

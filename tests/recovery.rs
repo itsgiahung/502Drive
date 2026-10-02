@@ -36,30 +36,16 @@ async fn startup_recovery_requeues_interrupted_work() {
         .await
         .unwrap();
 
-    let pausing_job = repo::create_job(
-        &db,
-        1,
-        2,
-        "default",
-        "pause-source",
-        "dest-parent",
-    )
-    .await
-    .unwrap();
+    let pausing_job = repo::create_job(&db, 1, 2, "default", "pause-source", "dest-parent")
+        .await
+        .unwrap();
     repo::update_job_status(&db, &pausing_job, JobStatusValue::Pausing, None)
         .await
         .unwrap();
 
-    let cancelling_job = repo::create_job(
-        &db,
-        1,
-        2,
-        "default",
-        "cancel-source",
-        "dest-parent",
-    )
-    .await
-    .unwrap();
+    let cancelling_job = repo::create_job(&db, 1, 2, "default", "cancel-source", "dest-parent")
+        .await
+        .unwrap();
     repo::update_job_status(&db, &cancelling_job, JobStatusValue::Cancelling, None)
         .await
         .unwrap();
@@ -122,11 +108,17 @@ async fn startup_recovery_requeues_interrupted_work() {
         Some("recovering")
     );
     assert_eq!(
-        repo::job_status(&db, &pausing_job).await.unwrap().as_deref(),
+        repo::job_status(&db, &pausing_job)
+            .await
+            .unwrap()
+            .as_deref(),
         Some("paused")
     );
     assert_eq!(
-        repo::job_status(&db, &cancelling_job).await.unwrap().as_deref(),
+        repo::job_status(&db, &cancelling_job)
+            .await
+            .unwrap()
+            .as_deref(),
         Some("cancelled")
     );
     let counts = repo::job_status_counts(&db).await.unwrap();
@@ -322,10 +314,9 @@ async fn failed_watch_initial_clone_job_can_recover_without_failed_children() {
         progress_message_id: None,
         duplicate_policy: "skip_same_source".to_string(),
     };
-    let failed =
-        repo::get_or_create_watch_initial_clone_job(&db, "watch-retry", job_spec.clone())
-            .await
-            .unwrap();
+    let failed = repo::get_or_create_watch_initial_clone_job(&db, "watch-retry", job_spec.clone())
+        .await
+        .unwrap();
     repo::update_job_status(
         &db,
         &failed.id,
