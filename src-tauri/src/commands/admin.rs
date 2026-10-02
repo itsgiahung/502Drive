@@ -459,8 +459,10 @@ pub async fn apply_remote_update() -> Result<String, String> {
     let url = update
         .download_url
         .ok_or_else(|| "Bản phát hành mới không có URL tải xuống".to_string())?;
-    const TRUSTED_RELEASE_PREFIX: &str = "https://github.com/GiaHung07/502Drive/releases";
-    if !url.starts_with(TRUSTED_RELEASE_PREFIX) {
+    const TRUSTED_RELEASE_PAGE: &str = "https://github.com/GiaHung07/502Drive/releases";
+    if url != TRUSTED_RELEASE_PAGE
+        && !url.starts_with("https://github.com/GiaHung07/502Drive/releases/")
+    {
         return Err("URL bản phát hành không thuộc kho 502Drive chính thức".to_string());
     }
 
