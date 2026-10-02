@@ -11,7 +11,7 @@ use gdclone_bot::{
     platform, report,
     state::db::Database,
     telegram,
-    watch::{NotificationEvent, spawn_all_pollers},
+    watch::{NotificationEvent, NotificationKind, spawn_all_pollers},
 };
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -121,7 +121,7 @@ async fn run_bot(config: AppConfig) -> anyhow::Result<()> {
         // The actual Bot handle is created by the telegram layer; we route via
         // a shared mpsc channel. We accept an error here (e.g. if bot not yet ready)
         // since the initializer may fire before the bot is up.
-        spawn_notify_forwarder(notify_rx, &config);
+        spawn_notify_forwarder(notify_rx, &config, db.clone());
         (Some(tx), handles)
     } else {
         tracing::info!("watch.enabled=false — pollers not started");
@@ -146,14 +146,33 @@ async fn run_bot(config: AppConfig) -> anyhow::Result<()> {
 fn spawn_notify_forwarder(
     mut notify_rx: tokio::sync::mpsc::Receiver<NotificationEvent>,
     config: &AppConfig,
+    db: Database,
 ) {
     let bot_token = config.telegram.bot_token.clone();
     let notifications = config.notifications.clone();
     tokio::spawn(async move {
         while let Some(event) = notify_rx.recv().await {
-            // Skip suppressed notification kinds based on config flags.
+            // Daemon-level flags are the outer kill switch.
             if !event.should_send(&notifications) {
                 continue;
+            }
+            // Per-user preferences further narrow delivery. Missing preference
+            // rows intentionally preserve the migration defaults (enabled).
+            if event.telegram_user_id > 0 {
+                if let Ok(Some(prefs)) =
+                    gdclone_bot::state::repo::telegram_user_preferences(&db, event.telegram_user_id)
+                        .await
+                {
+                    let enabled = match event.kind {
+                        NotificationKind::JobCompleted => prefs.notify_job_complete,
+                        NotificationKind::JobFailed => prefs.notify_job_error,
+                        NotificationKind::WatchError => prefs.notify_watch_conflicts,
+                        NotificationKind::WatchActivity => true,
+                    };
+                    if !enabled {
+                        continue;
+                    }
+                }
             }
             let chat_id = event.chat_id;
             // GUI-initiated watches (chat_id = 0) have no Telegram chat —

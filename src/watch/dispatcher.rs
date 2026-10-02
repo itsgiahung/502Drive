@@ -82,7 +82,7 @@ pub async fn dispatch_pending(
                     short_watch_id(&watch.id),
                     format_anyhow_error(&err, lang)
                 );
-                let _ = notify_tx.try_send(NotificationEvent::watch_error(watch.chat_id, msg));
+                let _ = notify_tx.try_send(NotificationEvent::watch_error(watch.telegram_user_id, watch.chat_id, msg));
             }
         }
     }
@@ -156,7 +156,7 @@ async fn dispatch_one(
             &watch.id[..8.min(watch.id.len())],
             config.watch.max_backlog_events_per_watch
         );
-        let _ = notify_tx.try_send(NotificationEvent::watch_error(watch.chat_id, msg));
+        let _ = notify_tx.try_send(NotificationEvent::watch_error(watch.telegram_user_id, watch.chat_id, msg));
         return Ok(());
     }
 
@@ -248,7 +248,7 @@ async fn dispatch_one(
                 &watch.id[..8.min(watch.id.len())],
                 event.sequence
             );
-            let _ = notify_tx.try_send(NotificationEvent::watch_error(watch.chat_id, msg));
+            let _ = notify_tx.try_send(NotificationEvent::watch_error(watch.telegram_user_id, watch.chat_id, msg));
             break;
         }
 
@@ -344,6 +344,7 @@ async fn dispatch_one(
     // zero-change cycles stay silent.
     if counts.total() > 0 && notify_allowed(state, &watch.id) {
         let _ = notify_tx.try_send(NotificationEvent::watch_activity(
+            watch.telegram_user_id,
             watch.chat_id,
             counts.summary_message(watch),
         ));
@@ -563,7 +564,7 @@ async fn scan_missing_children(
             &watch.id[..8.min(watch.id.len())],
             copied
         );
-        let _ = notify_tx.try_send(NotificationEvent::watch_activity(watch.chat_id, msg));
+        let _ = notify_tx.try_send(NotificationEvent::watch_activity(watch.telegram_user_id, watch.chat_id, msg));
     }
     Ok(())
 }
@@ -600,7 +601,7 @@ pub(crate) async fn apply_classification(
                     let msg = format!(
                         "⚠ Watch `{short_id}`: nguồn `{file_id}` bị xoá/vào thùng rác.\nDùng lệnh /watch_status {short_id} để chọn hành động.",
                     );
-                    let _ = notify_tx.try_send(NotificationEvent::watch_error(watch.chat_id, msg));
+                    let _ = notify_tx.try_send(NotificationEvent::watch_error(watch.telegram_user_id, watch.chat_id, msg));
                     info!(
                         watch_id = watch.id,
                         file_id, "source removed — manual confirmation required (notified)"
@@ -823,7 +824,7 @@ pub(crate) async fn apply_classification(
                     let msg = format!(
                         "⚠ Watch `{short_id}`: tệp `{file_name}` có phiên bản mới.\nDùng lệnh /watch_status {short_id} để chọn hành động.",
                     );
-                    let _ = notify_tx.try_send(NotificationEvent::watch_error(watch.chat_id, msg));
+                    let _ = notify_tx.try_send(NotificationEvent::watch_error(watch.telegram_user_id, watch.chat_id, msg));
                     info!(
                         watch_id = watch.id,
                         file_id, "content changed — manual confirmation notified"
