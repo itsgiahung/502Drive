@@ -85,35 +85,68 @@ pub async fn wait_for_loopback_code(port: u16, expected_state: &str) -> anyhow::
     let listener = TcpListener::bind(("127.0.0.1", port))
         .await
         .with_context(|| format!("bind OAuth loopback port {port}"))?;
-    let (mut stream, _) = tokio::time::timeout(Duration::from_secs(300), listener.accept())
-        .await
-        .context("OAuth loopback timed out")??;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(300);
 
-    let mut buffer = vec![0_u8; 8192];
-    let n = stream.read(&mut buffer).await?;
-    let request = String::from_utf8_lossy(&buffer[..n]);
-    let first_line = request
-        .lines()
-        .next()
-        .context("empty OAuth callback request")?;
-    let path = first_line
-        .split_whitespace()
-        .nth(1)
-        .context("malformed OAuth callback request")?;
-    let callback_url = format!("http://127.0.0.1:{port}{path}");
-    let url = url::Url::parse(&callback_url)?;
-    let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
+    loop {
+        let (mut stream, _) = tokio::time::timeout_at(deadline, listener.accept())
+            .await
+            .context("OAuth loopback timed out")??;
 
-    let response = b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n<!doctype html><title>gdclone-bot</title><h1>Authorization completed</h1><p>You may close this tab.</p>\n";
-    stream.write_all(response).await?;
+        let mut buffer = vec![0_u8; 8192];
+        let n = match tokio::time::timeout_at(deadline, stream.read(&mut buffer)).await {
+            Ok(Ok(n)) => n,
+            Ok(Err(err)) => return Err(err.into()),
+            Err(_) => bail!("OAuth loopback timed out"),
+        };
+        let request = String::from_utf8_lossy(&buffer[..n]);
+        let Some(first_line) = request.lines().next() else {
+            write_loopback_response(&mut stream, false).await?;
+            continue;
+        };
+        let Some(path) = first_line.split_whitespace().nth(1) else {
+            write_loopback_response(&mut stream, false).await?;
+            continue;
+        };
+        let callback_url = format!("http://127.0.0.1:{port}{path}");
+        let Ok(url) = url::Url::parse(&callback_url) else {
+            write_loopback_response(&mut stream, false).await?;
+            continue;
+        };
+        let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
 
-    if query.get("state").map(String::as_str) != Some(expected_state) {
-        bail!("OAuth state mismatch");
+        // Ignore unrelated/malicious local requests rather than letting the
+        // first connection terminate the OAuth flow. Only the browser callback
+        // carrying our unguessable CSRF state is authoritative.
+        if query.get("state").map(String::as_str) != Some(expected_state) {
+            write_loopback_response(&mut stream, false).await?;
+            continue;
+        }
+
+        if let Some(error) = query.get("error") {
+            write_loopback_response(&mut stream, false).await?;
+            bail!("OAuth authorization failed: {error}");
+        }
+
+        let Some(code) = query.get("code").cloned() else {
+            write_loopback_response(&mut stream, false).await?;
+            bail!("OAuth callback missing code");
+        };
+        write_loopback_response(&mut stream, true).await?;
+        return Ok(code);
     }
-    query
-        .get("code")
-        .cloned()
-        .context("OAuth callback missing code")
+}
+
+async fn write_loopback_response(
+    stream: &mut tokio::net::TcpStream,
+    success: bool,
+) -> anyhow::Result<()> {
+    let response: &[u8] = if success {
+        b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n<!doctype html><title>502Drive</title><h1>Authorization completed</h1><p>You may close this tab.</p>\n"
+    } else {
+        b"HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\nInvalid OAuth callback.\n"
+    };
+    stream.write_all(response).await?;
+    Ok(())
 }
 
 pub async fn exchange_code(

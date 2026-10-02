@@ -1,9 +1,12 @@
 use gdclone_bot::{
     config::GoogleOAuthConfig,
-    drive::auth::{choose_redirect_port, decrypt_token, encrypt_token},
+    drive::auth::{
+        choose_redirect_port, decrypt_token, encrypt_token, wait_for_loopback_code,
+    },
     secrets::FileSecretStore,
     state::{db::Database, repo},
 };
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -52,6 +55,49 @@ async fn google_account_secret_round_trips_ciphertext_only() {
         .unwrap()
         .unwrap();
     assert_eq!(account.status, "revoked");
+}
+
+async fn send_loopback_request(port: u16, path: &str) -> String {
+    let mut stream = None;
+    for _ in 0..100 {
+        match tokio::net::TcpStream::connect(("127.0.0.1", port)).await {
+            Ok(connected) => {
+                stream = Some(connected);
+                break;
+            }
+            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+        }
+    }
+    let mut stream = stream.expect("OAuth loopback listener did not start");
+    let request = format!(
+        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).await.unwrap();
+    String::from_utf8(response).unwrap()
+}
+
+#[tokio::test]
+async fn oauth_loopback_ignores_wrong_state_before_valid_callback() {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+
+    let waiter = tokio::spawn(async move {
+        wait_for_loopback_code(port, "expected-state").await.unwrap()
+    });
+
+    let rejected =
+        send_loopback_request(port, "/oauth2/callback?code=evil&state=wrong-state").await;
+    assert!(rejected.starts_with("HTTP/1.1 400"));
+
+    let accepted =
+        send_loopback_request(port, "/oauth2/callback?code=real-code&state=expected-state").await;
+    assert!(accepted.starts_with("HTTP/1.1 200"));
+    assert_eq!(waiter.await.unwrap(), "real-code");
 }
 
 #[tokio::test]
