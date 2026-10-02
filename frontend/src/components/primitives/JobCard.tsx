@@ -14,6 +14,7 @@ import {
   AlertCircle,
   X,
   RotateCcw,
+  ArrowRight,
 } from 'lucide-react'
 import { useI18n } from '@/hooks/useI18n'
 import { getJobStatusSemantic } from '@/lib/status'
@@ -153,6 +154,16 @@ export const JobCard: React.FC<JobCardProps> = ({
             </Button>
           )}
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 min-w-0 text-xs bg-bg-input/60 p-2 rounded-lg font-mono text-text-secondary overflow-hidden select-text">
+        <span className="truncate max-w-[42%]" title={job.source_root_id}>
+          {job.source_name ?? job.source_root_id}
+        </span>
+        <ArrowRight className="h-3 w-3 shrink-0 text-text-muted" aria-hidden="true" />
+        <span className="truncate max-w-[42%] text-text-primary" title={job.destination_parent_id}>
+          {job.destination_name ?? job.destination_parent_id}
+        </span>
       </div>
 
       {/* Progress bar & item count */}
