@@ -158,19 +158,30 @@ async fn stale_change_page_cannot_overwrite_cursor_or_insert_events() {
     let current = cursors.iter().find(|c| c.id == cursor.id).unwrap();
     assert_eq!(current.current_page_token, "tok-2");
 
-    let cursor_id = cursor.id.clone();
-    let event_count: i64 = db
-        .conn()
-        .call(move |conn| {
-            conn.query_row(
-                "SELECT COUNT(*) FROM change_events WHERE cursor_id = ?1",
-                [cursor_id],
-                |row| row.get(0),
-            )
-        })
-        .await
-        .unwrap();
-    assert_eq!(event_count, 1);
+    let first_sequence = first.unwrap();
+    let next = repo::commit_change_page(
+        &db,
+        &cursor.id,
+        "tok-2",
+        vec![repo::NewChangeEventRow {
+            cursor_id: cursor.id.clone(),
+            request_page_token: "tok-2".into(),
+            ordinal_in_page: 0,
+            file_id: "fresh-file".into(),
+            removed: false,
+            file_json: None,
+        }],
+        None,
+        Some("tok-3"),
+        0,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    // SQLite may reuse a rolled-back AUTOINCREMENT candidate. If the stale
+    // page had leaked an event row, this would be first_sequence + 2.
+    assert_eq!(next, first_sequence + 1);
 }
 
 #[tokio::test]
