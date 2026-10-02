@@ -1,5 +1,8 @@
 use crate::commands::{config::verify_telegram_bot, get_config_path, get_db_path};
-use gdclone_bot::{config::AppConfig, state::{db::Database, repo}};
+use gdclone_bot::{
+    config::AppConfig,
+    state::{db::Database, repo},
+};
 use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 use std::process::Command;
@@ -121,9 +124,7 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
                         (None, Some("no_token".to_string()))
                     } else {
                         match verify_telegram_bot(token.to_string()).await {
-                            Ok(check) if check.ok => {
-                                (check.username, Some("active".to_string()))
-                            }
+                            Ok(check) if check.ok => (check.username, Some("active".to_string())),
                             _ => (None, Some("error".to_string())),
                         }
                     }

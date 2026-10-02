@@ -196,7 +196,9 @@ async fn job_visibility_queries_are_scoped_to_user() {
         .await
         .unwrap();
 
-    let active = repo::list_active_jobs_for_user(&db, 2, 10, 0).await.unwrap();
+    let active = repo::list_active_jobs_for_user(&db, 2, 10, 0)
+        .await
+        .unwrap();
     assert_eq!(active.len(), 1);
     assert_eq!(repo::active_job_count_for_user(&db, 2).await.unwrap(), 1);
     assert_eq!(repo::active_job_count(&db).await.unwrap(), 2);
