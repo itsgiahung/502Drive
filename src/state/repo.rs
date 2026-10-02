@@ -467,6 +467,8 @@ pub struct JobSummary {
     pub failed_items: i64,
     pub skipped_items: i64,
     pub updated_at_ms: i64,
+    pub source_name: Option<String>,
+    pub destination_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -518,7 +520,7 @@ pub async fn list_active_jobs_for_user(
         .call(move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, kind, status, total_discovered, completed_items,
-                        failed_items, skipped_items, updated_at_ms
+                        failed_items, skipped_items, updated_at_ms, source_name, destination_name
                  FROM jobs
                  WHERE telegram_user_id = ?1
                    AND status IN (
@@ -539,6 +541,8 @@ pub async fn list_active_jobs_for_user(
                         failed_items: row.get(5)?,
                         skipped_items: row.get(6)?,
                         updated_at_ms: row.get(7)?,
+                        source_name: row.get(8)?,
+                        destination_name: row.get(9)?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -556,7 +560,7 @@ pub async fn latest_reportable_job_for_user(
         .call(move |conn| {
             conn.query_row(
                 "SELECT id, kind, status, total_discovered, completed_items,
-                        failed_items, skipped_items, updated_at_ms
+                        failed_items, skipped_items, updated_at_ms, source_name, destination_name
                  FROM jobs
                  WHERE telegram_user_id = ?1
                    AND status IN ('completed', 'partially_completed', 'failed')
@@ -573,6 +577,8 @@ pub async fn latest_reportable_job_for_user(
                         failed_items: row.get(5)?,
                         skipped_items: row.get(6)?,
                         updated_at_ms: row.get(7)?,
+                        source_name: row.get(8)?,
+                        destination_name: row.get(9)?,
                     })
                 },
             )
