@@ -209,9 +209,7 @@ pub(crate) fn language_save_error(lang: keyboards::UiLanguage, err: &anyhow::Err
 
 pub(crate) fn settings_save_error(lang: keyboards::UiLanguage) -> String {
     match lang {
-        keyboards::UiLanguage::Vi => {
-            "Không thể lưu cài đặt lúc này. Vui lòng thử lại.".to_string()
-        }
+        keyboards::UiLanguage::Vi => "Không thể lưu cài đặt lúc này. Vui lòng thử lại.".to_string(),
         keyboards::UiLanguage::En => {
             "Could not save settings right now. Please try again.".to_string()
         }
