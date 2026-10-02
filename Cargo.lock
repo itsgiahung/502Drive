@@ -1065,6 +1065,7 @@ dependencies = [
  "directories",
  "gdclone-bot",
  "open",
+ "reqwest 0.12.28",
  "rusqlite",
  "serde",
  "serde_json",
