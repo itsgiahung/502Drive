@@ -86,6 +86,7 @@ export const JobCard: React.FC<JobCardProps> = ({
   const semantic = getJobStatusSemantic(job.status)
   const badgeVariant = getStatusBadgeVariant(job.status)
   const isRunningAnimation = semantic.isActive && (job.status === 'running' || job.status === 'discovering' || job.status === 'recovering')
+  const canRetry = semantic.canRetry && (job.status !== 'paused' || job.failed_items > 0)
 
   return (
     <Card className={`p-4 space-y-3 ${compact ? 'hover:border-border transition-colors' : ''}`}>
@@ -141,7 +142,7 @@ export const JobCard: React.FC<JobCardProps> = ({
             </Button>
           )}
 
-          {semantic.canRetry && onRetry && (
+          {canRetry && onRetry && (
             <Button
               size="sm"
               variant="secondary"
