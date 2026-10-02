@@ -18,7 +18,7 @@ The provided `docker-compose.yml`:
 
 - mounts `./config` → `/config` and `./data` → `/data` (both are declared volumes in the image);
 - sets `restart: unless-stopped`;
-- publishes `51000-51010:51000-51010` for the OAuth loopback redirect (§4).
+- does **not** publish inbound application ports because the daemon is outbound-only.
 
 The container entrypoint is `502drive --config /config/config.toml run`, so the config file must exist at `./config/config.toml` on the host.
 
@@ -80,33 +80,41 @@ services:
 
 A minimal complete `config/config.toml` can be `config.sample.toml` with the four credentials replaced (or left as `REPLACE_ME` if provided via env).
 
-## 4. One-time Google OAuth on a headless box
+## 4. One-time Google OAuth for Docker
 
-`auth login` uses an OAuth **loopback redirect**: the daemon binds `127.0.0.1` on a port in the 51000–51100 range and waits for the browser redirect. On a headless VPS/NAS there is no local browser, so do one of:
+`auth login` uses an OAuth **loopback redirect** and intentionally binds only `127.0.0.1`. Inside Docker that address belongs to the container's own network namespace, so publishing the port range does not turn it into a host-browser callback. Also, `docker compose run` does not publish the service's ports unless explicitly requested. For those reasons, in-container OAuth login is not a supported setup path.
 
-**Option A — authenticate on a desktop, run in Docker.** Copy the `config/config.toml` to a desktop machine, run `502drive auth login` there (same `client_id`/`client_secret`), then bring the `~/.local/share/gdclone-bot/state.db` (encrypted refresh token) back into the container's `/data` volume. The refresh token is encrypted with the `master.key` in the config directory, so the key file and the DB must travel together.
+Authenticate once with the native `502drive` binary on the same machine as the browser, using the same OAuth client credentials as the container. The resulting encrypted refresh token is stored in the SQLite database and depends on the `master.key` next to the config file, so **both files must be preserved together**.
 
-**Option B — publish the loopback range and open the URL remotely.** Keep the compose port mapping (`51000-51010:51000-51010`), run `auth login` inside the container, copy the printed Google authorization URL into a browser anywhere, and make sure your firewall/host network routes that port back to the container's published port. This requires the redirect to actually reach the machine where the login listener runs; if the browser cannot reach `http://localhost:51000` on the *client* machine, this will not work and Option A is simpler.
+For a checkout whose `./config` and `./data` directories will later be bind-mounted by Compose, you can write the credentials directly into those directories:
 
 ```bash
-docker compose run --rm 502drive --config /config/config.toml auth login
-docker compose run --rm 502drive --config /config/config.toml doctor
+mkdir -p config data
+cp -n config.sample.toml config/config.toml
+
+GDCLONE__STORAGE__DB_PATH="$PWD/data/state.db" \
+GDCLONE__STORAGE__LOG_DIR="$PWD/data/logs" \
+GDCLONE__STORAGE__REPORT_DIR="$PWD/data/reports" \
+502drive --config "$PWD/config/config.toml" auth login
+
+# config/master.key and data/state.db must now travel together.
+sudo chown -R 10001:10001 config data   # when the container runs as UID 10001
 docker compose up -d
 ```
+
+If the Docker host is a remote VPS/NAS with no local browser, perform this one-time native login on another machine and securely copy both `state.db` and `master.key` into the bind-mounted `data/` and `config/` directories before starting the container.
 
 The full Google Cloud setup (project, Drive API, consent screen, Desktop client) is in [oauth-setup.md](oauth-setup.md).
 
 ## 5. Healthcheck
 
-The Dockerfile installs `curl` but declares **no HEALTHCHECK** and the container exposes no listening HTTP port — the daemon is purely outbound (Telegram long polling + Google API). To monitor liveness, rely on `docker compose logs -f`, `docker ps` restart state, or add your own healthcheck that verifies the process is alive, e.g.:
+The image already declares a healthcheck:
 
-```yaml
-healthcheck:
-  test: ["CMD", "sh", "-c", "kill -0 1"]
-  interval: 60s
-  timeout: 5s
-  retries: 3
+```text
+502drive --config /config/config.toml status
 ```
+
+It runs every 60 seconds (15-second timeout, 30-second start period, three retries). This verifies that the CLI can load the configured state and inspect local status; it is intentionally not an HTTP probe because the daemon exposes no listening application port. Use `docker compose logs -f` and the container health state for deeper diagnosis.
 
 ## 6. Permissions and upgrades
 

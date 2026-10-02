@@ -18,7 +18,6 @@ services:
     volumes:
       - ./config:/config
       - ./data:/data
-    # Google OAuth loopback redirect range (config: redirect_port_start/end,
-    # defaults 51000-51100). Only needed while running `auth login` in-container.
-    ports:
-      - "51000-51100:51000-51100"
+    # OAuth login is intentionally completed outside the container. The
+    # callback listener binds container-local 127.0.0.1, so publishing this
+    # port range would not make that listener reachable from the host browser.
