@@ -61,11 +61,9 @@ fn regular_backup_file(source_dir: &Path, name: &str) -> Result<Option<PathBuf>,
 }
 
 fn validate_sqlite_backup(path: &Path) -> Result<(), String> {
-    let conn = rusqlite::Connection::open_with_flags(
-        path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(|e| format!("cannot open backup database: {e}"))?;
+    let conn =
+        rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e| format!("cannot open backup database: {e}"))?;
     let quick_check: String = conn
         .query_row("PRAGMA quick_check", [], |row| row.get(0))
         .map_err(|e| format!("cannot validate backup database: {e}"))?;
@@ -76,8 +74,8 @@ fn validate_sqlite_backup(path: &Path) -> Result<(), String> {
 }
 
 fn read_valid_config_backup(path: &Path) -> Result<String, String> {
-    let contents = std::fs::read_to_string(path)
-        .map_err(|e| format!("cannot read backup config: {e}"))?;
+    let contents =
+        std::fs::read_to_string(path).map_err(|e| format!("cannot read backup config: {e}"))?;
     contents
         .parse::<toml::Table>()
         .map_err(|e| format!("backup config.toml is invalid: {e}"))?;
@@ -646,10 +644,12 @@ mod tests {
 
         assert_eq!(std::fs::read(&destination).unwrap(), b"snapshot");
         assert_eq!(std::fs::read(&target).unwrap(), b"keep");
-        assert!(!std::fs::symlink_metadata(&destination)
-            .unwrap()
-            .file_type()
-            .is_symlink());
+        assert!(
+            !std::fs::symlink_metadata(&destination)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }

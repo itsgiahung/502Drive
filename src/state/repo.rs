@@ -459,9 +459,7 @@ pub async fn job_status_counts(db: &Database) -> anyhow::Result<Vec<JobStatusCou
         .await?)
 }
 
-pub async fn user_visible_job_status_counts(
-    db: &Database,
-) -> anyhow::Result<Vec<JobStatusCount>> {
+pub async fn user_visible_job_status_counts(db: &Database) -> anyhow::Result<Vec<JobStatusCount>> {
     Ok(db
         .conn()
         .call(move |conn| {
