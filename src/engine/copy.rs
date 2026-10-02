@@ -642,13 +642,9 @@ impl CloneService {
                 )
                 .await?
             }
-        } else if let Some(destination_item_id) = repo::existing_dest_for_source(
-            &self.db,
-            ScopeType::Job.as_str(),
-            &job.id,
-            &source.id,
-        )
-        .await?
+        } else if let Some(destination_item_id) =
+            repo::existing_dest_for_source(&self.db, ScopeType::Job.as_str(), &job.id, &source.id)
+                .await?
         {
             repo::complete_item_and_count(&self.db, &job.id, &source.id, &destination_item_id)
                 .await?;
@@ -1127,13 +1123,8 @@ impl CloneService {
             repo::existing_dest_for_source(&self.db, ScopeType::Job.as_str(), job_id, &source.id)
                 .await?
         {
-            repo::complete_item_and_count(
-                &self.db,
-                job_id,
-                &source.id,
-                &destination_item_id,
-            )
-            .await?;
+            repo::complete_item_and_count(&self.db, job_id, &source.id, &destination_item_id)
+                .await?;
             return Ok(());
         }
         repo::insert_item(
@@ -1256,12 +1247,8 @@ impl CloneService {
         {
             Ok(created) => created,
             Err(err) => {
-                repo::mark_operation_failed(
-                    &self.db,
-                    &props.gdclone_copy_key,
-                    &err.to_string(),
-                )
-                .await?;
+                repo::mark_operation_failed(&self.db, &props.gdclone_copy_key, &err.to_string())
+                    .await?;
                 return Err(err);
             }
         };
@@ -1290,12 +1277,8 @@ impl CloneService {
         {
             Ok(copied) => copied,
             Err(err) => {
-                repo::mark_operation_failed(
-                    &self.db,
-                    &props.gdclone_copy_key,
-                    &err.to_string(),
-                )
-                .await?;
+                repo::mark_operation_failed(&self.db, &props.gdclone_copy_key, &err.to_string())
+                    .await?;
                 return Err(err);
             }
         };
@@ -1334,12 +1317,8 @@ impl CloneService {
         {
             Ok(shortcut) => shortcut,
             Err(err) => {
-                repo::mark_operation_failed(
-                    &self.db,
-                    &props.gdclone_copy_key,
-                    &err.to_string(),
-                )
-                .await?;
+                repo::mark_operation_failed(&self.db, &props.gdclone_copy_key, &err.to_string())
+                    .await?;
                 return Err(err);
             }
         };

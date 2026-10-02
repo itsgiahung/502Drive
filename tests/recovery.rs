@@ -400,16 +400,9 @@ async fn watch_initial_clone_retry_requeues_done_parent_for_failed_file() {
     .await
     .unwrap();
 
-    repo::record_traversal_folder(
-        &db,
-        &job.id,
-        "src-folder",
-        None,
-        "dst-folder",
-        None,
-    )
-    .await
-    .unwrap();
+    repo::record_traversal_folder(&db, &job.id, "src-folder", None, "dst-folder", None)
+        .await
+        .unwrap();
     repo::finish_traversal_folder(&db, &job.id, "src-folder")
         .await
         .unwrap();
