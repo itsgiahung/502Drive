@@ -373,7 +373,10 @@ pub async fn restore_backup(backup_name: String) -> Result<(), String> {
         if src_db.exists() {
             // The backup is a single-file SQLite snapshot. Remove sidecar
             // files from the old database before replacing it.
-            for sidecar in [db_path.with_extension("db-wal"), db_path.with_extension("db-shm")] {
+            for sidecar in [
+                db_path.with_extension("db-wal"),
+                db_path.with_extension("db-shm"),
+            ] {
                 if sidecar.exists() {
                     std::fs::remove_file(&sidecar).map_err(|e| e.to_string())?;
                 }
