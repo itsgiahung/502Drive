@@ -8,6 +8,33 @@ use crate::telegram::keyboards;
 use crate::telegram::progress::{estimate_eta_secs, format_duration_secs, render_progress};
 use crate::telegram::render::{push_field, short_id, short_job_id};
 
+/// One endpoint of a job route: friendly Drive name when known, short id
+/// otherwise (rows created before the name columns carry `None`).
+fn endpoint_display(name: Option<&String>, id: &str) -> String {
+    match name.map(|n| n.trim()).filter(|n| !n.is_empty()) {
+        Some(name) => name.to_string(),
+        None => short_id(id).to_string(),
+    }
+}
+
+/// Detail-panel variant: `Name (shortid)` keeps a referenceable id; rows
+/// without a name keep the full raw id as before.
+fn endpoint_detail(name: Option<&String>, id: &str) -> String {
+    match name.map(|n| n.trim()).filter(|n| !n.is_empty()) {
+        Some(name) => format!("{name} ({})", short_id(id)),
+        None => id.to_string(),
+    }
+}
+
+/// "Project Alpha → Backup 502" route line for job cards.
+pub(crate) fn job_route_line(job: &repo::JobDetail) -> String {
+    format!(
+        "{} → {}",
+        endpoint_display(job.source_name.as_ref(), &job.source_root_id),
+        endpoint_display(job.destination_name.as_ref(), &job.destination_parent_id),
+    )
+}
+
 pub(crate) fn render_job_progress(
     job: &repo::JobDetail,
     elapsed_secs: u64,
@@ -60,7 +87,7 @@ pub(crate) fn render_job_progress(
             progress_status_field(lang),
             job_status_label(lang, &job.status)
         ),
-        format!("• Job: {}", short_job_id(&job.id)),
+        format!("• {}", job_route_line(job)),
         format!(
             "• {}: {}",
             progress_elapsed_field(lang),
@@ -123,7 +150,7 @@ pub(crate) fn render_job_end_state(
     };
     lines.push(title.to_string());
     lines.push("━━━━━━━━━━━━━━".to_string());
-    push_field(&mut lines, "Job", short_job_id(&job.id));
+    lines.push(format!("• {}", job_route_line(job)));
     push_field(
         &mut lines,
         progress_status_field(lang),
@@ -242,7 +269,7 @@ pub(crate) fn is_terminal_status(status: &str) -> bool {
 
 pub(crate) fn render_job_detail(job: &repo::JobDetail, lang: keyboards::UiLanguage) -> String {
     let mut lines = vec![job_detail_title(lang).to_string(), "━━━━━━━━━━".to_string()];
-    push_field(&mut lines, "Job", &job.id);
+    push_field(&mut lines, job_id_field(lang), &job.id);
     push_field(&mut lines, job_detail_kind_field(lang), &job.kind);
     push_field(
         &mut lines,
@@ -252,12 +279,12 @@ pub(crate) fn render_job_detail(job: &repo::JobDetail, lang: keyboards::UiLangua
     push_field(
         &mut lines,
         job_detail_source_field(lang),
-        &job.source_root_id,
+        &endpoint_detail(job.source_name.as_ref(), &job.source_root_id),
     );
     push_field(
         &mut lines,
         job_detail_destination_field(lang),
-        &job.destination_parent_id,
+        &endpoint_detail(job.destination_name.as_ref(), &job.destination_parent_id),
     );
     lines.push(String::new());
     push_field(
@@ -289,8 +316,16 @@ pub(crate) fn render_job_detail(job: &repo::JobDetail, lang: keyboards::UiLangua
 
 pub(crate) fn job_detail_title(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
-        keyboards::UiLanguage::Vi => "CHI TIẾT JOB",
+        keyboards::UiLanguage::Vi => "CHI TIẾT TÁC VỤ",
         keyboards::UiLanguage::En => "JOB DETAIL",
+    }
+}
+
+/// Short job id field label; EN keeps "Job" as the natural term.
+pub(crate) fn job_id_field(lang: keyboards::UiLanguage) -> &'static str {
+    match lang {
+        keyboards::UiLanguage::Vi => "Mã",
+        keyboards::UiLanguage::En => "Job",
     }
 }
 
@@ -339,7 +374,7 @@ pub(crate) fn job_detail_error_field(lang: keyboards::UiLanguage) -> &'static st
 pub(crate) fn job_no_active_text(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
         keyboards::UiLanguage::Vi => {
-            "Không có job đang chạy. Dùng /last_report để lấy report gần nhất."
+            "Không có tác vụ đang chạy. Dùng /last_report để lấy báo cáo gần nhất."
         }
         keyboards::UiLanguage::En => "No active job. Use /last_report to get the latest report.",
     }
@@ -347,21 +382,21 @@ pub(crate) fn job_no_active_text(lang: keyboards::UiLanguage) -> &'static str {
 
 pub(crate) fn job_active_missing_text(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
-        keyboards::UiLanguage::Vi => "Job đang chạy không còn tồn tại.",
+        keyboards::UiLanguage::Vi => "Tác vụ đang chạy không còn tồn tại.",
         keyboards::UiLanguage::En => "The active job no longer exists.",
     }
 }
 
 pub(crate) fn job_not_found_text(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
-        keyboards::UiLanguage::Vi => "Không tìm thấy job thuộc tài khoản của bạn.",
+        keyboards::UiLanguage::Vi => "Không tìm thấy tác vụ thuộc tài khoản của bạn.",
         keyboards::UiLanguage::En => "No job found for your account.",
     }
 }
 
 pub(crate) fn job_prefix_ambiguous_text(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
-        keyboards::UiLanguage::Vi => "Có nhiều job trùng prefix. Nhập thêm vài ký tự job ID.",
+        keyboards::UiLanguage::Vi => "Có nhiều tác vụ trùng mã. Nhập thêm vài ký tự để phân biệt.",
         keyboards::UiLanguage::En => {
             "More than one job matches that prefix. Enter a few more job ID characters."
         }
@@ -370,7 +405,9 @@ pub(crate) fn job_prefix_ambiguous_text(lang: keyboards::UiLanguage) -> &'static
 
 pub(crate) fn job_pause_requested_text(lang: keyboards::UiLanguage, job_id: &str) -> String {
     match lang {
-        keyboards::UiLanguage::Vi => format!("Đã yêu cầu tạm dừng job {}.", short_job_id(job_id)),
+        keyboards::UiLanguage::Vi => {
+            format!("Đã yêu cầu tạm dừng tác vụ {}.", short_job_id(job_id))
+        }
         keyboards::UiLanguage::En => format!("Pause requested for job {}.", short_job_id(job_id)),
     }
 }
@@ -378,7 +415,7 @@ pub(crate) fn job_pause_requested_text(lang: keyboards::UiLanguage, job_id: &str
 pub(crate) fn job_pause_failed_text(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
         keyboards::UiLanguage::Vi => {
-            "Không tìm thấy job hoặc trạng thái hiện tại không cho tạm dừng."
+            "Không tìm thấy tác vụ hoặc trạng thái hiện tại không cho tạm dừng."
         }
         keyboards::UiLanguage::En => "Job not found or cannot be paused from its current state.",
     }
@@ -386,28 +423,34 @@ pub(crate) fn job_pause_failed_text(lang: keyboards::UiLanguage) -> &'static str
 
 pub(crate) fn job_resume_requested_text(lang: keyboards::UiLanguage, job_id: &str) -> String {
     match lang {
-        keyboards::UiLanguage::Vi => format!("Đã yêu cầu tiếp tục job {}.", short_job_id(job_id)),
+        keyboards::UiLanguage::Vi => {
+            format!("Đã yêu cầu tiếp tục tác vụ {}.", short_job_id(job_id))
+        }
         keyboards::UiLanguage::En => format!("Resume requested for job {}.", short_job_id(job_id)),
     }
 }
 
 pub(crate) fn job_resume_failed_text(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
-        keyboards::UiLanguage::Vi => "Không tìm thấy job hoặc job chưa ở trạng thái tạm dừng.",
+        keyboards::UiLanguage::Vi => {
+            "Không tìm thấy tác vụ hoặc tác vụ chưa ở trạng thái tạm dừng."
+        }
         keyboards::UiLanguage::En => "Job not found or is not paused.",
     }
 }
 
 pub(crate) fn job_cancel_requested_text(lang: keyboards::UiLanguage, job_id: &str) -> String {
     match lang {
-        keyboards::UiLanguage::Vi => format!("Đã yêu cầu huỷ job {}.", short_job_id(job_id)),
+        keyboards::UiLanguage::Vi => format!("Đã yêu cầu huỷ tác vụ {}.", short_job_id(job_id)),
         keyboards::UiLanguage::En => format!("Cancel requested for job {}.", short_job_id(job_id)),
     }
 }
 
 pub(crate) fn job_cancel_failed_text(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
-        keyboards::UiLanguage::Vi => "Không tìm thấy job hoặc trạng thái hiện tại không cho huỷ.",
+        keyboards::UiLanguage::Vi => {
+            "Không tìm thấy tác vụ hoặc trạng thái hiện tại không cho huỷ."
+        }
         keyboards::UiLanguage::En => "Job not found or cannot be cancelled from its current state.",
     }
 }
@@ -419,7 +462,7 @@ pub(crate) fn job_retry_requested_text(
 ) -> String {
     match lang {
         keyboards::UiLanguage::Vi => format!(
-            "Đã xếp hàng làm lại job {}.\nThư mục: {}  Item: {}  Thao tác: {}",
+            "Đã xếp hàng làm lại tác vụ {}.\nThư mục: {}  Mục: {}  Thao tác: {}",
             short_job_id(job_id),
             summary.traversal_folders_requeued,
             summary.job_items_requeued,
@@ -438,7 +481,7 @@ pub(crate) fn job_retry_requested_text(
 pub(crate) fn job_retry_failed_text(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
         keyboards::UiLanguage::Vi => {
-            "Không tìm thấy job, job không thể retry, hoặc không có phần lỗi để làm lại."
+            "Không tìm thấy tác vụ, tác vụ không thể thử lại, hoặc không có phần lỗi để làm lại."
         }
         keyboards::UiLanguage::En => {
             "Job not found, cannot be retried, or has no failed items to retry."
@@ -466,7 +509,7 @@ pub(crate) fn render_report_summary(
     format!(
         "{}\n\
          ━━━━━━━━━━━━\n\
-         • Job: {}\n\
+         • {}: {}\n\
          • {}: {}\n\
          • {}: {total_discovered}\n\
          • {}: {completed_items}\n\
@@ -475,6 +518,7 @@ pub(crate) fn render_report_summary(
          \n\
         {next}",
         lang.text(title),
+        job_id_field(lang),
         short_id(job_id),
         lang.text(T::ReportStatus),
         job_status_label(lang, status),
@@ -487,14 +531,14 @@ pub(crate) fn render_report_summary(
 
 pub(crate) fn report_none_text(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
-        keyboards::UiLanguage::Vi => "Chưa có job hoàn tất/lỗi nào để gửi report.",
+        keyboards::UiLanguage::Vi => "Chưa có tác vụ hoàn tất/lỗi nào để gửi báo cáo.",
         keyboards::UiLanguage::En => "No completed or failed job has a report yet.",
     }
 }
 
 pub(crate) fn report_job_not_found(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
-        keyboards::UiLanguage::Vi => "Không tìm thấy job này.",
+        keyboards::UiLanguage::Vi => "Không tìm thấy tác vụ này.",
         keyboards::UiLanguage::En => "Job not found.",
     }
 }
@@ -516,13 +560,10 @@ pub(crate) fn vi_job_status(status: &str) -> &str {
     }
 }
 
-pub(crate) fn job_status_label(lang: keyboards::UiLanguage, status: &str) -> &str {
-    if lang == keyboards::UiLanguage::Vi {
-        return vi_job_status(status);
-    }
+pub(crate) fn en_job_status(status: &str) -> &str {
     match status {
-        "queued" => "queued",
-        "discovering" => "discovering",
+        "queued" => "in queue",
+        "discovering" => "scanning",
         "running" => "running",
         "pausing" => "pausing",
         "paused" => "paused",
@@ -533,6 +574,13 @@ pub(crate) fn job_status_label(lang: keyboards::UiLanguage, status: &str) -> &st
         "partially_completed" => "partially completed",
         "failed" => "failed",
         other => other,
+    }
+}
+
+pub(crate) fn job_status_label(lang: keyboards::UiLanguage, status: &str) -> &str {
+    match lang {
+        keyboards::UiLanguage::Vi => vi_job_status(status),
+        keyboards::UiLanguage::En => en_job_status(status),
     }
 }
 
@@ -573,7 +621,7 @@ mod tests {
         };
         let text_vi = render_job_end_state(&success, 14, keyboards::UiLanguage::Vi);
         assert!(text_vi.contains("✓ Đã sao chép"));
-        assert!(text_vi.contains("Job: job-1234"));
+        assert!(text_vi.contains("src-id → dst-id"));
         assert!(text_vi.contains("Hoàn tất: 42"));
         assert!(text_vi.contains("Thời gian: 00:14"));
 
@@ -598,5 +646,75 @@ mod tests {
         assert!(text_en.contains("Completed: 40"));
         assert!(text_en.contains("Failed: 2"));
         assert!(text_en.contains("Latest error: Permission denied on 2 items"));
+    }
+
+    #[test]
+    fn job_cards_prefer_friendly_names_over_ids() {
+        let named = repo::JobDetail {
+            id: "job-123456789".to_string(),
+            kind: "one_shot".to_string(),
+            status: "running".to_string(),
+            source_root_id: "src-root-id-longer-than-8".to_string(),
+            destination_parent_id: "dst-root-id-longer".to_string(),
+            total_discovered: 42,
+            completed_items: 10,
+            failed_items: 0,
+            skipped_items: 0,
+            error_summary: None,
+            created_at_ms: 1000,
+            updated_at_ms: 2000,
+            source_name: Some("Project Alpha".to_string()),
+            destination_name: Some("Backup 502".to_string()),
+        };
+        let progress = render_job_progress(&named, 60, keyboards::UiLanguage::Vi);
+        assert!(progress.contains("Project Alpha → Backup 502"));
+
+        let detail = render_job_detail(&named, keyboards::UiLanguage::Vi);
+        assert!(detail.contains("Project Alpha (src-root)"));
+        assert!(detail.contains("Backup 502 (dst-root)"));
+
+        // Unnamed rows fall back to short ids; no invented names.
+        let unnamed = repo::JobDetail {
+            source_name: None,
+            destination_name: None,
+            ..named
+        };
+        assert!(
+            render_job_progress(&unnamed, 60, keyboards::UiLanguage::Vi)
+                .contains("src-root → dst-root")
+        );
+    }
+
+    #[test]
+    fn job_status_labels_are_humanized_in_en_and_vi() {
+        assert_eq!(
+            job_status_label(keyboards::UiLanguage::En, "queued"),
+            "in queue"
+        );
+        assert_eq!(
+            job_status_label(keyboards::UiLanguage::En, "discovering"),
+            "scanning"
+        );
+        assert_eq!(
+            job_status_label(keyboards::UiLanguage::En, "running"),
+            "running"
+        );
+        assert_eq!(
+            job_status_label(keyboards::UiLanguage::En, "partially_completed"),
+            "partially completed"
+        );
+
+        assert_eq!(
+            job_status_label(keyboards::UiLanguage::Vi, "queued"),
+            "đang chờ"
+        );
+        assert_eq!(
+            job_status_label(keyboards::UiLanguage::Vi, "discovering"),
+            "đang quét"
+        );
+        assert_eq!(
+            job_status_label(keyboards::UiLanguage::Vi, "partially_completed"),
+            "hoàn tất một phần"
+        );
     }
 }

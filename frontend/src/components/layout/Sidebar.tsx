@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { LayoutDashboard, ArrowLeftRight, Settings, Terminal, ChevronLeft, ChevronRight } from 'lucide-react'
 import { LogoMark } from '@/components/brand/Logo'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/hooks/useI18n'
 
 export type TabId = 'dashboard' | 'jobs' | 'settings' | 'dev'
 
@@ -13,8 +14,6 @@ export interface SidebarProps {
   onToggleCollapse: () => void
   version?: string
 }
-
-import { useI18n } from '@/hooks/useI18n'
 
 interface NavItem {
   id: TabId
@@ -29,28 +28,79 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleCollapse,
   version = 'v0.2.0',
 }) => {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
 
-  const navItems: NavItem[] = [
+  const mainNavItems: NavItem[] = [
     { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
     { id: 'jobs', label: t('nav.jobs'), icon: ArrowLeftRight },
     { id: 'settings', label: t('nav.settings'), icon: Settings },
-    { id: 'dev', label: t('nav.dev'), icon: Terminal },
   ]
 
-  // Sidebar base widths (64/228px @16px root) must track the responsive root
-  // font-size so labels never clip when the window grows.
-  const [scale, setScale] = useState(1)
-  useEffect(() => {
-    const update = () => setScale(parseFloat(getComputedStyle(document.documentElement).fontSize) / 16)
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
-  }, [])
+  const devNavItem: NavItem = {
+    id: 'dev',
+    label: t('nav.dev'),
+    icon: Terminal,
+  }
+
+  const collapseLabel = isCollapsed
+    ? lang === 'vi'
+      ? 'Mở rộng thanh bên'
+      : 'Expand sidebar'
+    : lang === 'vi'
+    ? 'Thu gọn thanh bên'
+    : 'Collapse sidebar'
+
+  const renderNavButton = (item: NavItem) => {
+    const Icon = item.icon
+    const isActive = activeTab === item.id
+
+    return (
+      <button
+        key={item.id}
+        onClick={() => onSelectTab(item.id)}
+        title={isCollapsed ? item.label : undefined}
+        aria-current={isActive ? 'page' : undefined}
+        className={cn(
+          'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer group relative select-none overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
+          isActive
+            ? 'text-accent bg-accent/12 font-semibold shadow-xs'
+            : 'text-text-secondary hover:text-text-primary hover:bg-bg-input/70'
+        )}
+      >
+        {/* Active indicator */}
+        {isActive && (
+          <motion.span
+            layoutId="sidebar-active-pill"
+            transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+            className="absolute left-1.5 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-full bg-accent"
+          />
+        )}
+        <Icon
+          className={cn(
+            'h-4.5 w-4.5 shrink-0 stroke-[1.8] transition-transform duration-200 motion-safe:group-hover:scale-110 motion-safe:group-active:scale-90',
+            isActive ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'
+          )}
+        />
+        <AnimatePresence>
+          {!isCollapsed && (
+            <motion.span
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.12 }}
+              className="whitespace-nowrap overflow-hidden text-sm"
+            >
+              {item.label}
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </button>
+    )
+  }
 
   return (
     <motion.aside
-      animate={{ width: Math.round((isCollapsed ? 64 : 228) * scale) }}
+      animate={{ width: isCollapsed ? '4rem' : '14.25rem' }}
       transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
       className="h-screen bg-bg-elevated border-r border-border/60 flex flex-col justify-between select-none relative shrink-0 z-20 transition-colors overflow-hidden"
     >
@@ -71,7 +121,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span className="text-accent font-extrabold">502</span>
                   <span>Drive</span>
                 </span>
-                <span className="text-[0.625rem] px-1.5 py-0.5 rounded-md bg-accent/15 text-accent font-mono font-semibold tracking-wide">CORE</span>
+                <span className="text-[0.6875rem] px-1.5 py-0.5 rounded-md bg-accent/15 text-accent font-mono font-semibold tracking-wide">CORE</span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -79,53 +129,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Navigation List */}
         <nav className="p-2 space-y-1 mt-1.5 overflow-hidden">
-          {navItems.map((item) => {
-            const Icon = item.icon
-            const isActive = activeTab === item.id
+          {mainNavItems.map((item) => renderNavButton(item))}
 
-            return (
-              <button
-                key={item.id}
-                onClick={() => onSelectTab(item.id)}
-                title={isCollapsed ? item.label : undefined}
-                aria-current={isActive ? 'page' : undefined}
-                className={cn(
-                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer group relative select-none overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
-                  isActive
-                    ? 'text-accent bg-accent/12 font-semibold shadow-xs'
-                    : 'text-text-secondary hover:text-text-primary hover:bg-bg-input/70'
-                )}
-              >
-                {/* Active indicator — inset, vertically centered, slides between items */}
-                {isActive && (
-                  <motion.span
-                    layoutId="sidebar-active-pill"
-                    transition={{ type: 'spring', stiffness: 500, damping: 34 }}
-                    className="absolute left-1.5 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-full bg-accent"
-                  />
-                )}
-                <Icon
-                  className={cn(
-                    'h-4.5 w-4.5 shrink-0 stroke-[1.8] transition-transform duration-200 motion-safe:group-hover:scale-110 motion-safe:group-active:scale-90',
-                    isActive ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'
-                  )}
-                />
-                <AnimatePresence>
-                  {!isCollapsed && (
-                    <motion.span
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.12 }}
-                      className="whitespace-nowrap overflow-hidden text-sm"
-                    >
-                      {item.label}
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </button>
-            )
-          })}
+          {/* Hairline separator before Dev tools */}
+          <div className="pt-2 pb-1 px-1">
+            <div className="h-[1px] bg-border/50" />
+          </div>
+
+          {renderNavButton(devNavItem)}
         </nav>
       </div>
 
@@ -138,7 +149,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="font-mono text-[0.625rem]"
+                className="font-mono text-[0.6875rem]"
               >
                 {version}
               </motion.span>
@@ -147,9 +158,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <button
             onClick={onToggleCollapse}
-            aria-label={isCollapsed ? 'Mở rộng thanh bên' : 'Thu gọn thanh bên'}
+            aria-label={collapseLabel}
             className="p-1 rounded-md hover:bg-bg-input hover:text-text-primary text-text-muted transition-colors ml-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-            title={isCollapsed ? 'Mở rộng thanh bên' : 'Thu gọn thanh bên'}
+            title={collapseLabel}
           >
             {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
           </button>

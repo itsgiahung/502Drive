@@ -1,6 +1,6 @@
 #[cfg(test)]
 use teloxide::types::InlineKeyboardButtonKind;
-use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, KeyboardMarkup};
+use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
 /// Callback data of a button, if it is a callback button.
 #[cfg(test)]
@@ -64,12 +64,7 @@ pub fn confirm_set_destination_keyboard(
 
 pub fn smart_link_action_keyboard(state_id: &str, lang: UiLanguage) -> InlineKeyboardMarkup {
     let (clone_label, sync_label, dest_label, cancel_label) = match lang {
-        UiLanguage::Vi => (
-            "Sao chép (Clone)",
-            "Đồng bộ (Realtime Sync)",
-            "Đổi thư mục đích",
-            "Huỷ",
-        ),
+        UiLanguage::Vi => ("Sao chép ngay", "⟳ Đồng bộ", "Đổi thư mục đích", "Huỷ"),
         UiLanguage::En => ("Clone now", "Realtime Sync", "Change destination", "Cancel"),
     };
     InlineKeyboardMarkup::new([
@@ -89,12 +84,7 @@ pub fn unified_inspect_keyboard(
     lang: UiLanguage,
 ) -> InlineKeyboardMarkup {
     let (clone_label, sync_label, dest_label, cancel_label) = match lang {
-        UiLanguage::Vi => (
-            "Sao chép ngay",
-            "⟳ Theo dõi realtime",
-            "Đổi thư mục đích",
-            "Hủy",
-        ),
+        UiLanguage::Vi => ("Sao chép ngay", "⟳ Đồng bộ", "Đổi thư mục đích", "Huỷ"),
         UiLanguage::En => (
             "Clone now",
             "⟳ Realtime Sync",
@@ -162,11 +152,11 @@ pub fn main_menu_keyboard(watch_enabled: bool, lang: UiLanguage) -> InlineKeyboa
 /// Telegram surface; notifications are app-level (informational row only).
 pub fn settings_keyboard(lang: UiLanguage) -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::new([
-        [callback_btn(
-            lang.text(T::SettingsLanguage),
-            "lang:open:panel",
-        )],
-        [callback_btn(lang.text(T::BackHome), "menu:open:home")],
+        vec![
+            callback_btn(lang.text(T::SettingsLanguage), "lang:open:panel"),
+            callback_btn(lang.text(T::Account), "menu:open:account"),
+        ],
+        vec![callback_btn(lang.text(T::BackHome), "menu:open:home")],
     ])
 }
 
@@ -175,9 +165,42 @@ pub fn back_home_keyboard(lang: UiLanguage) -> InlineKeyboardMarkup {
 }
 
 pub fn account_keyboard(lang: UiLanguage) -> InlineKeyboardMarkup {
+    let disconnect_label = match lang {
+        UiLanguage::Vi => "Ngắt kết nối",
+        UiLanguage::En => "Disconnect",
+    };
     InlineKeyboardMarkup::new([
-        [callback_btn(language_button_label(lang), "lang:open:panel")],
-        [callback_btn(lang.text(T::BackHome), "menu:open:home")],
+        vec![callback_btn(language_button_label(lang), "lang:open:panel")],
+        vec![callback_btn(disconnect_label, "account:disconnect:prompt")],
+        vec![callback_btn(lang.text(T::BackHome), "menu:open:home")],
+    ])
+}
+
+pub fn account_disconnect_confirm_keyboard(lang: UiLanguage) -> InlineKeyboardMarkup {
+    let (confirm_label, cancel_label) = match lang {
+        UiLanguage::Vi => ("⚠ Xác nhận ngắt kết nối", "Giữ kết nối"),
+        UiLanguage::En => ("⚠ Confirm disconnect", "Keep connected"),
+    };
+    InlineKeyboardMarkup::new([
+        vec![
+            callback_btn(confirm_label, "account:disconnect:confirm"),
+            callback_btn(cancel_label, "menu:open:account"),
+        ],
+        vec![callback_btn(lang.text(T::BackHome), "menu:open:home")],
+    ])
+}
+
+pub fn confirm_clear_destination_keyboard(lang: UiLanguage) -> InlineKeyboardMarkup {
+    let (confirm_label, cancel_label) = match lang {
+        UiLanguage::Vi => ("🗑 Xác nhận xoá", "Giữ lại"),
+        UiLanguage::En => ("🗑 Confirm clear", "Keep current"),
+    };
+    InlineKeyboardMarkup::new([
+        vec![
+            callback_btn(confirm_label, "dest:clear:confirm"),
+            callback_btn(cancel_label, "menu:open:destination"),
+        ],
+        vec![callback_btn(lang.text(T::BackHome), "menu:open:home")],
     ])
 }
 
@@ -211,10 +234,15 @@ pub fn job_list_keyboard(jobs: &[(String, String)], lang: UiLanguage) -> InlineK
             )]
         })
         .collect();
+    let clone_label = match lang {
+        UiLanguage::Vi => "＋ Sao chép",
+        UiLanguage::En => "＋ Clone",
+    };
     rows.push(vec![
+        callback_btn(clone_label, "menu:prompt:clone"),
         callback_btn(lang.text(T::Refresh), "menu:open:jobs"),
-        callback_btn(lang.text(T::BackHome), "menu:open:home"),
     ]);
+    rows.push(vec![callback_btn(lang.text(T::BackHome), "menu:open:home")]);
     InlineKeyboardMarkup::new(rows)
 }
 
@@ -324,7 +352,7 @@ pub fn watch_list_keyboard(
     if has_prev {
         nav.push(callback_btn(
             lang.text(T::PreviousPage),
-            format!("watch:list:{mode}:{}", page - 1),
+            format!("watch:list:{mode}:{}", page.saturating_sub(1)),
         ));
     }
     if has_next {
@@ -559,34 +587,54 @@ pub fn destination_panel_keyboard(
 pub fn destination_browser_keyboard(
     pick_state_id: Option<&str>,
     parent_state_id: Option<&str>,
+    prev_state_id: Option<&str>,
     next_state_id: Option<&str>,
     child_states: &[(String, String)],
     lang: UiLanguage,
 ) -> InlineKeyboardMarkup {
     let mut rows = Vec::new();
+    let mut nav_row = Vec::new();
     if let Some(state_id) = pick_state_id {
-        rows.push(vec![callback_btn(
+        nav_row.push(callback_btn(
             lang.text(T::SelectThisFolder),
             format!("browse:pick:{state_id}"),
-        )]);
+        ));
     }
     if let Some(state_id) = parent_state_id {
-        rows.push(vec![callback_btn(
+        nav_row.push(callback_btn(
             lang.text(T::UpOneLevel),
             format!("browse:open:{state_id}"),
-        )]);
+        ));
+    }
+    if !nav_row.is_empty() {
+        rows.push(nav_row);
     }
     rows.extend(child_states.iter().map(|(label, state_id)| {
-        vec![callback_btn(
-            truncate_label(label, 40),
-            format!("browse:open:{state_id}"),
-        )]
+        let display = if label.starts_with('📁') || label.starts_with('💾') {
+            truncate_label(label, 40)
+        } else {
+            format!("📁 {}", truncate_label(label, 36))
+        };
+        vec![callback_btn(display, format!("browse:open:{state_id}"))]
     }));
+    let mut page_row = Vec::new();
+    if let Some(state_id) = prev_state_id {
+        page_row.push(callback_btn(
+            match lang {
+                UiLanguage::Vi => "‹ Trước",
+                UiLanguage::En => "‹ Prev",
+            },
+            format!("browse:open:{state_id}"),
+        ));
+    }
     if let Some(state_id) = next_state_id {
-        rows.push(vec![callback_btn(
+        page_row.push(callback_btn(
             lang.text(T::NextPage),
             format!("browse:open:{state_id}"),
-        )]);
+        ));
+    }
+    if !page_row.is_empty() {
+        rows.push(page_row);
     }
     rows.push(vec![
         callback_btn(lang.text(T::Destination), "menu:open:destination"),
@@ -603,92 +651,11 @@ fn truncate_label(label: &str, max_chars: usize) -> String {
     format!("{}...", label.chars().take(keep).collect::<String>())
 }
 
-/// Persistent reply-keyboard sections (LanMan-style main navigation).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Section {
-    Clone,
-    Watch,
-    Overview,
-    Jobs,
-    Watches,
-    Destination,
-    Account,
-    Language,
-}
-
-pub fn section_label(lang: UiLanguage, section: Section) -> &'static str {
-    let (vi, en) = match section {
-        Section::Clone => ("\u{FF0B} Sao ch\u{00E9}p", "\u{FF0B} Clone"),
-        Section::Watch => ("\u{27F3} \u{0110}\u{1ED3}ng b\u{1ED9}", "\u{27F3} Sync"),
-        Section::Overview => ("\u{1F4CA} T\u{1ED5}ng quan", "\u{1F4CA} Overview"),
-        Section::Jobs => ("\u{1F4E6} C\u{00F4}ng vi\u{1EC7}c", "\u{1F4E6} Jobs"),
-        Section::Watches => ("\u{1F441} Theo d\u{00F5}i", "\u{1F441} Watches"),
-        Section::Destination => (
-            "\u{1F4C1} Th\u{01B0} m\u{1EE5}c \u{0111}\u{00ED}ch",
-            "\u{1F4C1} Destination",
-        ),
-        Section::Account => ("\u{1F464} T\u{00E0}i kho\u{1EA3}n", "\u{1F464} Account"),
-        Section::Language => ("\u{1F310} Ng\u{00F4}n ng\u{1EEF}", "\u{1F310} Language"),
-    };
-    if lang == UiLanguage::Vi { vi } else { en }
-}
-
-const SECTIONS: &[Section] = &[
-    Section::Clone,
-    Section::Watch,
-    Section::Overview,
-    Section::Jobs,
-    Section::Watches,
-    Section::Destination,
-    Section::Account,
-    Section::Language,
-];
-
-/// Map an incoming text message to a reply-keyboard section, if it exactly
-/// matches a section label in either language (labels are stable across the
-/// opposite language so a stale client keyboard still routes correctly).
-pub fn section_from_text(text: &str) -> Option<Section> {
-    let t = text.trim();
-    SECTIONS.iter().copied().find(|&sec| {
-        section_label(UiLanguage::Vi, sec) == t || section_label(UiLanguage::En, sec) == t
-    })
-}
-
-/// The persistent main keyboard: section rows sized for one-thumb use.
-pub fn main_reply_keyboard(lang: UiLanguage, watch_enabled: bool) -> KeyboardMarkup {
-    let mut rows: Vec<Vec<KeyboardButton>> = Vec::new();
-    let mut row1 = vec![KeyboardButton::new(section_label(lang, Section::Clone))];
-    if watch_enabled {
-        row1.push(KeyboardButton::new(section_label(lang, Section::Watch)));
-    }
-    rows.push(row1);
-    rows.push(vec![
-        KeyboardButton::new(section_label(lang, Section::Overview)),
-        KeyboardButton::new(section_label(lang, Section::Jobs)),
-    ]);
-    let mut row3 = Vec::new();
-    if watch_enabled {
-        row3.push(KeyboardButton::new(section_label(lang, Section::Watches)));
-    }
-    row3.push(KeyboardButton::new(section_label(
-        lang,
-        Section::Destination,
-    )));
-    rows.push(row3);
-    rows.push(vec![
-        KeyboardButton::new(section_label(lang, Section::Account)),
-        KeyboardButton::new(section_label(lang, Section::Language)),
-    ]);
-    KeyboardMarkup::new(rows)
-        .resize_keyboard()
-        .persistent()
-        .input_field_placeholder(lang.text(T::ReplyKeyboardPlaceholder))
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        UiLanguage, account_keyboard, callback_btn, callback_of, confirm_set_destination_keyboard,
+        UiLanguage, account_disconnect_confirm_keyboard, account_keyboard, callback_btn,
+        callback_of, confirm_clear_destination_keyboard, confirm_set_destination_keyboard,
         destination_browser_keyboard, destination_panel_keyboard, job_cancel_confirm_keyboard,
         job_detail_keyboard, job_end_state_keyboard, language_keyboard, main_menu_keyboard,
         recent_destinations_keyboard, smart_link_action_keyboard, truncate_label,
@@ -707,8 +674,22 @@ mod tests {
     #[test]
     fn destination_browser_can_render_next_page() {
         let keyboard =
-            destination_browser_keyboard(None, None, Some("next-state"), &[], UiLanguage::Vi);
+            destination_browser_keyboard(None, None, None, Some("next-state"), &[], UiLanguage::Vi);
         assert_eq!(keyboard.inline_keyboard[0][0].text, "Trang sau");
+    }
+
+    #[test]
+    fn destination_browser_can_render_prev_and_next_page() {
+        let keyboard = destination_browser_keyboard(
+            None,
+            None,
+            Some("prev-state"),
+            Some("next-state"),
+            &[],
+            UiLanguage::Vi,
+        );
+        assert_eq!(keyboard.inline_keyboard[0][0].text, "‹ Trước");
+        assert_eq!(keyboard.inline_keyboard[0][1].text, "Trang sau");
     }
 
     #[test]
@@ -789,7 +770,7 @@ mod tests {
         let enabled = main_menu_keyboard(true, UiLanguage::Vi);
         assert_eq!(enabled.inline_keyboard[0][0].text, "＋ Sao chép");
         assert_eq!(enabled.inline_keyboard[0][1].text, "⟳ Đồng bộ");
-        assert_eq!(enabled.inline_keyboard[1][0].text, "📦 Công việc");
+        assert_eq!(enabled.inline_keyboard[1][0].text, "📦 Tác vụ");
         assert_eq!(enabled.inline_keyboard[1][1].text, "👁 Theo dõi");
         assert_eq!(enabled.inline_keyboard[2][0].text, "📁 Thư mục đích");
         assert_eq!(enabled.inline_keyboard[3][0].text, "⚙ Cài đặt");
@@ -823,6 +804,21 @@ mod tests {
     fn account_keyboard_exposes_language_panel() {
         let vi = account_keyboard(UiLanguage::Vi);
         assert_eq!(vi.inline_keyboard[0][0].text, "Ngôn ngữ");
+        assert_eq!(vi.inline_keyboard[1][0].text, "Ngắt kết nối");
+
+        let en_acct = account_keyboard(UiLanguage::En);
+        assert_eq!(en_acct.inline_keyboard[1][0].text, "Disconnect");
+
+        let confirm = account_disconnect_confirm_keyboard(UiLanguage::Vi);
+        assert_eq!(
+            confirm.inline_keyboard[0][0].text,
+            "⚠ Xác nhận ngắt kết nối"
+        );
+        assert_eq!(confirm.inline_keyboard[0][1].text, "Giữ kết nối");
+
+        let clear_confirm = confirm_clear_destination_keyboard(UiLanguage::Vi);
+        assert_eq!(clear_confirm.inline_keyboard[0][0].text, "🗑 Xác nhận xoá");
+        assert_eq!(clear_confirm.inline_keyboard[0][1].text, "Giữ lại");
 
         let en = language_keyboard(UiLanguage::En);
         assert!(
@@ -841,7 +837,7 @@ mod tests {
                 .inline_keyboard
                 .iter()
                 .flatten()
-                .any(|button| button.text == "Jobs")
+                .any(|button| button.text == "Tác vụ")
         );
     }
 
@@ -853,7 +849,7 @@ mod tests {
                 .inline_keyboard
                 .iter()
                 .flatten()
-                .any(|button| button.text == "Retry lỗi")
+                .any(|button| button.text == "Thử lại lỗi")
         );
         assert!(
             keyboard
@@ -880,23 +876,23 @@ mod tests {
     fn job_cancel_confirmation_can_keep_job() {
         let keyboard = job_cancel_confirm_keyboard("job-id", UiLanguage::Vi);
         assert_eq!(keyboard.inline_keyboard[0][0].text, "Huỷ");
-        assert_eq!(keyboard.inline_keyboard[0][1].text, "Giữ job");
-        assert_eq!(keyboard.inline_keyboard[1][0].text, "Jobs");
+        assert_eq!(keyboard.inline_keyboard[0][1].text, "Giữ tác vụ");
+        assert_eq!(keyboard.inline_keyboard[1][0].text, "Tác vụ");
     }
 
     #[test]
     fn watch_unwatch_confirmation_can_keep_watch() {
         let keyboard = watch_unwatch_confirm_keyboard("watch-id", UiLanguage::Vi);
         assert_eq!(keyboard.inline_keyboard[0][0].text, "Dừng theo dõi");
-        assert_eq!(keyboard.inline_keyboard[0][1].text, "Giữ watch");
-        assert_eq!(keyboard.inline_keyboard[1][0].text, "Đồng bộ (Sync)");
+        assert_eq!(keyboard.inline_keyboard[0][1].text, "Giữ đồng bộ");
+        assert_eq!(keyboard.inline_keyboard[1][0].text, "Đồng bộ realtime");
     }
 
     #[test]
     fn smart_link_action_keyboard_renders_clone_and_sync() {
         let kb = smart_link_action_keyboard("state-123", UiLanguage::Vi);
-        assert_eq!(kb.inline_keyboard[0][0].text, "Sao chép (Clone)");
-        assert_eq!(kb.inline_keyboard[1][0].text, "Đồng bộ (Realtime Sync)");
+        assert_eq!(kb.inline_keyboard[0][0].text, "Sao chép ngay");
+        assert_eq!(kb.inline_keyboard[1][0].text, "⟳ Đồng bộ");
         assert_eq!(kb.inline_keyboard[2][0].text, "Đổi thư mục đích");
         assert_eq!(kb.inline_keyboard[2][1].text, "Huỷ");
     }

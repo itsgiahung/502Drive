@@ -47,7 +47,7 @@ export const Logo: React.FC<LogoProps> = ({
             <span className="text-accent font-extrabold">502</span>
             <span>Drive</span>
           </span>
-          <span className="px-1.5 py-0.5 text-[0.625rem] font-bold tracking-wider rounded-md bg-accent/15 text-accent border border-accent/25 uppercase">
+          <span className="px-1.5 py-0.5 text-[0.6875rem] font-bold tracking-wider rounded-md bg-accent/15 text-accent border border-accent/25 uppercase">
             CORE
           </span>
         </div>

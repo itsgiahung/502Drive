@@ -1,21 +1,24 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { Card } from '@/components/ui/Card'
-import { Badge } from '@/components/ui/Badge'
+import { Badge, BadgeVariant } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { WatchSummary, WatchPolicyKind } from '@/lib/types'
 import { shortId, formatTimeAgo, cn } from '@/lib/utils'
+import { useI18n } from '@/hooks/useI18n'
+import { getWatchStatusSemantic } from '@/lib/status'
 import {
+  FolderSync,
   Radio,
   Pause,
   Play,
-  FolderSync,
   ArrowRight,
   MoreHorizontal,
   SlidersHorizontal,
   ChevronRight,
   ArrowLeft,
   Unlink,
+  AlertCircle,
 } from 'lucide-react'
 
 export interface WatchCardProps {
@@ -26,40 +29,44 @@ export interface WatchCardProps {
   onUnwatch?: (id: string) => void
 }
 
-interface PolicyOption {
-  value: string
-  label: string
+type MenuView = 'menu' | 'policy' | 'unwatch-confirm'
+
+function getWatchBadgeVariant(status: string): BadgeVariant {
+  switch (status) {
+    case 'active':
+    case 'catching_up':
+      return 'active'
+    case 'paused':
+      return 'paused'
+    case 'degraded':
+      return 'warning'
+    case 'needs_reconcile':
+      return 'failed'
+    case 'initializing':
+      return 'initializing'
+    case 'stopped':
+    default:
+      return 'default'
+  }
 }
 
-const POLICY_OPTIONS: { kind: WatchPolicyKind; label: string; values: PolicyOption[] }[] = [
-  {
-    kind: 'content_update',
-    label: 'Cập nhật nội dung',
-    values: [
-      { value: 'versioned_copy', label: 'Bản phiên bản' },
-      { value: 'replace_copy', label: 'Ghi đè' },
-      { value: 'manual_confirmation', label: 'Xác nhận tay' },
-    ],
-  },
-  {
-    kind: 'deletion',
-    label: 'Tệp bị xóa',
-    values: [
-      { value: 'preserve_destination', label: 'Giữ bản đích' },
-      { value: 'manual_confirmation', label: 'Xác nhận tay' },
-    ],
-  },
-  {
-    kind: 'move_out',
-    label: 'Tệp bị di chuyển ra ngoài',
-    values: [
-      { value: 'detach', label: 'Tách theo dõi' },
-      { value: 'keep_following', label: 'Theo vị trí mới' },
-    ],
-  },
-]
-
-type MenuView = 'menu' | 'policy' | 'unwatch-confirm'
+function renderWatchIcon(status: string) {
+  switch (status) {
+    case 'active':
+      return <FolderSync className="h-4 w-4 text-accent shrink-0 stroke-[1.6]" />
+    case 'catching_up':
+    case 'initializing':
+      return <Radio className="h-4 w-4 text-accent shrink-0 animate-pulse stroke-[1.6]" />
+    case 'paused':
+      return <Pause className="h-4 w-4 text-warning shrink-0" />
+    case 'degraded':
+    case 'needs_reconcile':
+      return <AlertCircle className="h-4 w-4 text-error shrink-0" />
+    case 'stopped':
+    default:
+      return <FolderSync className="h-4 w-4 text-text-muted shrink-0 stroke-[1.6]" />
+  }
+}
 
 export const WatchCard: React.FC<WatchCardProps> = ({
   watch,
@@ -68,8 +75,11 @@ export const WatchCard: React.FC<WatchCardProps> = ({
   onSetWatchPolicy,
   onUnwatch,
 }) => {
-  const isActive = watch.status === 'active'
-  const isPaused = watch.status === 'paused'
+  const { t, lang } = useI18n()
+  const semantic = getWatchStatusSemantic(watch.status)
+  const badgeVariant = getWatchBadgeVariant(watch.status)
+  const isPulse = semantic.isActive && (watch.status === 'active' || watch.status === 'catching_up')
+
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [menuView, setMenuView] = useState<MenuView>('menu')
 
@@ -90,51 +100,87 @@ export const WatchCard: React.FC<WatchCardProps> = ({
     closeMenu()
   }
 
+  const policyGroups: {
+    kind: WatchPolicyKind
+    label: string
+    values: { value: string; label: string }[]
+  }[] = [
+    {
+      kind: 'content_update',
+      label: t('watches.policy_content'),
+      values: [
+        { value: 'versioned_copy', label: t('watches.policy_versioned_copy') },
+        { value: 'replace_copy', label: t('watches.policy_replace_copy') },
+        { value: 'manual_confirmation', label: t('watches.policy_manual_confirm') },
+      ],
+    },
+    {
+      kind: 'deletion',
+      label: t('watches.policy_deletion'),
+      values: [
+        { value: 'preserve_destination', label: t('watches.policy_preserve_dest') },
+        { value: 'manual_confirmation', label: t('watches.policy_manual_confirm') },
+      ],
+    },
+    {
+      kind: 'move_out',
+      label: t('watches.policy_move_out'),
+      values: [
+        { value: 'detach', label: t('watches.policy_detach') },
+        { value: 'keep_following', label: t('watches.policy_keep_following') },
+      ],
+    },
+  ]
+
   return (
-    <Card className="p-4 space-y-3">
+    <Card className="p-4 space-y-3 border border-border/70 shadow-xs">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FolderSync className="h-4 w-4 text-accent stroke-[1.6]" />
-          <Badge variant={isActive ? 'active' : isPaused ? 'paused' : 'default'} pulse={isActive}>
-            {isActive ? 'Đang theo dõi' : isPaused ? 'Tạm dừng' : watch.status}
+        <div className="flex items-center gap-2 min-w-0">
+          {renderWatchIcon(watch.status)}
+          <Badge variant={badgeVariant} pulse={isPulse}>
+            {t(semantic.labelKey as any)}
           </Badge>
-          <span className="text-xs font-mono text-text-muted">#{watch.short_id || shortId(watch.id)}</span>
+          <span className="text-xs font-mono text-text-muted truncate select-text">
+            #{watch.short_id || shortId(watch.id)}
+          </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {isActive && onPause && (
+        <div className="flex items-center gap-1.5 shrink-0">
+          {semantic.canPause && onPause && (
             <Button
               size="sm"
               variant="secondary"
               onClick={() => onPause(watch.id)}
               className="h-6.5 px-2 text-[0.6875rem] gap-1"
+              title={t('watches.btn_pause')}
             >
               <Pause className="h-3 w-3" />
-              Tạm dừng
+              <span>{t('watches.btn_pause')}</span>
             </Button>
           )}
-          {isPaused && onResume && (
+          {semantic.canResume && onResume && (
             <Button
               size="sm"
               variant="secondary"
               onClick={() => onResume(watch.id)}
               className="h-6.5 px-2 text-[0.6875rem] gap-1 text-accent hover:bg-accent/10"
+              title={t('watches.btn_resume')}
             >
               <Play className="h-3 w-3" />
-              Tiếp tục
+              <span>{t('watches.btn_resume')}</span>
             </Button>
           )}
 
           {/* Action menu (⋯) */}
-          {(onSetWatchPolicy || onUnwatch) && (
+          {(onSetWatchPolicy || (semantic.canUnwatch && onUnwatch)) && (
             <div className="relative">
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={() => setIsMenuOpen((o) => !o)}
-                aria-label="Hành động theo dõi"
+                aria-label={t('watches.btn_change_policy')}
                 aria-expanded={isMenuOpen}
-                title="Hành động"
+                title={t('watches.btn_change_policy')}
                 className="h-6.5 w-6.5 p-0"
               >
                 <MoreHorizontal className="h-3.5 w-3.5" />
@@ -165,18 +211,18 @@ export const WatchCard: React.FC<WatchCardProps> = ({
                               className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-text-primary hover:bg-bg-input/70 cursor-pointer transition-colors text-left"
                             >
                               <SlidersHorizontal className="h-3.5 w-3.5 text-accent" />
-                              <span className="flex-1">Đổi chính sách</span>
+                              <span className="flex-1">{t('watches.btn_change_policy')}</span>
                               <ChevronRight className="h-3 w-3 text-text-muted" />
                             </button>
                           )}
-                          {onUnwatch && (
+                          {semantic.canUnwatch && onUnwatch && (
                             <button
                               type="button"
-                              onClick={() => setMenuView('unwatch-confirm')}
+                              onClick={handleUnwatch}
                               className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-error hover:bg-error/10 cursor-pointer transition-colors text-left"
                             >
                               <Unlink className="h-3.5 w-3.5" />
-                              <span className="flex-1">Ngừng theo dõi</span>
+                              <span className="flex-1">{t('watches.btn_unwatch')}</span>
                             </button>
                           )}
                         </div>
@@ -190,14 +236,14 @@ export const WatchCard: React.FC<WatchCardProps> = ({
                             className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[0.6875rem] font-semibold text-text-secondary hover:text-text-primary hover:bg-bg-input/70 cursor-pointer transition-colors text-left"
                           >
                             <ArrowLeft className="h-3 w-3" />
-                            Chính sách đồng bộ
+                            {t('watches.policy_sync')}
                           </button>
-                          {POLICY_OPTIONS.map((group) => (
+                          {policyGroups.map((group) => (
                             <div
                               key={group.kind}
                               className="px-2 py-1.5 rounded-lg space-y-1"
                             >
-                              <p className="text-[0.625rem] font-medium text-text-muted uppercase tracking-wider">
+                              <p className="text-[0.6875rem] font-medium text-text-muted uppercase tracking-wider">
                                 {group.label}
                               </p>
                               <div className="flex items-center gap-1">
@@ -206,7 +252,7 @@ export const WatchCard: React.FC<WatchCardProps> = ({
                                     key={opt.value}
                                     type="button"
                                     onClick={() => handlePolicySelect(group.kind, opt.value)}
-                                    className="flex-1 px-1.5 py-1 rounded-md text-[0.625rem] font-medium text-text-secondary bg-bg-input/70 border border-border/50 hover:border-accent/50 hover:text-accent hover:bg-accent/10 cursor-pointer transition-colors"
+                                    className="flex-1 px-1.5 py-1 rounded-md text-[0.6875rem] font-medium text-text-secondary bg-bg-input/70 border border-border/50 hover:border-accent/50 hover:text-accent hover:bg-accent/10 cursor-pointer transition-colors"
                                   >
                                     {opt.label}
                                   </button>
@@ -220,10 +266,10 @@ export const WatchCard: React.FC<WatchCardProps> = ({
                       {menuView === 'unwatch-confirm' && (
                         <div className="p-2 space-y-2.5">
                           <p className="text-xs font-semibold text-text-primary leading-snug">
-                            Ngừng theo dõi thư mục này?
+                            {t('watches.unwatch_confirm_title')}
                           </p>
                           <p className="text-[0.6875rem] text-text-secondary leading-relaxed">
-                            Daemon sẽ dừng xử lý sự kiện thay đổi. Dữ liệu đã sao chép được giữ nguyên.
+                            {t('watches.unwatch_confirm_desc')}
                           </p>
                           <div className="flex items-center justify-end gap-1.5">
                             <Button
@@ -232,7 +278,7 @@ export const WatchCard: React.FC<WatchCardProps> = ({
                               onClick={() => setMenuView('menu')}
                               className="h-7 px-2.5 text-[0.6875rem] rounded-lg"
                             >
-                              Hủy
+                              {t('common.cancel')}
                             </Button>
                             <Button
                               size="sm"
@@ -241,7 +287,7 @@ export const WatchCard: React.FC<WatchCardProps> = ({
                               className="h-7 px-2.5 text-[0.6875rem] gap-1 rounded-lg font-semibold"
                             >
                               <Unlink className="h-3 w-3" />
-                              Ngừng theo dõi
+                              {t('watches.btn_unwatch')}
                             </Button>
                           </div>
                         </div>
@@ -255,19 +301,25 @@ export const WatchCard: React.FC<WatchCardProps> = ({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 text-xs bg-bg-input/60 p-2 rounded-lg font-mono text-text-secondary overflow-hidden">
-        <span className="text-text-muted truncate max-w-[40%]">src: {watch.source_root_id}</span>
+      <div className="flex items-center gap-2 text-xs bg-bg-input/60 p-2 rounded-lg font-mono text-text-secondary overflow-hidden select-text">
+        <span className="text-text-muted truncate max-w-[42%]" title={watch.source_root_id}>
+          src: {watch.source_root_id}
+        </span>
         <ArrowRight className="h-3 w-3 shrink-0 text-text-muted" />
-        <span className="text-text-primary truncate max-w-[40%]">dst: {watch.destination_root_id}</span>
+        <span className="text-text-primary truncate max-w-[42%]" title={watch.destination_root_id}>
+          dst: {watch.destination_root_id}
+        </span>
       </div>
 
       {excludeGlobs.length > 0 && (
         <div className="flex items-center flex-wrap gap-1.5">
-          <span className="text-[0.625rem] font-medium text-text-muted shrink-0">Bỏ qua:</span>
+          <span className="text-[0.6875rem] font-medium text-text-muted shrink-0">
+            {t('watches.ignored_label')}:
+          </span>
           {excludeGlobs.slice(0, 3).map((g) => (
             <span
               key={g}
-              className="px-2 py-0.5 rounded-full bg-bg-input/80 border border-border/40 text-[0.625rem] font-mono text-text-secondary whitespace-nowrap"
+              className="px-2 py-0.5 rounded-full bg-bg-input/80 border border-border/40 text-[0.6875rem] font-mono text-text-secondary whitespace-nowrap select-text"
             >
               {g}
             </span>
@@ -276,7 +328,7 @@ export const WatchCard: React.FC<WatchCardProps> = ({
             <span
               className={cn(
                 'px-2 py-0.5 rounded-full bg-bg-input/80 border border-border/40',
-                'text-[0.625rem] font-mono text-text-muted'
+                'text-[0.6875rem] font-mono text-text-muted'
               )}
               title={excludeGlobs.slice(3).join(', ')}
             >
@@ -288,10 +340,16 @@ export const WatchCard: React.FC<WatchCardProps> = ({
 
       <div className="flex items-center justify-between text-[0.6875rem] text-text-muted pt-1">
         <div className="flex items-center gap-1.5">
-          <Radio className="h-3 w-3 text-accent" />
-          <span>Hàng đợi: <span className="font-mono text-text-primary">{watch.backlog_count}</span> sự kiện</span>
+          <span className="h-1.5 w-1.5 rounded-full bg-accent inline-block" />
+          <span>
+            {t('watches.queue_label')}:{' '}
+            <span className="font-mono font-medium text-text-primary">{watch.backlog_count}</span>{' '}
+            {t('watches.backlog_events')}
+          </span>
         </div>
-        <span>Cập nhật {formatTimeAgo(watch.updated_at_ms)}</span>
+        <span>
+          {t('watches.updated_ago')} {formatTimeAgo(watch.updated_at_ms, lang)}
+        </span>
       </div>
     </Card>
   )

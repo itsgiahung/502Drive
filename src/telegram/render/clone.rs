@@ -3,7 +3,7 @@
 use crate::drive::types::DriveFile;
 use crate::state::repo;
 use crate::telegram::keyboards;
-use crate::telegram::render::{job_status_label, push_field, short_job_id};
+use crate::telegram::render::{job_route_line, job_status_label, push_field};
 
 pub(crate) fn clone_loading_text(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
@@ -283,14 +283,16 @@ pub(crate) fn clone_outcome_hint(
     skipped: i64,
 ) -> &'static str {
     match (lang, failed > 0, skipped > 0) {
-        (keyboards::UiLanguage::Vi, true, _) => "Mở job detail để bấm Retry lỗi hoặc lấy report.",
+        (keyboards::UiLanguage::Vi, true, _) => {
+            "Mở chi tiết tác vụ để bấm Thử lại lỗi hoặc lấy báo cáo."
+        }
         (keyboards::UiLanguage::En, true, _) => {
             "Open the job detail to retry failed items or get the report."
         }
-        (keyboards::UiLanguage::Vi, false, true) => "Mở report để xem các mục đã bỏ qua.",
+        (keyboards::UiLanguage::Vi, false, true) => "Mở báo cáo để xem các mục đã bỏ qua.",
         (keyboards::UiLanguage::En, false, true) => "Open the report to inspect skipped items.",
         (keyboards::UiLanguage::Vi, false, false) => {
-            "Job đã sạch lỗi. Report JSON/CSV đã được gửi nếu có."
+            "Tác vụ không có lỗi. Báo cáo JSON/CSV đã được gửi nếu có."
         }
         (keyboards::UiLanguage::En, false, false) => {
             "This job has no failed items. JSON/CSV reports were sent if available."
@@ -306,7 +308,7 @@ pub(crate) fn render_clone_outcome_from_job(
         clone_outcome_title(lang, &job.status).to_string(),
         "━━━━━━━━━━━━".to_string(),
     ];
-    push_field(&mut lines, "Job", short_job_id(&job.id));
+    lines.push(format!("• {}", job_route_line(job)));
     push_field(
         &mut lines,
         clone_outcome_status_field(lang),

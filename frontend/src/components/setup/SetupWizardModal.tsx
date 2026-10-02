@@ -36,7 +36,7 @@ export interface SetupWizardModalProps {
   onRestartService: () => Promise<void>
 }
 
-type SetupMethod = 'preset_oauth' | 'service_account' | 'custom_oauth'
+type SetupMethod = 'preset_oauth' | 'custom_oauth'
 
 export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
   isOpen,
@@ -57,12 +57,6 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
   const [isVerifyingDrive, setIsVerifyingDrive] = useState(false)
   const [driveVerified, setDriveVerified] = useState(status?.account_status === 'connected')
   const [driveVerifyError, setDriveVerifyError] = useState<string | null>(null)
-
-  // Step 2: Service account form
-  const [saDirectory, setSaDirectory] = useState('~/.config/502drive/sa')
-  const [saCount, setSaCount] = useState(100)
-  const [saRotateThresholdGb, setSaRotateThresholdGb] = useState(730)
-  const [sharedDriveId, setSharedDriveId] = useState('')
 
   // Step 3: Telegram bot form
   const [botToken, setBotToken] = useState(config?.bot_token || '')
@@ -195,8 +189,6 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
             : undefined,
         engine_concurrency: config?.engine_concurrency ?? 8,
         auto_confirm_clone: config?.auto_confirm_clone ?? true,
-        sa_directory: method === 'service_account' && saDirectory.trim() ? saDirectory.trim() : undefined,
-        shared_drive_id: method === 'service_account' && sharedDriveId.trim() ? sharedDriveId.trim() : undefined,
       })
 
       // Restart service to apply immediately
@@ -219,12 +211,9 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
   }
 
   // Per-step completion gates — "Tiếp tục" only advances on verified state.
-  const canContinueStep2 =
-    method === 'service_account' ? saDirectory.trim().length > 0 : driveVerified
+  const canContinueStep2 = driveVerified
   const canContinueStep3 = botVerifyResult?.ok === true && ownerId.trim().length > 0
-  const canFinish =
-    (method === 'service_account' ? saDirectory.trim().length > 0 : driveVerified) ||
-    botVerifyResult?.ok === true
+  const canFinish = driveVerified || botVerifyResult?.ok === true
 
   const steps = [
     { num: 1, label: 'Phương thức' },
@@ -338,39 +327,12 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
                       <p className="text-sm font-semibold text-text-primary">
                         Đăng nhập 1-Chạm Mặc định
                       </p>
-                      <span className="text-[0.625rem] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-success/10 text-success border border-success/25">
+                      <span className="text-[0.6875rem] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-success/10 text-success border border-success/25">
                         Khuyên dùng (10 Giây)
                       </span>
                     </div>
                     <p className="text-xs text-text-secondary leading-relaxed">
                       Không cần tạo tài khoản Google Cloud, không cần thiết lập phức tạp. Bạn chỉ cần bấm Đăng nhập & cấp quyền. Token được mã hóa AES-256-GCM cục bộ trên máy bạn.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Method 2: Service Accounts */}
-                <div
-                  onClick={() => setMethod('service_account')}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-3.5 ${
-                    method === 'service_account'
-                      ? 'bg-accent/5 border-accent shadow-xs'
-                      : 'bg-bg-card border-border/70 hover:border-border'
-                  }`}
-                >
-                  <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400 shrink-0 mt-0.5">
-                    <HardDrive className="h-4 w-4" />
-                  </div>
-                  <div className="space-y-1 flex-1">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-text-primary">
-                        Service Accounts (SA) Quota Không Giới Hạn
-                      </p>
-                      <span className="text-[0.625rem] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/25">
-                        TỰ ĐỘNG XOAY VÒNG (750GB/SA)
-                      </span>
-                    </div>
-                    <p className="text-xs text-text-secondary leading-relaxed">
-                      Dành cho khối lượng tải lớn, tự động luân chuyển danh sách Service Account khi chạm ngưỡng 750GB/ngày. Nạp thư mục JSON SA để mở rộng băng thông tối đa.
                     </p>
                   </div>
                 </div>
@@ -392,7 +354,7 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
                       <p className="text-sm font-semibold text-text-primary">
                         Google Cloud OAuth Riêng Biệt
                       </p>
-                      <span className="text-[0.625rem] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-info/10 text-info border border-info/25">
+                      <span className="text-[0.6875rem] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-info/10 text-info border border-info/25">
                         Tự Cấu Hình API
                       </span>
                     </div>
@@ -414,7 +376,6 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
                 </h3>
                 <p className="text-xs text-text-secondary">
                   {method === 'preset_oauth' && 'Bấm đăng nhập để mở trình duyệt cấp quyền an toàn.'}
-                  {method === 'service_account' && 'Cấu hình thư mục chứa các tệp Service Account (.json) để tự động xoay vòng quota.'}
                   {method === 'custom_oauth' && 'Điền Client ID và Client Secret từ Google Cloud Console.'}
                 </p>
               </div>
@@ -486,137 +447,7 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
                 </Card>
               )}
 
-              {/* Form Method: Service Account */}
-              {method === 'service_account' && (
-                <Card className="p-5 space-y-4 bg-bg-card border border-border/70">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 shrink-0">
-                        <HardDrive className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-text-primary">
-                          Cấu hình Service Accounts Pool (Bypass Quota 750GB)
-                        </p>
-                        <p className="text-xs text-text-secondary">
-                          Tự động luân chuyển token khi gặp lỗi Rate Limit hoặc hết quota ngày
-                        </p>
-                      </div>
-                    </div>
-                    <span className="text-[0.625rem] font-semibold uppercase px-2.5 py-1 rounded-full bg-success/10 text-success border border-success/25 flex items-center gap-1.5">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Sẵn sàng kích hoạt
-                    </span>
-                  </div>
 
-                  <div className="space-y-3 pt-2">
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-medium text-text-secondary">
-                          Thư mục chứa tệp SA (*.json)
-                        </label>
-                        <span className="text-[0.6875rem] text-text-muted">
-                          Hỗ trợ nạp 1 đến 1000+ files
-                        </span>
-                      </div>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={saDirectory}
-                          onChange={(e) => setSaDirectory(e.target.value)}
-                          placeholder="VD: ~/.config/502drive/sa hoặc /home/user/sa_pool"
-                          className="flex-1 px-3 py-2 text-xs rounded-xl bg-bg-input border border-border/80 text-text-primary focus:outline-none focus:border-accent font-mono"
-                        />
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handlePaste(setSaDirectory)}
-                          className="text-xs px-2.5 rounded-xl gap-1"
-                          title="Dán từ Clipboard"
-                        >
-                          <Clipboard className="h-3.5 w-3.5" />
-                          <span>Dán</span>
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-text-secondary">
-                          Số lượng Service Accounts (Dự tính)
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={10000}
-                          value={saCount}
-                          onChange={(e) => setSaCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                          className="w-full px-3 py-2 text-xs rounded-xl bg-bg-input border border-border/80 text-text-primary focus:outline-none focus:border-accent font-mono"
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-text-secondary">
-                          Ngưỡng xoay vòng mỗi SA (GB)
-                        </label>
-                        <input
-                          type="number"
-                          min={100}
-                          max={750}
-                          value={saRotateThresholdGb}
-                          onChange={(e) => setSaRotateThresholdGb(Math.max(100, Math.min(750, parseInt(e.target.value, 10) || 730)))}
-                          className="w-full px-3 py-2 text-xs rounded-xl bg-bg-input border border-border/80 text-text-primary focus:outline-none focus:border-accent font-mono"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-medium text-text-secondary">
-                          Shared Drive ID / Team Drive (Tùy chọn)
-                        </label>
-                        <span className="text-[0.6875rem] text-text-muted">
-                          Để SA có quyền ghi trực tiếp
-                        </span>
-                      </div>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={sharedDriveId}
-                          onChange={(e) => setSharedDriveId(e.target.value)}
-                          placeholder="VD: 0ABcDeFgHiJkLmNoPqR"
-                          className="flex-1 px-3 py-2 text-xs rounded-xl bg-bg-input border border-border/80 text-text-primary focus:outline-none focus:border-accent font-mono"
-                        />
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handlePaste(setSharedDriveId)}
-                          className="text-xs px-2.5 rounded-xl gap-1"
-                          title="Dán từ Clipboard"
-                        >
-                          <Clipboard className="h-3.5 w-3.5" />
-                          <span>Dán</span>
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Bandwidth calculation banner */}
-                    <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <Zap className="h-4 w-4 text-purple-400" />
-                        <div>
-                          <p className="text-xs font-semibold text-text-primary">
-                            Băng thông tải ước tính: ~{(saCount * (saRotateThresholdGb / 1000)).toFixed(1)} TB / ngày
-                          </p>
-                          <p className="text-[0.6875rem] text-text-secondary">
-                            Zero-downtime rotation • Tự động phục hồi khi gặp lỗi rateLimitExceeded
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              )}
 
               {/* Form Method: Custom OAuth */}
               {method === 'custom_oauth' && (
@@ -881,26 +712,20 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
                       <HardDrive className="h-4 w-4" />
                     </div>
                     <div>
-                      <p className="font-medium text-text-primary">
-                        {method === 'service_account' ? 'Service Accounts Pool' : 'Google Drive Account'}
-                      </p>
+                      <p className="font-medium text-text-primary">Google Drive Account</p>
                       <p className="text-text-muted text-[0.6875rem] font-mono">
-                        {method === 'service_account'
-                          ? `${saDirectory} (~${saCount} SAs • ${(saCount * 0.75).toFixed(0)} TB/ngày)`
-                          : status?.google_account || 'Chưa đăng nhập'}
+                        {status?.google_account || 'Chưa đăng nhập'}
                       </p>
                     </div>
                   </div>
                   <span
-                    className={`px-2 py-0.5 rounded-full text-[0.625rem] font-medium border ${
-                      (method === 'service_account' ? saDirectory.trim().length > 0 : driveVerified)
+                    className={`px-2 py-0.5 rounded-full text-[0.6875rem] font-medium border ${
+                      driveVerified
                         ? 'bg-success/10 text-success border-success/25'
                         : 'bg-warning/10 text-warning border-warning/25'
                     }`}
                   >
-                    {(method === 'service_account' ? saDirectory.trim().length > 0 : driveVerified)
-                      ? 'Đã chuẩn bị'
-                      : 'Chưa xong'}
+                    {driveVerified ? 'Đã chuẩn bị' : 'Chưa xong'}
                   </span>
                 </div>
 
@@ -919,7 +744,7 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
                     </div>
                   </div>
                   <span
-                    className={`px-2 py-0.5 rounded-full text-[0.625rem] font-medium border ${
+                    className={`px-2 py-0.5 rounded-full text-[0.6875rem] font-medium border ${
                       botVerifyResult?.ok
                         ? 'bg-success/10 text-success border-success/25'
                         : 'bg-warning/10 text-warning border-warning/25'
@@ -942,7 +767,7 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
                       </p>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[0.625rem] font-medium bg-success/10 text-success border border-success/25">
+                  <span className="px-2 py-0.5 rounded-full text-[0.6875rem] font-medium bg-success/10 text-success border border-success/25">
                     Tối ưu
                   </span>
                 </div>
@@ -974,9 +799,7 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
             )}
             {currentStep === 2 && !canContinueStep2 && (
               <span className="text-[0.6875rem] text-warning">
-                {method === 'service_account'
-                  ? 'Vui lòng nhập đường dẫn thư mục Service Account để tiếp tục'
-                  : 'Hoàn tất đăng nhập Google để tiếp tục'}
+                Hoàn tất đăng nhập Google để tiếp tục
               </span>
             )}
             {currentStep === 3 && !canContinueStep3 && (

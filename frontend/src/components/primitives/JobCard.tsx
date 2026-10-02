@@ -5,8 +5,18 @@ import { Button } from '@/components/ui/Button'
 import { ProgressBar } from '@/components/primitives/ProgressBar'
 import { JobSummary } from '@/lib/types'
 import { formatBytes, formatDuration, formatTimeAgo, shortId } from '@/lib/utils'
-import { Play, Pause, X, Loader2, CheckCircle2, AlertCircle, Clock, RotateCcw } from 'lucide-react'
+import {
+  Clock,
+  Loader2,
+  Pause,
+  Play,
+  CheckCircle2,
+  AlertCircle,
+  X,
+  RotateCcw,
+} from 'lucide-react'
 import { useI18n } from '@/hooks/useI18n'
+import { getJobStatusSemantic } from '@/lib/status'
 
 export interface JobCardProps {
   job: JobSummary
@@ -17,6 +27,52 @@ export interface JobCardProps {
   compact?: boolean
 }
 
+function getStatusBadgeVariant(status: string): BadgeVariant {
+  switch (status) {
+    case 'running':
+    case 'discovering':
+    case 'recovering':
+      return 'running'
+    case 'pausing':
+    case 'paused':
+    case 'partially_completed':
+      return 'paused'
+    case 'queued':
+      return 'queued'
+    case 'completed':
+      return 'completed'
+    case 'failed':
+      return 'failed'
+    default:
+      return 'default'
+  }
+}
+
+function renderStatusIcon(status: string) {
+  switch (status) {
+    case 'running':
+    case 'discovering':
+    case 'recovering':
+      return <Loader2 className="h-3.5 w-3.5 text-accent animate-spin shrink-0" />
+    case 'pausing':
+    case 'paused':
+      return <Pause className="h-3.5 w-3.5 text-warning shrink-0" />
+    case 'queued':
+      return <Clock className="h-3.5 w-3.5 text-text-muted shrink-0" />
+    case 'completed':
+      return <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
+    case 'partially_completed':
+      return <AlertCircle className="h-3.5 w-3.5 text-warning shrink-0" />
+    case 'failed':
+      return <AlertCircle className="h-3.5 w-3.5 text-error shrink-0" />
+    case 'cancelling':
+    case 'cancelled':
+      return <X className="h-3.5 w-3.5 text-text-muted shrink-0" />
+    default:
+      return <Clock className="h-3.5 w-3.5 text-text-muted shrink-0" />
+  }
+}
+
 export const JobCard: React.FC<JobCardProps> = ({
   job,
   onPause,
@@ -25,88 +81,27 @@ export const JobCard: React.FC<JobCardProps> = ({
   onRetry,
   compact = false,
 }) => {
-  const { t } = useI18n()
-  const isRunning = job.status === 'running' || job.status === 'discovering'
-  const isPaused = job.status === 'paused' || job.status === 'pausing'
-  const isCompleted = job.status === 'completed'
-  const isFailed = job.status === 'failed'
-
-  const getStatusInfo = (status: string) => {
-    switch (status) {
-      case 'running':
-        return {
-          label: t('jobs_page.status_running'),
-          variant: 'running' as BadgeVariant,
-          icon: <Loader2 className="h-3.5 w-3.5 text-accent animate-spin" />,
-        }
-      case 'discovering':
-        return {
-          label: t('jobs_page.status_discovering'),
-          variant: 'running' as BadgeVariant,
-          icon: <Loader2 className="h-3.5 w-3.5 text-accent animate-spin" />,
-        }
-      case 'paused':
-        return {
-          label: t('jobs_page.status_paused'),
-          variant: 'paused' as BadgeVariant,
-          icon: <Pause className="h-3.5 w-3.5 text-warning" />,
-        }
-      case 'pausing':
-        return {
-          label: t('jobs_page.status_pausing'),
-          variant: 'paused' as BadgeVariant,
-          icon: <Pause className="h-3.5 w-3.5 text-warning" />,
-        }
-      case 'completed':
-        return {
-          label: t('jobs_page.status_completed'),
-          variant: 'completed' as BadgeVariant,
-          icon: <CheckCircle2 className="h-3.5 w-3.5 text-success" />,
-        }
-      case 'partially_completed':
-        return {
-          label: t('jobs_page.status_partially_completed'),
-          variant: 'paused' as BadgeVariant,
-          icon: <CheckCircle2 className="h-3.5 w-3.5 text-warning" />,
-        }
-      case 'failed':
-        return {
-          label: t('jobs_page.status_failed'),
-          variant: 'failed' as BadgeVariant,
-          icon: <AlertCircle className="h-3.5 w-3.5 text-error" />,
-        }
-      case 'cancelled':
-        return {
-          label: t('jobs_page.status_cancelled'),
-          variant: 'default' as BadgeVariant,
-          icon: <X className="h-3.5 w-3.5 text-text-muted" />,
-        }
-      case 'queued':
-      default:
-        return {
-          label: t('jobs_page.status_queued'),
-          variant: 'queued' as BadgeVariant,
-          icon: <Clock className="h-3.5 w-3.5 text-info" />,
-        }
-    }
-  }
-
-  const info = getStatusInfo(job.status)
+  const { t, lang } = useI18n()
+  const semantic = getJobStatusSemantic(job.status)
+  const badgeVariant = getStatusBadgeVariant(job.status)
+  const isRunningAnimation = semantic.isActive && (job.status === 'running' || job.status === 'discovering' || job.status === 'recovering')
 
   return (
-    <Card className="p-4 space-y-3">
+    <Card className={`p-4 space-y-3 ${compact ? 'hover:border-border transition-colors' : ''}`}>
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          {info.icon}
-          <Badge variant={info.variant} pulse={isRunning}>
-            {info.label}
+        <div className="flex items-center gap-2 min-w-0">
+          {renderStatusIcon(job.status)}
+          <Badge variant={badgeVariant} pulse={isRunningAnimation}>
+            {t(semantic.labelKey as any)}
           </Badge>
-          <span className="text-xs font-mono text-text-muted">#{job.short_id || shortId(job.id)}</span>
+          <span className="text-xs font-mono text-text-muted shrink-0 select-text">
+            #{job.short_id || shortId(job.id)}
+          </span>
         </div>
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-1.5">
-          {isRunning && onPause && (
+        {/* Action buttons strictly mapped to backend-permitted state transitions */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {semantic.canPause && onPause && (
             <Button
               size="sm"
               variant="secondary"
@@ -115,11 +110,11 @@ export const JobCard: React.FC<JobCardProps> = ({
               title={t('jobs_page.btn_pause')}
             >
               <Pause className="h-3 w-3" />
-              {t('jobs_page.btn_pause')}
+              <span>{t('jobs_page.btn_pause')}</span>
             </Button>
           )}
 
-          {isPaused && onResume && (
+          {semantic.canResume && onResume && (
             <Button
               size="sm"
               variant="secondary"
@@ -128,16 +123,16 @@ export const JobCard: React.FC<JobCardProps> = ({
               title={t('jobs_page.btn_resume')}
             >
               <Play className="h-3 w-3" />
-              {t('jobs_page.btn_resume')}
+              <span>{t('jobs_page.btn_resume')}</span>
             </Button>
           )}
 
-          {(isRunning || isPaused) && onCancel && (
+          {semantic.canCancel && onCancel && (
             <Button
               size="sm"
               variant="ghost"
               onClick={() => onCancel(job.id)}
-              className="h-6.5 w-6.5 p-0 text-text-muted hover:text-error"
+              className="h-6.5 w-6.5 p-0 text-text-muted hover:text-error rounded-lg"
               title={t('jobs_page.btn_cancel')}
               aria-label={t('jobs_page.btn_cancel')}
             >
@@ -145,7 +140,7 @@ export const JobCard: React.FC<JobCardProps> = ({
             </Button>
           )}
 
-          {isFailed && onRetry && (
+          {semantic.canRetry && onRetry && (
             <Button
               size="sm"
               variant="secondary"
@@ -154,16 +149,16 @@ export const JobCard: React.FC<JobCardProps> = ({
               title={t('jobs_page.btn_retry')}
             >
               <RotateCcw className="h-3 w-3" />
-              {t('jobs_page.btn_retry')}
+              <span>{t('jobs_page.btn_retry')}</span>
             </Button>
           )}
         </div>
       </div>
 
-      {/* Progress section */}
+      {/* Progress bar & item count */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-text-primary font-mono font-medium">
+          <span className="text-text-primary font-mono font-semibold">
             {job.progress_pct.toFixed(1)}%
           </span>
           <span className="text-text-secondary font-mono text-[0.6875rem]">
@@ -172,29 +167,65 @@ export const JobCard: React.FC<JobCardProps> = ({
         </div>
         <ProgressBar
           progress={job.progress_pct}
-          isRunning={isRunning}
-          variant={isFailed ? 'error' : isPaused ? 'warning' : isCompleted ? 'success' : 'accent'}
+          isRunning={isRunningAnimation}
+          variant={
+            job.status === 'failed'
+              ? 'error'
+              : job.status === 'partially_completed' || job.status === 'paused' || job.status === 'pausing' || job.status === 'cancelling'
+              ? 'warning'
+              : job.status === 'completed'
+              ? 'success'
+              : 'accent'
+          }
         />
       </div>
 
+      {/* Error message snippet when failed or partially completed */}
+      {job.error_summary && (
+        <p className="text-[0.6875rem] text-error font-mono bg-error/10 p-2 rounded-lg truncate select-text">
+          {job.error_summary}
+        </p>
+      )}
+
       {/* Details metadata */}
-      {!compact && (
+      {!compact ? (
         <div className="flex flex-wrap items-center justify-between pt-1.5 text-[0.6875rem] text-text-muted border-t border-border/40 gap-y-1">
           <div className="flex items-center gap-3">
-            {job.speed_bytes_per_sec ? (
-              <span>{t('jobs_page.speed')}: <span className="font-mono text-text-secondary">{formatBytes(job.speed_bytes_per_sec)}/s</span></span>
+            {job.speed_bytes_per_sec && job.speed_bytes_per_sec > 0 ? (
+              <span>
+                {t('jobs_page.speed')}: <span className="font-mono text-text-secondary">{formatBytes(job.speed_bytes_per_sec)}/s</span>
+              </span>
             ) : null}
-            {job.eta_seconds ? (
-              <span>{t('jobs_page.eta')}: <span className="font-mono text-text-secondary">~{formatDuration(job.eta_seconds)}</span></span>
+            {job.eta_seconds && job.eta_seconds > 0 ? (
+              <span>
+                {t('jobs_page.eta')}: <span className="font-mono text-text-secondary">~{formatDuration(job.eta_seconds)}</span>
+              </span>
             ) : null}
             {job.skipped_items > 0 ? (
-              <span>{t('common.cancel')}: <span className="font-mono text-text-secondary">{job.skipped_items}</span></span>
+              <span>
+                {t('jobs_page.skipped')}: <span className="font-mono text-text-secondary">{job.skipped_items}</span>
+              </span>
             ) : null}
             {job.failed_items > 0 ? (
-              <span className="text-error">{t('common.error')}: <span className="font-mono">{job.failed_items}</span></span>
+              <span className="text-error">
+                {t('common.error')}: <span className="font-mono">{job.failed_items}</span>
+              </span>
             ) : null}
           </div>
-          <span className="text-[0.625rem] text-text-muted">{formatTimeAgo(job.updated_at_ms || job.created_at_ms)}</span>
+          <span className="text-[0.6875rem] text-text-muted">{formatTimeAgo(job.updated_at_ms || job.created_at_ms, lang)}</span>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between text-[0.6875rem] text-text-muted pt-1 border-t border-border/30">
+          <div className="flex items-center gap-2 truncate">
+            {job.skipped_items > 0 && (
+              <span>{t('jobs_page.skipped')}: <span className="font-mono text-text-secondary">{job.skipped_items}</span></span>
+            )}
+            {job.failed_items > 0 && (
+              <span className="text-error">{t('common.error')}: <span className="font-mono">{job.failed_items}</span></span>
+            )}
+            {/* Compact footer: only operational counts, no raw IDs */}
+          </div>
+          <span className="text-[0.6875rem] text-text-muted shrink-0">{formatTimeAgo(job.updated_at_ms || job.created_at_ms, lang)}</span>
         </div>
       )}
     </Card>

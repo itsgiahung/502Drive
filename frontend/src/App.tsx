@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Shell } from '@/components/layout/Shell'
 import { TabId } from '@/components/layout/Sidebar'
 import { Dashboard } from '@/pages/Dashboard'
 import { Jobs } from '@/pages/Jobs'
 import { Settings } from '@/pages/Settings'
-import { Dev } from '@/pages/Dev'
+import { Dev, DevSubTab } from '@/pages/Dev'
 import { PreflightSplash } from '@/components/layout/PreflightSplash'
 import { SetupWizardModal } from '@/components/setup/SetupWizardModal'
 import { QuickCloneModal } from '@/components/modals/QuickCloneModal'
@@ -20,6 +20,7 @@ import { SystemStatus, JobSummary, WatchSummary, ConfigSummary, WatchPolicyKind,
 const AppContent: React.FC = () => {
   const [isPreflightDone, setIsPreflightDone] = useState(false)
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
+  const [devSubTab, setDevSubTab] = useState<DevSubTab>('doctor')
   const [status, setStatus] = useState<SystemStatus | null>(null)
   const [jobs, setJobs] = useState<JobSummary[]>([])
   const [watches, setWatches] = useState<WatchSummary[]>([])
@@ -27,38 +28,85 @@ const AppContent: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isWizardOpen, setIsWizardOpen] = useState(false)
   const [isCloneOpen, setIsCloneOpen] = useState(false)
+  const [cloneSourceUrl, setCloneSourceUrl] = useState<string | undefined>(undefined)
   const [isWatchOpen, setIsWatchOpen] = useState(false)
   const [updateInfo, setUpdateInfo] = useState<RemoteUpdateInfo | null>(null)
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false)
+  const [statusStale, setStatusStale] = useState(false)
+  const [jobsStale, setJobsStale] = useState(false)
+  const [watchesStale, setWatchesStale] = useState(false)
+  const [lastRuntimeSuccessAt, setLastRuntimeSuccessAt] = useState<number | null>(null)
+  const isPollingRef = useRef(false)
   
-  const { lang, setLang, t } = useI18n()
+  const { setLang, t } = useI18n()
   const { toast } = useToast()
 
-  const refreshData = useCallback(async (silent = false) => {
-    if (!silent) setIsRefreshing(true)
+  const refreshConfig = useCallback(async () => {
     try {
-      const [newStatus, newJobs, newWatches, newConfig] = await Promise.all([
-        api.getSystemStatus(),
-        api.listJobs(30),
-        api.listWatches(),
-        api.getConfig(),
-      ])
-      setStatus(newStatus)
-      setJobs(newJobs)
-      setWatches(newWatches)
+      const newConfig = await api.getConfig()
       setConfig(newConfig)
-      // Sync language state when config refreshes (avoid stomping an in-flight optimistic update)
       if (newConfig?.language && (newConfig.language === 'vi' || newConfig.language === 'en')) {
         setLang(newConfig.language as Language)
       }
     } catch (err) {
-      console.error('Lỗi tải dữ liệu 502Drive:', err)
-    } finally {
-      if (!silent) setIsRefreshing(false)
+      console.error('Lỗi nạp cấu hình 502Drive:', err)
     }
   }, [setLang])
 
+  const refreshData = useCallback(async (silent = false) => {
+    if (isPollingRef.current) return
+    isPollingRef.current = true
+    if (!silent) setIsRefreshing(true)
+
+    try {
+      const [statusRes, jobsRes, watchesRes] = await Promise.allSettled([
+        api.getSystemStatus(),
+        api.listJobs(30),
+        api.listWatches(),
+      ])
+
+      let anySuccess = false
+
+      if (statusRes.status === 'fulfilled') {
+        setStatus(statusRes.value)
+        setStatusStale(false)
+        anySuccess = true
+      } else {
+        setStatusStale(true)
+        console.warn('Status poll failed:', statusRes.reason)
+      }
+
+      if (jobsRes.status === 'fulfilled') {
+        setJobs(jobsRes.value)
+        setJobsStale(false)
+        anySuccess = true
+      } else {
+        setJobsStale(true)
+        console.warn('Jobs poll failed:', jobsRes.reason)
+      }
+
+      if (watchesRes.status === 'fulfilled') {
+        setWatches(watchesRes.value)
+        setWatchesStale(false)
+        anySuccess = true
+      } else {
+        setWatchesStale(true)
+        console.warn('Watches poll failed:', watchesRes.reason)
+      }
+
+      if (anySuccess) {
+        setLastRuntimeSuccessAt(Date.now())
+      }
+    } catch (err) {
+      console.error('Lỗi tải dữ liệu runtime 502Drive:', err)
+    } finally {
+      isPollingRef.current = false
+      if (!silent) setIsRefreshing(false)
+    }
+  }, [])
+
   useEffect(() => {
+    refreshConfig()
     refreshData()
     // Silently check for remote update on start
     api.checkRemoteUpdate().then((info) => {
@@ -70,7 +118,7 @@ const AppContent: React.FC = () => {
       if (!isWizardOpen) refreshData(true)
     }, 3000)
     return () => clearInterval(interval)
-  }, [refreshData, isWizardOpen])
+  }, [refreshConfig, refreshData, isWizardOpen])
 
   // Sync lang from config on initial load
   useEffect(() => {
@@ -79,39 +127,31 @@ const AppContent: React.FC = () => {
     }
   }, [config?.language, setLang])
 
-  const handleChangeLang = useCallback(async (newLang: string) => {
-    const targetLang = (newLang === 'en' ? 'en' : 'vi') as Language
-    // Optimistic: update UI immediately before backend round-trip
-    setLang(targetLang)
-    try {
-      await api.updateConfig('language', targetLang)
-      toast({
-        title: targetLang === 'vi' ? 'Đã chuyển sang Tiếng Việt' : 'Switched to English',
-        variant: 'success',
-        duration: 1500,
-      })
-      await refreshData(true)
-    } catch (err) {
-      // Revert on error
-      if (config?.language && (config.language === 'vi' || config.language === 'en')) {
-        setLang(config.language as Language)
-      }
-      toast({ title: t('common.error', 'Lỗi'), description: getErrorMessage(err), variant: 'error' })
+  const getPolicyKindLabel = (kind: WatchPolicyKind): string => {
+    switch (kind) {
+      case 'content_update':
+        return t('watches.policy_kind_content')
+      case 'deletion':
+        return t('watches.policy_kind_deletion')
+      case 'move_out':
+        return t('watches.policy_kind_move_out')
+      default:
+        return kind
     }
-  }, [config?.language, refreshData, setLang, t, toast])
+  }
 
   const handleStartService = async () => {
     try {
       await api.startService()
       toast({
-        title: 'Đã kích hoạt service',
-        description: 'Dịch vụ nền gdclone-bot đã được bật.',
+        title: t('toasts.service_started_title'),
+        description: t('toasts.service_started_desc'),
         variant: 'success',
       })
       await refreshData()
     } catch (err) {
       toast({
-        title: 'Lỗi kích hoạt service',
+        title: t('toasts.service_start_error'),
         description: getErrorMessage(err),
         variant: 'error',
       })
@@ -122,14 +162,14 @@ const AppContent: React.FC = () => {
     try {
       await api.restartService()
       toast({
-        title: 'Khởi động lại service',
-        description: 'Đã gửi lệnh systemctl restart gdclone-bot thành công.',
+        title: t('toasts.service_restarted_title'),
+        description: t('toasts.service_restarted_desc'),
         variant: 'success',
       })
       await refreshData()
     } catch (err) {
       toast({
-        title: 'Lỗi khởi động service',
+        title: t('toasts.service_restart_error'),
         description: getErrorMessage(err),
         variant: 'error',
       })
@@ -141,7 +181,7 @@ const AppContent: React.FC = () => {
       await api.openTelegramBot()
     } catch (err) {
       toast({
-        title: 'Không thể mở Telegram',
+        title: t('toasts.open_bot_error'),
         description: getErrorMessage(err),
         variant: 'error',
       })
@@ -152,13 +192,13 @@ const AppContent: React.FC = () => {
     try {
       await api.triggerLogin()
       toast({
-        title: 'Đăng nhập Google OAuth',
-        description: 'Vui lòng xác nhận quyền truy cập trên trình duyệt web.',
+        title: t('toasts.oauth_login_title'),
+        description: t('toasts.oauth_login_desc'),
         variant: 'default',
       })
     } catch (err) {
       toast({
-        title: 'Lỗi đăng nhập',
+        title: t('toasts.oauth_login_error'),
         description: getErrorMessage(err),
         variant: 'error',
       })
@@ -169,14 +209,14 @@ const AppContent: React.FC = () => {
     try {
       await api.triggerRevoke()
       toast({
-        title: 'Đã ngắt kết nối Google',
-        description: 'Token truy cập đã được hủy an toàn.',
+        title: t('toasts.oauth_revoked_title'),
+        description: t('toasts.oauth_revoked_desc'),
         variant: 'warning',
       })
       await refreshData()
     } catch (err) {
       toast({
-        title: 'Lỗi ngắt kết nối',
+        title: t('toasts.oauth_revoke_error'),
         description: getErrorMessage(err),
         variant: 'error',
       })
@@ -187,13 +227,13 @@ const AppContent: React.FC = () => {
     try {
       await api.pauseJob(jobId)
       toast({
-        title: 'Tác vụ đã tạm dừng',
-        description: `Job ${jobId.slice(0, 8)} đã được dừng an toàn.`,
+        title: t('toasts.job_paused_title'),
+        description: t('toasts.job_paused_desc').replace('{id}', jobId.slice(0, 8)),
         variant: 'default',
       })
       await refreshData()
     } catch (err) {
-      toast({ title: 'Không thể dừng job', description: getErrorMessage(err), variant: 'error' })
+      toast({ title: t('toasts.job_pause_error'), description: getErrorMessage(err), variant: 'error' })
     }
   }
 
@@ -201,13 +241,13 @@ const AppContent: React.FC = () => {
     try {
       await api.resumeJob(jobId)
       toast({
-        title: 'Tiếp tục tác vụ',
-        description: `Job ${jobId.slice(0, 8)} đang được tiếp tục xử lý.`,
+        title: t('toasts.job_resumed_title'),
+        description: t('toasts.job_resumed_desc').replace('{id}', jobId.slice(0, 8)),
         variant: 'success',
       })
       await refreshData()
     } catch (err) {
-      toast({ title: 'Không thể tiếp tục job', description: getErrorMessage(err), variant: 'error' })
+      toast({ title: t('toasts.job_resume_error'), description: getErrorMessage(err), variant: 'error' })
     }
   }
 
@@ -215,33 +255,33 @@ const AppContent: React.FC = () => {
     try {
       await api.cancelJob(jobId)
       toast({
-        title: 'Đã hủy tác vụ',
-        description: `Job ${jobId.slice(0, 8)} đã được hủy.`,
+        title: t('toasts.job_cancelled_title'),
+        description: t('toasts.job_cancelled_desc').replace('{id}', jobId.slice(0, 8)),
         variant: 'warning',
       })
       await refreshData()
     } catch (err) {
-      toast({ title: 'Không thể hủy job', description: getErrorMessage(err), variant: 'error' })
+      toast({ title: t('toasts.job_cancel_error'), description: getErrorMessage(err), variant: 'error' })
     }
   }
 
   const handlePauseWatch = async (watchId: string) => {
     try {
       await api.pauseWatch(watchId)
-      toast({ title: 'Tạm dừng theo dõi', variant: 'default' })
+      toast({ title: t('toasts.watch_paused_title'), variant: 'default' })
       await refreshData()
     } catch (err) {
-      toast({ title: 'Lỗi', description: getErrorMessage(err), variant: 'error' })
+      toast({ title: t('common.error'), description: getErrorMessage(err), variant: 'error' })
     }
   }
 
   const handleResumeWatch = async (watchId: string) => {
     try {
       await api.resumeWatch(watchId)
-      toast({ title: 'Tiếp tục theo dõi', variant: 'success' })
+      toast({ title: t('toasts.watch_resumed_title'), variant: 'success' })
       await refreshData()
     } catch (err) {
-      toast({ title: 'Lỗi', description: getErrorMessage(err), variant: 'error' })
+      toast({ title: t('common.error'), description: getErrorMessage(err), variant: 'error' })
     }
   }
 
@@ -249,29 +289,29 @@ const AppContent: React.FC = () => {
     try {
       const { request_id } = await api.retryJob(jobId)
       toast({
-        title: 'Đã gửi yêu cầu thử lại',
-        description: 'Đang chờ daemon xác nhận…',
+        title: t('toasts.job_retry_queued_title'),
+        description: t('toasts.job_retry_queued_desc'),
         variant: 'default',
       })
       const result = await api.trackUiRequest(request_id)
       if (result.status === 'accepted') {
         toast({
-          title: 'Thử lại đã được chấp nhận',
-          description: result.note || `Job ${jobId.slice(0, 8)} đã được lên lịch chạy lại.`,
+          title: t('toasts.job_retry_accepted_title'),
+          description: result.note || t('toasts.job_retry_accepted_desc').replace('{id}', jobId.slice(0, 8)),
           variant: 'success',
           duration: 6000,
         })
         await refreshData()
       } else {
         toast({
-          title: 'Yêu cầu thử lại bị từ chối',
-          description: result.note || 'Daemon từ chối yêu cầu thử lại.',
+          title: t('toasts.job_retry_rejected_title'),
+          description: result.note || t('toasts.job_retry_rejected_desc'),
           variant: 'error',
           duration: 6000,
         })
       }
     } catch (err) {
-      toast({ title: 'Lỗi thử lại job', description: getErrorMessage(err), variant: 'error' })
+      toast({ title: t('toasts.job_retry_error'), description: getErrorMessage(err), variant: 'error' })
     }
   }
 
@@ -282,15 +322,18 @@ const AppContent: React.FC = () => {
   ) => {
     try {
       await api.setWatchPolicy(watchId, policyKind, policyValue)
+      const friendlyPolicy = getPolicyKindLabel(policyKind)
       toast({
-        title: 'Đã cập nhật chính sách',
-        description: `Chính sách "${policyKind}" của watch ${watchId.slice(0, 8)} đã được áp dụng.`,
+        title: t('toasts.policy_updated_title'),
+        description: t('toasts.policy_updated_desc')
+          .replace('{policy}', friendlyPolicy)
+          .replace('{id}', watchId.slice(0, 8)),
         variant: 'success',
         duration: 3000,
       })
       await refreshData()
     } catch (err) {
-      toast({ title: 'Lỗi cập nhật chính sách', description: getErrorMessage(err), variant: 'error' })
+      toast({ title: t('toasts.policy_update_error'), description: getErrorMessage(err), variant: 'error' })
     }
   }
 
@@ -299,20 +342,20 @@ const AppContent: React.FC = () => {
       const stopped = await api.unwatch(watchId)
       if (stopped) {
         toast({
-          title: 'Đã ngừng theo dõi',
-          description: `Watch ${watchId.slice(0, 8)} đã được dừng. Dữ liệu đã sao chép được giữ nguyên.`,
+          title: t('toasts.unwatch_success_title'),
+          description: t('toasts.unwatch_success_desc').replace('{id}', watchId.slice(0, 8)),
           variant: 'warning',
         })
       } else {
         toast({
-          title: 'Không thể ngừng theo dõi',
-          description: 'Watch không tồn tại hoặc đã dừng trước đó.',
+          title: t('toasts.unwatch_not_found_title'),
+          description: t('toasts.unwatch_not_found_desc'),
           variant: 'error',
         })
       }
       await refreshData()
     } catch (err) {
-      toast({ title: 'Lỗi ngừng theo dõi', description: getErrorMessage(err), variant: 'error' })
+      toast({ title: t('toasts.unwatch_error'), description: getErrorMessage(err), variant: 'error' })
     }
   }
 
@@ -320,14 +363,14 @@ const AppContent: React.FC = () => {
     try {
       await api.updateConfig(field, value)
       toast({
-        title: 'Đã lưu cấu hình',
-        description: `Đã cập nhật ${field}.`,
+        title: t('toasts.config_saved_title'),
+        description: t('toasts.config_saved_desc').replace('{field}', field),
         variant: 'success',
         duration: 2000,
       })
-      await refreshData()
+      await refreshConfig()
     } catch (err) {
-      toast({ title: 'Lỗi lưu cấu hình', description: getErrorMessage(err), variant: 'error' })
+      toast({ title: t('toasts.config_save_error'), description: getErrorMessage(err), variant: 'error' })
     }
   }
 
@@ -367,11 +410,20 @@ const AppContent: React.FC = () => {
           onRestartService={handleRestartService}
           onOpenBot={handleOpenBot}
           onTriggerLogin={handleTriggerLogin}
-          currentLang={lang}
-          onChangeLang={handleChangeLang}
           updateAvailable={updateInfo?.update_available ?? false}
           latestVersion={updateInfo?.latest_version}
           onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
+          onOpenQuickCloneWithSource={(source) => {
+            setCloneSourceUrl(source)
+            setIsCloneOpen(true)
+          }}
+          onSelectDevSubTab={(subTab) => {
+            setDevSubTab(subTab)
+            setActiveTab('dev')
+          }}
+          onOpenQuickClone={() => setIsCloneOpen(true)}
+          onOpenCreateWatch={() => setIsWatchOpen(true)}
+          isStale={statusStale || jobsStale || watchesStale}
         >
           {activeTab === 'dashboard' && (
             <Dashboard
@@ -388,6 +440,9 @@ const AppContent: React.FC = () => {
               onNavigateToSettings={() => setActiveTab('settings')}
               onOpenWizard={() => setIsWizardOpen(true)}
               onOpenQuickClone={() => setIsCloneOpen(true)}
+              isStale={statusStale || jobsStale || watchesStale}
+              lastRuntimeSuccessAt={lastRuntimeSuccessAt}
+              staleDomains={{ status: statusStale, jobs: jobsStale, watches: watchesStale }}
             />
           )}
 
@@ -426,6 +481,8 @@ const AppContent: React.FC = () => {
             <Dev
               onRunDoctor={api.runDoctor}
               onGetLogs={api.getLogs}
+              activeSubTab={devSubTab}
+              onSubTabChange={setDevSubTab}
             />
           )}
         </Shell>
@@ -443,7 +500,11 @@ const AppContent: React.FC = () => {
 
       <QuickCloneModal
         isOpen={isCloneOpen}
-        onClose={() => setIsCloneOpen(false)}
+        onClose={() => {
+          setIsCloneOpen(false)
+          setCloneSourceUrl(undefined)
+        }}
+        initialSourceUrl={cloneSourceUrl}
         onRefreshData={refreshData}
       />
 

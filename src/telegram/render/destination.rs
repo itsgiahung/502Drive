@@ -4,7 +4,6 @@ use crate::drive::types::DriveFile;
 use crate::state::repo;
 use crate::telegram::i18n::TextKey as T;
 use crate::telegram::keyboards;
-use crate::telegram::render::{push_field, short_id};
 
 pub(crate) fn destination_empty_text(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
@@ -26,8 +25,8 @@ pub(crate) fn destination_default_marker(lang: keyboards::UiLanguage) -> &'stati
 
 pub(crate) fn destination_my_drive_label(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
-        keyboards::UiLanguage::Vi => "My Drive / được chia sẻ",
-        keyboards::UiLanguage::En => "My Drive / shared",
+        keyboards::UiLanguage::Vi => "My Drive",
+        keyboards::UiLanguage::En => "My Drive",
     }
 }
 
@@ -63,6 +62,7 @@ pub(crate) fn destination_browser_title(lang: keyboards::UiLanguage) -> &'static
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn destination_folder_id_field(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
         keyboards::UiLanguage::Vi => "Folder ID",
@@ -70,6 +70,7 @@ pub(crate) fn destination_folder_id_field(lang: keyboards::UiLanguage) -> &'stat
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn destination_writable_field(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
         keyboards::UiLanguage::Vi => "Có thể ghi",
@@ -107,8 +108,8 @@ pub(crate) fn destination_child_count(lang: keyboards::UiLanguage, count: usize)
 
 pub(crate) fn destination_folder_page_hint(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
-        keyboards::UiLanguage::Vi => "Chỉ hiện 20 thư mục mỗi trang.",
-        keyboards::UiLanguage::En => "Showing 20 folders per page.",
+        keyboards::UiLanguage::Vi => "Chỉ hiện 8 thư mục mỗi trang.",
+        keyboards::UiLanguage::En => "Showing 8 folders per page.",
     }
 }
 
@@ -135,8 +136,8 @@ pub(crate) fn destination_shared_drive_count(lang: keyboards::UiLanguage, count:
 
 pub(crate) fn destination_drive_page_hint(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
-        keyboards::UiLanguage::Vi => "Chỉ hiện 20 drive mỗi trang.",
-        keyboards::UiLanguage::En => "Showing 20 drives per page.",
+        keyboards::UiLanguage::Vi => "Chỉ hiện 8 drive mỗi trang.",
+        keyboards::UiLanguage::En => "Showing 8 drives per page.",
     }
 }
 

@@ -6,7 +6,7 @@ pub mod progress;
 pub mod render;
 pub mod session;
 
-pub use handlers::parse_callback_action;
+pub use handlers::{LegacyAction, parse_callback_action, parse_legacy_action};
 
 use teloxide::prelude::*;
 use teloxide::types::BotCommand;

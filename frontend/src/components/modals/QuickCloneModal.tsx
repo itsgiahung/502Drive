@@ -14,6 +14,7 @@ export interface QuickCloneModalProps {
   isOpen: boolean
   onClose: () => void
   onRefreshData: () => Promise<void>
+  initialSourceUrl?: string
 }
 
 /**
@@ -25,15 +26,22 @@ export const QuickCloneModal: React.FC<QuickCloneModalProps> = ({
   isOpen,
   onClose,
   onRefreshData,
+  initialSourceUrl,
 }) => {
   const { t } = useI18n()
-  const [sourceUrl, setSourceUrl] = useState('')
+  const [sourceUrl, setSourceUrl] = useState(initialSourceUrl || '')
   const [nameOverride, setNameOverride] = useState('')
   const [destination, setDestination] = useState<DriveItemRef | null>(null)
   const [manualDestId, setManualDestId] = useState('')
   const [isPickerOpen, setIsPickerOpen] = useState(false)
   const [duplicatePolicy, setDuplicatePolicy] = useState<CloneDuplicatePolicy>('keep_both')
   const [isWaiting, setIsWaiting] = useState(false)
+
+  React.useEffect(() => {
+    if (initialSourceUrl) {
+      setSourceUrl(initialSourceUrl)
+    }
+  }, [initialSourceUrl, isOpen])
 
   const { toast } = useToast()
 
@@ -108,6 +116,7 @@ export const QuickCloneModal: React.FC<QuickCloneModalProps> = ({
     <ModalShell
       isOpen={isOpen}
       onClose={handleClose}
+      dismissible={!isWaiting}
       icon={<Copy className="h-4 w-4 stroke-[2]" />}
       title={t('quick_clone.modal_title')}
       subtitle={t('quick_clone.modal_subtitle')}
@@ -215,7 +224,7 @@ export const QuickCloneModal: React.FC<QuickCloneModalProps> = ({
                   onClick={() => setIsPickerOpen((o) => !o)}
                   className="text-xs h-8 px-3.5 font-semibold rounded-xl shrink-0 border-accent/40 text-accent hover:bg-accent/15"
                 >
-                  {isPickerOpen ? t('quick_clone.btn_hide_folder') : 'Đổi thư mục'}
+                  {isPickerOpen ? t('quick_clone.btn_hide_folder') : t('quick_clone.btn_change_folder')}
                 </Button>
               </div>
             ) : (

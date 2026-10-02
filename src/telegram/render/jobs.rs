@@ -4,7 +4,7 @@ use teloxide::types::InlineKeyboardMarkup;
 
 use crate::state::{db::Database, repo};
 use crate::telegram::keyboards;
-use crate::telegram::render::{job_status_label, push_field, short_job_id};
+use crate::telegram::render::{job_id_field, job_status_label, push_field, short_job_id};
 
 pub(crate) async fn render_jobs_panel(
     db: &Database,
@@ -18,11 +18,11 @@ pub(crate) async fn render_jobs_panel(
             keyboards::job_list_keyboard(&[], lang),
         ));
     }
-    let mut lines = vec![jobs_title(lang).to_string(), "━━━━━━━━━━".to_string()];
+    let mut lines = vec![jobs_title(lang).to_string()];
     let mut buttons = Vec::with_capacity(jobs.len());
     for job in &jobs {
         lines.push(String::new());
-        push_field(&mut lines, "Job", short_job_id(&job.id));
+        push_field(&mut lines, job_id_field(lang), short_job_id(&job.id));
         push_field(
             &mut lines,
             jobs_status_field(lang),
@@ -57,15 +57,19 @@ pub(crate) async fn render_jobs_panel(
 
 pub(crate) fn jobs_title(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
-        keyboards::UiLanguage::Vi => "JOB ĐANG CHẠY",
-        keyboards::UiLanguage::En => "ACTIVE JOBS",
+        keyboards::UiLanguage::Vi => "📦 Tác vụ",
+        keyboards::UiLanguage::En => "📦 Jobs",
     }
 }
 
 pub(crate) fn jobs_empty_text(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
-        keyboards::UiLanguage::Vi => "JOB ĐANG CHẠY\n━━━━━━━━━━\nKhông có job đang chạy.",
-        keyboards::UiLanguage::En => "ACTIVE JOBS\n━━━━━━━━━━\nNo active jobs.",
+        keyboards::UiLanguage::Vi => {
+            "📦 Tác vụ\n\nHiện không có tác vụ nào đang chạy.\n\nGửi liên kết Google Drive vào chat để bắt đầu, hoặc bấm ＋ Sao chép bên dưới."
+        }
+        keyboards::UiLanguage::En => {
+            "📦 Jobs\n\nNo jobs running right now.\n\nSend a Google Drive link into the chat, or tap ＋ Clone below."
+        }
     }
 }
 

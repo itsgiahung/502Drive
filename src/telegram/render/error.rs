@@ -47,7 +47,7 @@ pub(crate) fn load_jobs_error(lang: keyboards::UiLanguage, err: &anyhow::Error) 
     match lang {
         keyboards::UiLanguage::Vi => {
             tracing::warn!(error = %err, "load error");
-            "Lỗi tải job. Xem log để biết chi tiết.".to_string()
+            "Lỗi tải tác vụ. Xem log để biết chi tiết.".to_string()
         }
         keyboards::UiLanguage::En => {
             tracing::warn!(error = %err, "load error");

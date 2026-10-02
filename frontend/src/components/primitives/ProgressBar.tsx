@@ -2,12 +2,15 @@ import React from 'react'
 import { motion } from 'motion/react'
 import { cn } from '@/lib/utils'
 
+import { useI18n } from '@/hooks/useI18n'
+
 export interface ProgressBarProps {
   progress: number // 0 to 100
   isRunning?: boolean
   variant?: 'accent' | 'warning' | 'error' | 'success'
   height?: 'sm' | 'md' | 'lg'
   className?: string
+  ariaLabel?: string
 }
 
 export const ProgressBar: React.FC<ProgressBarProps> = ({
@@ -16,7 +19,9 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   variant = 'accent',
   height = 'md',
   className,
+  ariaLabel,
 }) => {
+  const { lang } = useI18n()
   const clamped = Math.min(100, Math.max(0, progress))
 
   const heightStyles = {
@@ -38,7 +43,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(clamped)}
-      aria-label="Tiến độ"
+      aria-label={ariaLabel || (lang === 'vi' ? 'Tiến độ' : 'Progress')}
       className={cn(
         'w-full rounded-full bg-bg-input overflow-hidden relative',
         heightStyles[height],

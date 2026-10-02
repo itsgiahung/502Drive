@@ -1,6 +1,7 @@
 import React from "react"
 import { StatCard } from "@/components/primitives/StatCard"
 import { JobCard } from "@/components/primitives/JobCard"
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card"
 import { Skeleton } from "@/components/ui/Skeleton"
 import { Badge } from "@/components/ui/Badge"
@@ -21,6 +22,8 @@ import {
   ArrowRight,
   Copy,
   AlertTriangle,
+  FolderOpen,
+  ChevronRight,
 } from "lucide-react"
 import { SystemStatus, JobSummary } from "@/lib/types"
 import { formatBytes } from "@/lib/utils"
@@ -40,6 +43,9 @@ export interface DashboardProps {
   onOpenWizard?: () => void
   onOpenQuickClone?: () => void
   onNavigateToSettings?: () => void
+  isStale?: boolean
+  lastRuntimeSuccessAt?: number | null
+  staleDomains?: { status: boolean; jobs: boolean; watches: boolean }
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -56,8 +62,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onOpenWizard,
   onOpenQuickClone,
   onNavigateToSettings,
+  isStale,
+  lastRuntimeSuccessAt,
+  staleDomains,
 }) => {
   const { t } = useI18n()
+  const [jobToCancel, setJobToCancel] = React.useState<string | null>(null)
+  const [isRevokeConfirmOpen, setIsRevokeConfirmOpen] = React.useState(false)
   const isAccountConnected = status?.account_status === "connected"
   const isReconnectRequired = status?.account_status === "reconnect_required"
   const isServiceActive = status?.service_active ?? false
@@ -66,6 +77,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="space-y-6 lg:space-y-8 w-full pb-12">
+      {/* ── Subtle Reconnecting Indicator if any domain is stale ── */}
+      {isStale && (
+        <div className="px-4 py-2.5 rounded-xl bg-warning/10 border border-warning/30 flex items-center justify-between text-xs text-warning">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-warning animate-pulse" />
+            <span>
+              {staleDomains?.status
+                ? t('dashboard.stale_status')
+                : staleDomains?.jobs
+                ? t('dashboard.stale_jobs')
+                : t('dashboard.stale_reconnecting')}
+            </span>
+          </div>
+          {lastRuntimeSuccessAt && (
+            <span className="text-[0.6875rem] text-text-muted">
+              {t('dashboard.last_sync')}: {new Date(lastRuntimeSuccessAt).toLocaleTimeString()}
+            </span>
+          )}
+        </div>
+      )}
       {/* ── Banner: Setup Wizard thông minh cho người dùng mới ── */}
       {!isAccountConnected && !isReconnectRequired && (
         <div className="p-5 sm:p-6 rounded-2xl bg-accent/10 border border-accent/25 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 shadow-xs">
@@ -124,32 +155,62 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
-      {/* ── Quick action: Sao chép nhanh (khi tài khoản đã kết nối) ── */}
-      {isAccountConnected && onOpenQuickClone && (
-        <div className="p-5 sm:p-6 rounded-2xl bg-accent/10 border border-accent/25 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 shadow-xs">
-          <div className="flex items-start gap-3.5">
-            <div className="p-2.5 rounded-xl bg-accent text-white shadow-sm shrink-0 mt-0.5">
-              <Copy className="h-6 w-6" />
+      {/* ── Quick Actions: Quick Clone + Create Sync (equal hierarchy) ── */}
+      {isAccountConnected && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          {/* Quick Clone */}
+          {onOpenQuickClone && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-accent/10 border border-accent/25 flex flex-col gap-3 shadow-xs">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-accent text-white shadow-sm shrink-0">
+                  <Copy className="h-5 w-5" />
+                </div>
+                <div className="space-y-0.5 min-w-0">
+                  <h3 className="text-sm font-bold text-text-primary">
+                    {t('dashboard.quick_clone_title')}
+                  </h3>
+                  <p className="text-xs text-text-secondary leading-relaxed">
+                    {t('dashboard.quick_clone_desc')}
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={onOpenQuickClone}
+                className="text-xs gap-1.5 rounded-xl w-full font-semibold shadow-xs mt-auto"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                <span>{t('dashboard.quick_clone_btn')}</span>
+              </Button>
             </div>
-            <div className="space-y-1">
-              <h3 className="text-base sm:text-lg font-bold text-text-primary">
-                {t('dashboard.quick_clone_title')}
-              </h3>
-              <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
-                {t('dashboard.quick_clone_desc')}
-              </p>
+          )}
+
+          {/* Create Sync Watch */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-bg-card border border-border/70 flex flex-col gap-3 shadow-xs">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-success/15 text-success shadow-sm shrink-0">
+                <FolderSync className="h-5 w-5" />
+              </div>
+              <div className="space-y-0.5 min-w-0">
+                <h3 className="text-sm font-bold text-text-primary">
+                  {t('dashboard.create_sync_title')}
+                </h3>
+                <p className="text-xs text-text-secondary leading-relaxed">
+                  {t('dashboard.create_sync_desc')}
+                </p>
+              </div>
             </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={onNavigateToJobs}
+              className="text-xs gap-1.5 rounded-xl w-full font-semibold mt-auto"
+            >
+              <FolderSync className="h-3.5 w-3.5 text-success" />
+              <span>{t('dashboard.create_sync_btn')}</span>
+            </Button>
           </div>
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={onOpenQuickClone}
-            className="text-xs gap-1.5 rounded-xl shrink-0 font-semibold shadow-xs"
-          >
-            <Copy className="h-3.5 w-3.5" />
-            <span>{t('dashboard.quick_clone_btn')}</span>
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Button>
         </div>
       )}
 
@@ -185,8 +246,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           icon={HardDrive}
         />
         <StatCard
-          label={t('dashboard.stat_db_integrity')}
-          value={status?.db_integrity === "ok" ? t('dashboard.stat_healthy') : t('common.error')}
+          label={t('dashboard.stat_system_health')}
+          value={status?.service_active ? t('dashboard.stat_healthy') : t('dashboard.tg_paused')}
           icon={Database}
         />
         </>
@@ -296,31 +357,50 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                   <span>{t('dashboard.tg_title')}</span>
                 </CardTitle>
-                <Badge variant={isServiceActive ? "active" : "paused"} pulse={isServiceActive}>
-                  {isServiceActive ? t('dashboard.tg_running') : t('dashboard.tg_paused')}
+                <Badge
+                  variant={status?.bot_username && isServiceActive ? "active" : "paused"}
+                  pulse={!!status?.bot_username && isServiceActive}
+                >
+                  {status?.bot_username
+                    ? (isServiceActive ? t('dashboard.tg_running') : t('dashboard.tg_paused'))
+                    : t('common.not_configured')}
                 </Badge>
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-3">
               <div className="p-3 rounded-xl bg-bg-input/60 border border-border/40">
                 <p className="text-xs font-mono text-text-primary truncate font-medium">
-                  @{status?.bot_username || "Drive502_Bot"}
+                  {status?.bot_username ? `@${status.bot_username}` : t('dashboard.tg_not_configured')}
                 </p>
                 <p className="text-[0.6875rem] text-text-muted mt-0.5">
-                  {isServiceActive ? t('dashboard.tg_ready') : t('topbar.service_paused')}
+                  {status?.bot_username
+                    ? (isServiceActive ? t('dashboard.tg_ready') : t('topbar.service_paused'))
+                    : t('settings_page.tg_owner_desc')}
                 </p>
               </div>
 
               <div className="flex items-center gap-2 pt-1">
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={onOpenBot}
-                  className="flex-1 text-xs gap-1.5 rounded-xl"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  {t('dashboard.btn_open_bot')}
-                </Button>
+                {status?.bot_username ? (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={onOpenBot}
+                    className="flex-1 text-xs gap-1.5 rounded-xl"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    {t('dashboard.btn_open_bot')}
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={onNavigateToSettings}
+                    className="flex-1 text-xs gap-1.5 rounded-xl"
+                  >
+                    <Send className="h-3.5 w-3.5 text-accent" />
+                    <span>{t('settings_page.tab_settings')}</span>
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="secondary"
@@ -334,31 +414,31 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </CardContent>
           </Card>
 
-          {/* Card 3: Destination Folder */}
-          <Card className="flex flex-col justify-between rounded-2xl shadow-xs border border-border/70 p-4">
-            <CardHeader className="p-0 pb-3">
+          {/* ── Sub-Card 2: Thư mục đích ─────────────────────── */}
+          <Card className="rounded-2xl border-border/70 bg-bg-card/70 backdrop-blur-xs shadow-xs hover:border-border transition-all flex flex-col justify-between">
+            <CardHeader className="pb-3 border-b border-border/40">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <div className="flex items-center gap-2">
                   <div className="p-1.5 rounded-lg bg-accent/10 text-accent">
-                    <FolderSync className="h-4 w-4" />
+                    <FolderOpen className="h-4 w-4" />
                   </div>
-                  <span>{t('dashboard.dest_title')}</span>
-                </CardTitle>
-                <Badge variant="default">{t('dashboard.dest_default_badge')}</Badge>
+                  <span className="text-xs font-semibold text-text-primary tracking-tight">
+                    {t('dashboard.dest_title')}
+                  </span>
+                </div>
+                <Badge variant={status?.destination_id ? "connected" : "warning"} className="font-medium text-[0.6875rem]">
+                  {status?.destination_id ? t('dashboard.dest_default_badge') : t('common.not_configured')}
+                </Badge>
               </div>
             </CardHeader>
-            <CardContent className="p-0 space-y-3">
-              <div className="p-3 rounded-xl bg-bg-input/60 border border-border/40">
-                <p className="text-xs font-medium text-text-primary truncate">
-                  {status?.destination_label || t('dashboard.dest_unset')}
+            <CardContent className="pt-3 pb-3.5 space-y-3 flex-1 flex flex-col justify-between">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-text-primary">
+                  {status?.destination_id ? t('dashboard.dest_configured') : t('dashboard.dest_unset')}
                 </p>
-                <p className="text-[0.625rem] font-mono text-text-muted mt-0.5 truncate">
-                  ID: {status?.destination_id || t('common.not_configured')}
+                <p className="text-[0.6875rem] text-text-muted leading-relaxed">
+                  {status?.destination_label || t('dashboard.dest_desc')}
                 </p>
-              </div>
-
-              <div className="flex items-center justify-between text-xs text-text-secondary pt-1">
-                <span className="text-[0.6875rem] text-text-muted">{t('dashboard.dest_desc')}</span>
               </div>
 
               {onNavigateToSettings && (
@@ -369,7 +449,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     onClick={onNavigateToSettings}
                     className="w-full text-xs gap-1.5 rounded-xl"
                   >
-                    <span>{status?.destination_id ? t('settings_page.btn_change_dest') : 'Thiết lập thư mục đích'}</span>
+                    <span>{status?.destination_id ? t('settings_page.btn_change_dest') : t('dashboard.btn_set_dest')}</span>
                   </Button>
                 </div>
               )}
@@ -384,55 +464,79 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
             <Layers className="h-4 w-4 text-accent" />
-            <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+            <h2 className="text-sm font-bold text-text-primary tracking-tight">
               {t('dashboard.recent_jobs_title')}
             </h2>
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onNavigateToJobs}
-            className="text-xs text-text-secondary hover:text-text-primary h-7 px-2.5 rounded-lg gap-1"
-          >
-            <span>{t('dashboard.view_all_jobs')}</span>
-            <ArrowRight className="h-3 w-3" />
-          </Button>
+          {jobsToDisplay.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onNavigateToJobs}
+              className="text-xs text-text-muted hover:text-text-primary gap-1 h-7 px-2"
+            >
+              <span>{t('dashboard.view_all_jobs')}</span>
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {Array.from({ length: 2 }).map((_, i) => (
-              <div key={i} className="p-4 rounded-2xl bg-bg-card border border-border/70 shadow-xs space-y-3">
-                <Skeleton className="h-5 w-40 rounded-lg" />
-                <Skeleton className="h-2.5 w-full rounded-full" />
-                <Skeleton className="h-3 w-2/3" />
-              </div>
-            ))}
+          <div className="p-8 rounded-2xl bg-bg-card/40 border border-border/50 text-center space-y-3">
+            <div className="h-4 w-4 rounded-full border-2 border-accent border-t-transparent animate-spin mx-auto" />
+            <p className="text-xs text-text-muted">{t('common.loading')}</p>
           </div>
         ) : jobsToDisplay.length === 0 ? (
-          <Card className="p-8 text-center space-y-2 rounded-2xl border border-border/70 shadow-xs">
-            <div className="w-11 h-11 rounded-2xl bg-accent/10 text-accent flex items-center justify-center mx-auto shadow-xs">
-              <Sparkles className="h-5 w-5 stroke-[1.75]" />
-            </div>
-            <p className="text-xs font-semibold text-text-primary">{t('dashboard.no_jobs_title')}</p>
+          <div className="p-8 rounded-2xl bg-bg-card/40 border border-border/50 text-center space-y-2">
+            <Layers className="h-8 w-8 text-text-muted/40 mx-auto stroke-[1.25]" />
+            <p className="text-xs font-semibold text-text-secondary">{t('dashboard.no_jobs_title')}</p>
             <p className="text-[0.6875rem] text-text-muted max-w-sm mx-auto leading-relaxed">
               {t('dashboard.no_jobs_desc')}
             </p>
-          </Card>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {jobsToDisplay.map((job) => (
               <JobCard
                 key={job.id}
                 job={job}
+                compact
                 onPause={onPauseJob}
                 onResume={onResumeJob}
-                onCancel={onCancelJob}
+                onCancel={onCancelJob ? setJobToCancel : undefined}
               />
             ))}
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={Boolean(jobToCancel)}
+        onClose={() => setJobToCancel(null)}
+        onConfirm={() => {
+          if (jobToCancel && onCancelJob) {
+            onCancelJob(jobToCancel)
+            setJobToCancel(null)
+          }
+        }}
+        title={t('jobs_page.cancel_confirm_title')}
+        description={t('jobs_page.cancel_confirm_desc')}
+        confirmText={t('jobs_page.btn_cancel')}
+        variant="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={isRevokeConfirmOpen}
+        onClose={() => setIsRevokeConfirmOpen(false)}
+        onConfirm={() => {
+          setIsRevokeConfirmOpen(false)
+          onTriggerRevoke?.()
+        }}
+        title={t('dashboard.disconnect_confirm_title')}
+        description={t('dashboard.disconnect_confirm_desc')}
+        confirmText={t('dashboard.btn_disconnect')}
+        variant="danger"
+      />
     </div>
   )
 }
