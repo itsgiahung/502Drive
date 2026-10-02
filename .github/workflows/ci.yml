@@ -70,6 +70,9 @@ jobs:
       - name: Check Tauri GUI
         run: cargo check -p drive502-gui --locked
 
+      - name: Run Tauri unit tests
+        run: cargo test -p drive502-gui --lib --locked
+
   build:
     name: Build (${{ matrix.target }})
     needs: test
