@@ -255,9 +255,22 @@ pub async fn set_launch_at_startup(enabled: bool) -> Result<(), String> {
     }
 }
 
+fn validate_telegram_username(username: &str) -> Result<&str, String> {
+    let username = username.trim().trim_start_matches('@');
+    if !(5..=32).contains(&username.len())
+        || !username
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
+        return Err("invalid Telegram bot username".to_string());
+    }
+    Ok(username)
+}
+
 #[tauri::command]
-pub async fn open_telegram_bot() -> Result<(), String> {
-    open::that("https://t.me/Drive502_Bot").map_err(|e| e.to_string())?;
+pub async fn open_telegram_bot(username: String) -> Result<(), String> {
+    let username = validate_telegram_username(&username)?;
+    open::that(format!("https://t.me/{username}")).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -312,4 +325,22 @@ pub async fn trigger_auth_revoke() -> Result<(), String> {
         .output()
         .map_err(|e| format!("failed to run {} auth revoke: {e}", cli.display()))?;
     ensure_success("502drive auth revoke", output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_telegram_username;
+
+    #[test]
+    fn telegram_username_validation_accepts_only_safe_handles() {
+        assert_eq!(
+            validate_telegram_username("@Drive502_Bot").unwrap(),
+            "Drive502_Bot"
+        );
+        assert_eq!(validate_telegram_username("valid_bot").unwrap(), "valid_bot");
+        assert!(validate_telegram_username("bad/name").is_err());
+        assert!(validate_telegram_username("https://t.me/evil").is_err());
+        assert!(validate_telegram_username("abc").is_err());
+        assert!(validate_telegram_username("bad-bot").is_err());
+    }
 }

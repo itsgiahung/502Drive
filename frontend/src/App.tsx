@@ -182,7 +182,10 @@ const AppContent: React.FC = () => {
 
   const handleOpenBot = async () => {
     try {
-      await api.openTelegramBot()
+      if (!status?.bot_username) {
+        throw new Error(t('dashboard.tg_not_configured'))
+      }
+      await api.openTelegramBot(status.bot_username)
     } catch (err) {
       toast({
         title: t('toasts.open_bot_error'),

@@ -407,12 +407,12 @@ export const api = {
     throw new Error(MOCK_UNAVAILABLE)
   },
 
-  async openTelegramBot(): Promise<void> {
+  async openTelegramBot(username: string): Promise<void> {
     if (isTauri()) {
-      return await invoke<void>('open_telegram_bot')
+      return await invoke<void>('open_telegram_bot', { username })
     }
     if (USE_MOCKS) {
-      window.open('https://t.me/Drive502_Bot', '_blank')
+      window.open(`https://t.me/${username.replace(/^@/, '')}`, '_blank')
       return
     }
     throw new Error(MOCK_UNAVAILABLE)
