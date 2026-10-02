@@ -12,6 +12,8 @@ pub struct WatchSummary {
     pub short_id: String,
     pub source_root_id: String,
     pub destination_root_id: String,
+    pub source_name: Option<String>,
+    pub destination_name: Option<String>,
     pub status: String,
     /// Pending change events = cursor's `change_cursors.last_event_sequence`
     /// minus the watch's `last_consumed_sequence`. (Previously this was
@@ -20,8 +22,7 @@ pub struct WatchSummary {
     pub baseline_sequence: i64,
     pub last_consumed_sequence: i64,
     pub cursor_last_event_sequence: i64,
-    /// JSON string array, e.g. `["*.tmp", "~$*"]`.
-    pub exclude_globs: String,
+    pub exclude_globs: Vec<String>,
     pub updated_at_ms: i64,
 }
 
@@ -46,12 +47,14 @@ pub async fn list_watches() -> Result<Vec<WatchSummary>, String> {
             id: w.id,
             source_root_id: w.source_root_id,
             destination_root_id: w.destination_root_id,
+            source_name: w.source_name,
+            destination_name: w.destination_name,
             status: w.status,
             backlog_count: w.backlog_count,
             baseline_sequence: w.baseline_sequence,
             last_consumed_sequence: w.last_consumed_sequence,
             cursor_last_event_sequence: w.cursor_last_event_sequence,
-            exclude_globs: w.exclude_globs,
+            exclude_globs: serde_json::from_str(&w.exclude_globs).unwrap_or_default(),
             updated_at_ms: w.updated_at_ms,
         })
         .collect())

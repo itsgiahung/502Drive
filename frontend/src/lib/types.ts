@@ -67,6 +67,8 @@ export interface WatchSummary {
   short_id: string
   source_root_id: string
   destination_root_id: string
+  source_name?: string | null
+  destination_name?: string | null
   status: WatchStatus
   backlog_count: number
   baseline_sequence: number
