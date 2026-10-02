@@ -207,6 +207,13 @@ pub(crate) fn language_save_error(lang: keyboards::UiLanguage, err: &anyhow::Err
     }
 }
 
+pub(crate) fn settings_save_error(lang: keyboards::UiLanguage) -> &'static str {
+    match lang {
+        keyboards::UiLanguage::Vi => "Không thể lưu cài đặt lúc này. Vui lòng thử lại.",
+        keyboards::UiLanguage::En => "Could not save settings right now. Please try again.",
+    }
+}
+
 pub(crate) fn account_destination_title(lang: keyboards::UiLanguage) -> &'static str {
     match lang {
         keyboards::UiLanguage::Vi => "THƯ MỤC ĐÍCH",

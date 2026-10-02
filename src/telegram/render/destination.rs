@@ -158,6 +158,13 @@ pub(crate) fn destination_switch_error(
     }
 }
 
+pub(crate) fn destination_save_error(lang: keyboards::UiLanguage) -> &'static str {
+    match lang {
+        keyboards::UiLanguage::Vi => "Không thể lưu thay đổi thư mục đích. Vui lòng thử lại.",
+        keyboards::UiLanguage::En => "Could not save the destination change. Please try again.",
+    }
+}
+
 pub(crate) fn render_destination_list(
     profiles: &[repo::DestinationProfile],
     lang: keyboards::UiLanguage,

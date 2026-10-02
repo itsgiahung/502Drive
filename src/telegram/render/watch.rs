@@ -268,6 +268,13 @@ pub(crate) fn render_watch_create_confirm(
     lines.join("\n")
 }
 
+pub(crate) fn watch_options_save_error(lang: keyboards::UiLanguage) -> &'static str {
+    match lang {
+        keyboards::UiLanguage::Vi => "Không thể lưu tuỳ chọn watch. Vui lòng thử lại.",
+        keyboards::UiLanguage::En => "Could not save watch options. Please try again.",
+    }
+}
+
 pub(crate) fn render_watch_options(lang: keyboards::UiLanguage) -> String {
     let title = lang.text(T::WatchOptionsTitle);
     let help = lang.text(T::WatchOptionsHelp);

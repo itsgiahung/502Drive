@@ -1049,8 +1049,26 @@ pub async fn handle_callback_query(
                 keyboards::UiLanguage::Vi => "vi",
                 keyboards::UiLanguage::En => "en",
             };
-            repo::set_telegram_notification_preference(&db, user_id, language, preference, enabled)
+            if let Err(err) =
+                repo::set_telegram_notification_preference(&db, user_id, language, preference, enabled)
+                    .await
+            {
+                warn!(
+                    user_id,
+                    preference = ?preference,
+                    error = %err,
+                    "failed to persist Telegram notification preference"
+                );
+                edit_or_send_with_keyboard(
+                    &bot,
+                    chat_id,
+                    query.message.as_ref().map(|m| m.id()),
+                    settings_save_error(lang),
+                    Some(keyboards::back_home_keyboard(lang)),
+                )
                 .await?;
+                return Ok(());
+            }
             let prefs = notification_preferences(&db, user_id, lang).await;
             let account = repo::account_status(&db)
                 .await
@@ -1127,9 +1145,25 @@ pub async fn handle_callback_query(
             return Ok(());
         }
         Some(("dest", "clear", "confirm")) => {
-            repo::clear_default_destination(&db, "default").await?;
+            let lang = ui_language(&config);
+            if let Err(err) = repo::clear_default_destination(&db, "default").await {
+                warn!(
+                    user_id,
+                    error = %err,
+                    "failed to clear default destination from callback"
+                );
+                edit_or_send_with_keyboard(
+                    &bot,
+                    chat_id,
+                    query.message.as_ref().map(|m| m.id()),
+                    destination_save_error(lang),
+                    Some(keyboards::back_home_keyboard(lang)),
+                )
+                .await?;
+                return Ok(());
+            }
             let (text, keyboard) =
-                render_destination_panel(&db, user_id, chat_id.0, ui_language(&config)).await;
+                render_destination_panel(&db, user_id, chat_id.0, lang).await;
             edit_or_send_with_keyboard(
                 &bot,
                 chat_id,
@@ -1566,8 +1600,52 @@ pub async fn handle_callback_query(
                     }
                 };
             payload.content_policy = policy.to_string();
-            sess.payload_json = serde_json::to_string(&payload)?;
-            repo::upsert_telegram_session(&db, sess).await?;
+            let payload_json = match serde_json::to_string(&payload) {
+                Ok(value) => value,
+                Err(err) => {
+                    warn!(
+                        user_id,
+                        session_id,
+                        error = %err,
+                        "failed to serialize watch options session"
+                    );
+                    edit_or_send_with_keyboard(
+                        &bot,
+                        chat_id,
+                        query.message.as_ref().map(|m| m.id()),
+                        watch_options_save_error(lang),
+                        Some(keyboards::watch_options_keyboard(
+                            session_id,
+                            &payload.content_policy,
+                            lang,
+                        )),
+                    )
+                    .await?;
+                    return Ok(());
+                }
+            };
+            sess.payload_json = payload_json;
+            if let Err(err) = repo::upsert_telegram_session(&db, sess).await {
+                warn!(
+                    user_id,
+                    session_id,
+                    error = %err,
+                    "failed to persist watch options session"
+                );
+                edit_or_send_with_keyboard(
+                    &bot,
+                    chat_id,
+                    query.message.as_ref().map(|m| m.id()),
+                    watch_options_save_error(lang),
+                    Some(keyboards::watch_options_keyboard(
+                        session_id,
+                        &payload.content_policy,
+                        lang,
+                    )),
+                )
+                .await?;
+                return Ok(());
+            }
 
             let card_text = render_watch_options(lang);
             let keyboard =
