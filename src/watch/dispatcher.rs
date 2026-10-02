@@ -32,6 +32,22 @@ use super::errors::format_anyhow_error;
 
 const DISPATCH_BATCH: usize = 200;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeletionAction {
+    PreserveDestination,
+    TrashDestination,
+    ManualConfirmation,
+}
+
+fn deletion_action(policy: &str) -> anyhow::Result<DeletionAction> {
+    match policy {
+        "preserve_destination" => Ok(DeletionAction::PreserveDestination),
+        "trash_destination" => Ok(DeletionAction::TrashDestination),
+        "manual_confirmation" => Ok(DeletionAction::ManualConfirmation),
+        other => anyhow::bail!("unknown deletion_policy '{other}'"),
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("watch status changed during dispatch")]
 struct WatchDispatchStopped;
@@ -640,8 +656,8 @@ pub(crate) async fn apply_classification(
         Classification::Irrelevant | Classification::Ambiguous => Ok(()),
 
         Classification::TrashedOrRemoved => {
-            match watch.deletion_policy.as_str() {
-                "preserve_destination" => {
+            match deletion_action(&watch.deletion_policy)? {
+                DeletionAction::PreserveDestination => {
                     repo::mark_watch_mapping_source_removed(db, &watch.id, file_id).await?;
                     info!(
                         watch_id = watch.id,
@@ -650,7 +666,23 @@ pub(crate) async fn apply_classification(
                     // User-facing notice is folded into the batched activity
                     // summary (see BatchCounts) to avoid per-event spam.
                 }
-                "manual_confirmation" => {
+                DeletionAction::TrashDestination => {
+                    if let Some(dest_id) =
+                        repo::watch_mapping_destination(db, &watch.id, file_id).await?
+                    {
+                        let access_token = token_manager.access_token("default").await?;
+                        drive
+                            .trash_file(access_token.as_str(), &dest_id)
+                            .await
+                            .context("trash destination item for removed source")?;
+                    }
+                    repo::mark_watch_mapping_source_removed(db, &watch.id, file_id).await?;
+                    info!(
+                        watch_id = watch.id,
+                        file_id, "source removed — destination trashed by confirmed action"
+                    );
+                }
+                DeletionAction::ManualConfirmation => {
                     if !repo::transition_watch_status(
                         db,
                         &watch.id,
@@ -678,11 +710,6 @@ pub(crate) async fn apply_classification(
                         "manual confirmation required for removed source"
                     ));
                 }
-                other => warn!(
-                    watch_id = watch.id,
-                    policy = other,
-                    "unknown deletion_policy"
-                ),
             }
             Ok(())
         }
@@ -1065,7 +1092,27 @@ async fn drive_copy_with_retry(
 
 #[cfg(test)]
 mod tests {
-    use super::{backlog_exceeds_limit, should_advance_consumed, should_finish_catch_up};
+    use super::{
+        DeletionAction, backlog_exceeds_limit, deletion_action, should_advance_consumed,
+        should_finish_catch_up,
+    };
+
+    #[test]
+    fn confirmed_deletion_replace_routes_to_destination_trash() {
+        assert_eq!(
+            deletion_action("trash_destination").unwrap(),
+            DeletionAction::TrashDestination
+        );
+        assert_eq!(
+            deletion_action("preserve_destination").unwrap(),
+            DeletionAction::PreserveDestination
+        );
+        assert_eq!(
+            deletion_action("manual_confirmation").unwrap(),
+            DeletionAction::ManualConfirmation
+        );
+        assert!(deletion_action("unknown").is_err());
+    }
 
     #[test]
     fn failed_watch_event_does_not_advance_cursor() {
