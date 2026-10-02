@@ -476,17 +476,24 @@ pub async fn restore_backup(backup_name: String) -> Result<(), String> {
 
     let restore_result = (|| -> Result<(), String> {
         if let Some(src_db) = src_db.as_deref() {
-            // The backup is a single-file SQLite snapshot. Remove sidecar
-            // files from the old database before atomically replacing it.
+            // Publish the validated single-file snapshot first. If this fails,
+            // the old database and its WAL/SHM remain untouched. Only after the
+            // replacement succeeds is it safe to discard sidecars that belong
+            // to the previous database image.
+            replace_private_file(src_db, &db_path)?;
             for sidecar in [
                 db_path.with_extension("db-wal"),
                 db_path.with_extension("db-shm"),
             ] {
                 if sidecar.exists() {
-                    std::fs::remove_file(&sidecar).map_err(|e| e.to_string())?;
+                    std::fs::remove_file(&sidecar).map_err(|e| {
+                        format!(
+                            "restored database but failed to remove stale SQLite sidecar {}: {e}",
+                            sidecar.display()
+                        )
+                    })?;
                 }
             }
-            replace_private_file(src_db, &db_path)?;
         }
 
         if let Some(contents) = config_contents.as_deref() {
@@ -495,16 +502,23 @@ pub async fn restore_backup(backup_name: String) -> Result<(), String> {
         Ok(())
     })();
 
-    if was_active {
-        let restart_result = restart_daemon_after_restore();
-        if restore_result.is_ok() {
-            restart_result?;
-        } else {
-            let _ = restart_result;
+    match restore_result {
+        Ok(()) => {
+            if was_active {
+                restart_daemon_after_restore()?;
+            }
+            Ok(())
+        }
+        Err(err) => {
+            if was_active {
+                Err(format!(
+                    "{err}; restore aborted and the daemon was left stopped to avoid running on partial state"
+                ))
+            } else {
+                Err(err)
+            }
         }
     }
-
-    restore_result
 }
 
 #[tauri::command]
