@@ -545,3 +545,26 @@ pub async fn run_doctor() -> Result<DoctorResult, String> {
         raw_output: raw,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{is_newer_release, parse_release_version};
+
+    #[test]
+    fn release_version_parser_handles_v_prefix_and_suffixes() {
+        assert_eq!(parse_release_version("v0.2.0"), Some((0, 2, 0)));
+        assert_eq!(parse_release_version("1.4.7"), Some((1, 4, 7)));
+        assert_eq!(parse_release_version("v1.4.7-beta.1"), Some((1, 4, 7)));
+        assert_eq!(parse_release_version("v1.4"), None);
+        assert_eq!(parse_release_version("latest"), None);
+    }
+
+    #[test]
+    fn update_comparison_only_accepts_strictly_newer_versions() {
+        assert!(is_newer_release("v0.2.0", "v0.2.1"));
+        assert!(is_newer_release("v0.2.9", "v0.3.0"));
+        assert!(!is_newer_release("v0.2.0", "v0.2.0"));
+        assert!(!is_newer_release("v0.3.0", "v0.2.9"));
+        assert!(!is_newer_release("invalid", "v1.0.0"));
+    }
+}
