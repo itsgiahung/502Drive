@@ -72,7 +72,7 @@ export const Dev: React.FC<DevProps> = ({
   const [users, setUsers] = useState<AuthorizedUserDto[]>([])
   const [isLoadingUsers, setIsLoadingUsers] = useState(false)
   const [newUserId, setNewUserId] = useState('')
-  const [newUserRole, setNewUserRole] = useState<'operator' | 'user'>('operator')
+  const managedUserRole = 'operator' as const
   const [batchUsersText, setBatchUsersText] = useState('')
   const [isBatchOpen, setIsBatchOpen] = useState(false)
   const [isSubmittingUser, setIsSubmittingUser] = useState(false)
@@ -197,10 +197,10 @@ export const Dev: React.FC<DevProps> = ({
     }
     setIsSubmittingUser(true)
     try {
-      await api.addAuthorizedUser(id, newUserRole)
+      await api.addAuthorizedUser(id, managedUserRole)
       toast({
         title: t('common.success'),
-        description: t('dev_page.user_granted_desc').replace('{role}', newUserRole).replace('{id}', String(id)),
+        description: t('dev_page.user_granted_desc').replace('{role}', managedUserRole).replace('{id}', String(id)),
         variant: 'success',
       })
       setNewUserId('')
@@ -216,7 +216,7 @@ export const Dev: React.FC<DevProps> = ({
     if (!batchUsersText.trim()) return
     setIsSubmittingUser(true)
     try {
-      const count = await api.batchAddAuthorizedUsers(batchUsersText, newUserRole)
+      const count = await api.batchAddAuthorizedUsers(batchUsersText, managedUserRole)
       toast({
         title: t('common.success'),
         description: t('dev_page.batch_added_desc').replace('{count}', String(count)),
@@ -652,14 +652,9 @@ export const Dev: React.FC<DevProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-text-secondary">{t('dev_page.default_role_label')}</span>
-                    <select
-                      value={newUserRole}
-                      onChange={(e) => setNewUserRole(e.target.value as 'operator' | 'user')}
-                      className="px-3 py-1.5 text-xs rounded-xl bg-bg-card border border-border/70 text-text-primary focus:outline-none focus:border-accent cursor-pointer hover:border-border transition-colors font-medium"
-                    >
-                      <option value="operator">{t('dev_page.role_operator')}</option>
-                      <option value="user">{t('dev_page.role_user')}</option>
-                    </select>
+                    <span className="px-3 py-1.5 text-xs rounded-xl bg-bg-card border border-border/70 text-text-primary font-medium">
+                      {t('dev_page.role_operator')}
+                    </span>
                   </div>
                   <Button
                     size="sm"
@@ -682,14 +677,9 @@ export const Dev: React.FC<DevProps> = ({
                   placeholder="Telegram User ID (VD: 87654321)"
                   className="flex-1 min-w-[200px] px-3 py-2 text-xs rounded-xl bg-bg-input border border-border/80 font-mono text-text-primary focus:outline-none focus:border-accent"
                 />
-                <select
-                  value={newUserRole}
-                  onChange={(e) => setNewUserRole(e.target.value as 'operator' | 'user')}
-                  className="px-3 py-2 text-xs rounded-xl bg-bg-card border border-border/70 text-text-primary focus:outline-none focus:border-accent cursor-pointer hover:border-border transition-colors font-medium"
-                >
-                  <option value="operator">{t('dev_page.role_operator')}</option>
-                  <option value="user">{t('dev_page.role_user')}</option>
-                </select>
+                <span className="px-3 py-2 text-xs rounded-xl bg-bg-card border border-border/70 text-text-primary font-medium">
+                  {t('dev_page.role_operator')}
+                </span>
                 <Button
                   type="submit"
                   size="sm"

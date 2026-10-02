@@ -230,7 +230,7 @@ let mockSystemStatus: SystemStatus = {
 let mockAuthorizedUsers: AuthorizedUserDto[] = [
   { telegram_user_id: 123456789, role: 'owner', enabled: true },
   { telegram_user_id: 987654321, role: 'operator', enabled: true },
-  { telegram_user_id: 555666777, role: 'user', enabled: true },
+  { telegram_user_id: 555666777, role: 'operator', enabled: true },
 ]
 
 let mockBackups: BackupInfoDto[] = [
