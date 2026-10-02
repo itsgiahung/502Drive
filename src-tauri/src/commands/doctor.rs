@@ -50,7 +50,11 @@ pub struct PreflightReport {
 }
 
 fn parse_release_version(value: &str) -> Option<(u64, u64, u64)> {
-    let core = value.trim().trim_start_matches('v').split(['-', '+']).next()?;
+    let core = value
+        .trim()
+        .trim_start_matches('v')
+        .split(['-', '+'])
+        .next()?;
     let mut parts = core.split('.');
     let major = parts.next()?.parse().ok()?;
     let minor = parts.next()?.parse().ok()?;
@@ -62,7 +66,10 @@ fn parse_release_version(value: &str) -> Option<(u64, u64, u64)> {
 }
 
 fn is_newer_release(current: &str, latest: &str) -> bool {
-    match (parse_release_version(current), parse_release_version(latest)) {
+    match (
+        parse_release_version(current),
+        parse_release_version(latest),
+    ) {
         (Some(current), Some(latest)) => latest > current,
         _ => false,
     }
@@ -441,7 +448,8 @@ pub async fn run_doctor() -> Result<DoctorResult, String> {
                         |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
                     )
                     .ok();
-                let google_connected = matches!(google.as_ref(), Some((_, status)) if status == "connected");
+                let google_connected =
+                    matches!(google.as_ref(), Some((_, status)) if status == "connected");
                 let google_detail = match google {
                     Some((email, status)) => format!(
                         "{} ({status})",
