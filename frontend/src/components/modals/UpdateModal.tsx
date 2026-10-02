@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { Calendar, ArrowUpCircle, Loader2, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { ArrowUpCircle, Loader2, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { LogoMark } from '@/components/brand/Logo'
 import { Button } from '@/components/ui/Button'
 import { RemoteUpdateInfo } from '@/lib/types'
@@ -21,7 +21,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   updateInfo,
   onUpdateCompleted,
 }) => {
-  const { t, lang } = useI18n()
+  const { t } = useI18n()
   const [isApplying, setIsApplying] = useState(false)
   const { toast } = useToast()
 
@@ -67,12 +67,6 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
       setIsApplying(false)
     }
   }
-
-  const today = new Date().toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  })
 
   return (
     <AnimatePresence>
@@ -126,10 +120,6 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                   <span className="font-mono text-accent">{updateInfo.latest_version}</span>
                   <span>{t('update_modal.ready_suffix')}</span>
                 </h3>
-                <p className="text-xs text-text-muted flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5" />
-                  <span>{today}</span>
-                </p>
               </div>
             </div>
 
