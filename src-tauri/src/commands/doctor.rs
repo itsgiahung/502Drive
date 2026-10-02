@@ -2,12 +2,32 @@ use crate::commands::{get_config_path, get_db_path, get_project_dirs, service};
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
 const RELEASES_API: &str = "https://api.github.com/repos/GiaHung07/502Drive/releases/latest";
 const RELEASES_PAGE: &str = "https://github.com/GiaHung07/502Drive/releases";
 const DEFAULT_CONFIG_TEMPLATE: &str = include_str!("../../../config.sample.toml");
+
+#[cfg(unix)]
+fn enforce_owner_only_file(path: &Path) -> Result<bool, String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode == 0o600 {
+        return Ok(false);
+    }
+
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[cfg(not(unix))]
+fn enforce_owner_only_file(_path: &Path) -> Result<bool, String> {
+    Ok(false)
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DoctorCheckItem {
@@ -123,99 +143,178 @@ pub async fn run_preflight_check() -> Result<PreflightReport, String> {
         });
     }
 
-    // 2. Check Database & SQLite WAL Mode
+    // 2. Check Database integrity and WAL mode.
     let db_path = get_db_path();
-    let mut db_auto_fixed = false;
-    let mut db_ok = true;
-
-    if !db_path.exists() {
+    let db_was_missing = !db_path.exists();
+    if db_was_missing {
         if let Some(parent) = db_path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        match Connection::open(&db_path) {
-            Ok(conn) => {
-                let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
-                db_auto_fixed = true;
-            }
-            Err(e) => {
-                db_ok = false;
-                steps.push(PreflightStep {
-                    id: "database".to_string(),
-                    title: "Cơ sở dữ liệu SQLite (WAL)".to_string(),
-                    status: "failed".to_string(),
-                    message: format!("Không thể khởi tạo SQLite: {e}"),
-                    auto_fixed: false,
-                    fix_action: None,
-                });
+    }
+
+    let (db_status, db_message, db_auto_fixed) = match Connection::open(&db_path) {
+        Ok(conn) => {
+            let _ = conn.busy_timeout(Duration::from_secs(2));
+            match conn.query_row("PRAGMA quick_check;", [], |row| row.get::<_, String>(0)) {
+                Ok(check) if check == "ok" => {
+                    let current_mode = conn
+                        .query_row("PRAGMA journal_mode;", [], |row| row.get::<_, String>(0))
+                        .unwrap_or_else(|_| "unknown".to_string());
+                    if current_mode.eq_ignore_ascii_case("wal") {
+                        (
+                            "passed",
+                            if db_was_missing {
+                                "Đã tạo SQLite, quick_check=ok và bật WAL mode".to_string()
+                            } else {
+                                "SQLite quick_check=ok, journal_mode=wal".to_string()
+                            },
+                            db_was_missing,
+                        )
+                    } else {
+                        let switched = conn
+                            .query_row("PRAGMA journal_mode=WAL;", [], |row| row.get::<_, String>(0))
+                            .ok()
+                            .is_some_and(|mode| mode.eq_ignore_ascii_case("wal"));
+                        if switched {
+                            (
+                                "passed",
+                                format!(
+                                    "SQLite quick_check=ok; đã chuyển journal_mode từ {current_mode} sang wal"
+                                ),
+                                true,
+                            )
+                        } else {
+                            (
+                                "warning",
+                                format!(
+                                    "SQLite quick_check=ok nhưng journal_mode={current_mode}; chưa thể chuyển sang WAL"
+                                ),
+                                false,
+                            )
+                        }
+                    }
+                }
+                Ok(check) => (
+                    "failed",
+                    format!("SQLite quick_check báo lỗi: {check}"),
+                    false,
+                ),
+                Err(err) => (
+                    "failed",
+                    format!("Không thể chạy SQLite quick_check: {err}"),
+                    false,
+                ),
             }
         }
-    }
+        Err(err) => (
+            "failed",
+            format!("Không thể mở cơ sở dữ liệu SQLite: {err}"),
+            false,
+        ),
+    };
 
-    if db_ok {
-        steps.push(PreflightStep {
-            id: "database".to_string(),
-            title: "Cơ sở dữ liệu SQLite (WAL)".to_string(),
-            status: "passed".to_string(),
-            message: if db_auto_fixed {
-                "Đã tự động tạo cơ sở dữ liệu và cấu hình WAL mode".to_string()
-            } else {
-                "Cơ sở dữ liệu toàn vẹn, chế độ WAL hoạt động".to_string()
-            },
-            auto_fixed: db_auto_fixed,
-            fix_action: None,
-        });
+    if db_status != "passed" {
+        needs_setup = true;
     }
+    steps.push(PreflightStep {
+        id: "database".to_string(),
+        title: "Cơ sở dữ liệu SQLite (WAL)".to_string(),
+        status: db_status.to_string(),
+        message: db_message,
+        auto_fixed: db_auto_fixed,
+        fix_action: None,
+    });
 
-    // 3. Check & Auto-provision Config File
+    // 3. Check & auto-provision a schema-valid config file.
     let cfg_path = get_config_path();
     let mut cfg_auto_fixed = false;
-    let mut cfg_has_token = false;
-
+    let mut cfg_create_error = None;
     if !cfg_path.exists() {
         if let Some(parent) = cfg_path.parent() {
-            let _ = fs::create_dir_all(parent);
+            if let Err(err) = fs::create_dir_all(parent) {
+                cfg_create_error = Some(format!("Không thể tạo thư mục config: {err}"));
+            }
         }
-        if super::config::write_config_file(&cfg_path, DEFAULT_CONFIG_TEMPLATE).is_ok() {
-            cfg_auto_fixed = true;
-        }
-    } else if let Ok(content) = fs::read_to_string(&cfg_path) {
-        if let Ok(val) = content.parse::<toml::Value>() {
-            if let Some(token) = val
-                .get("telegram")
-                .and_then(|t| t.get("bot_token"))
-                .and_then(|b| b.as_str())
-            {
-                cfg_has_token = super::config::is_configured(token);
+        if cfg_create_error.is_none() {
+            match super::config::write_config_file(&cfg_path, DEFAULT_CONFIG_TEMPLATE) {
+                Ok(()) => cfg_auto_fixed = true,
+                Err(err) => cfg_create_error = Some(format!("Không thể tạo config.toml: {err}")),
             }
         }
     }
 
+    if cfg_create_error.is_none() && cfg_path.exists() {
+        match enforce_owner_only_file(&cfg_path) {
+            Ok(changed) => cfg_auto_fixed |= changed,
+            Err(err) => {
+                cfg_create_error = Some(format!("Không thể siết quyền config.toml về 0600: {err}"));
+            }
+        }
+    }
+
+    let (cfg_status, cfg_message, cfg_ready) = if let Some(err) = cfg_create_error {
+        ("failed", err, false)
+    } else {
+        match gdclone_bot::config::AppConfig::load(&cfg_path) {
+            Ok(config) => {
+                let mut missing = Vec::new();
+                if !super::config::is_configured(&config.telegram.bot_token) {
+                    missing.push("Telegram Bot Token");
+                }
+                if config.telegram.owner_telegram_id <= 0 {
+                    missing.push("Owner Telegram ID");
+                }
+                if !super::config::is_configured(&config.google_oauth.client_id) {
+                    missing.push("Google OAuth client_id");
+                }
+                if !super::config::is_configured(&config.google_oauth.client_secret) {
+                    missing.push("Google OAuth client_secret");
+                }
+
+                if missing.is_empty() {
+                    (
+                        "passed",
+                        "Cấu hình đúng schema và đủ credential bắt buộc".to_string(),
+                        true,
+                    )
+                } else {
+                    (
+                        "warning",
+                        format!(
+                            "Config đúng schema nhưng còn thiếu: {}",
+                            missing.join(", ")
+                        ),
+                        false,
+                    )
+                }
+            }
+            Err(err) => (
+                "failed",
+                format!("config.toml không đúng schema: {err}"),
+                false,
+            ),
+        }
+    };
+
+    if !cfg_ready {
+        needs_setup = true;
+    }
     steps.push(PreflightStep {
         id: "config".to_string(),
         title: "Tệp cấu hình ứng dụng".to_string(),
-        status: if cfg_auto_fixed || !cfg_has_token {
-            "warning".to_string()
+        status: cfg_status.to_string(),
+        message: if cfg_auto_fixed && cfg_status == "warning" {
+            format!("Đã tạo config.toml mẫu. {cfg_message}")
         } else {
-            "passed".to_string()
-        },
-        message: if cfg_auto_fixed {
-            "Đã tự động khởi tạo config.toml mẫu".to_string()
-        } else if !cfg_has_token {
-            "Cần điền Telegram Bot Token trong config.toml".to_string()
-        } else {
-            "Cấu hình hợp lệ và đã sẵn sàng".to_string()
+            cfg_message
         },
         auto_fixed: cfg_auto_fixed,
-        fix_action: if !cfg_has_token {
-            Some("config".to_string())
-        } else {
+        fix_action: if cfg_ready {
             None
+        } else {
+            Some("config".to_string())
         },
     });
-
-    if !cfg_has_token {
-        needs_setup = true;
-    }
 
     // 4. Check Background Service
     #[cfg(any(target_os = "linux", windows))]
@@ -543,7 +642,9 @@ pub async fn run_doctor() -> Result<DoctorResult, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_CONFIG_TEMPLATE, is_newer_release, parse_release_version};
+    use super::{
+        DEFAULT_CONFIG_TEMPLATE, enforce_owner_only_file, is_newer_release, parse_release_version,
+    };
 
     #[test]
     fn preflight_template_matches_runtime_config_schema() {
@@ -552,6 +653,26 @@ mod tests {
             parsed.is_ok(),
             "preflight template must deserialize as AppConfig"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preflight_hardens_existing_config_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = std::env::temp_dir().join(format!(
+            "502drive-doctor-config-{}.toml",
+            std::process::id()
+        ));
+        std::fs::write(&path, "[telegram]\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        assert!(enforce_owner_only_file(&path).unwrap());
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        assert!(!enforce_owner_only_file(&path).unwrap());
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
