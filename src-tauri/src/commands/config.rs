@@ -218,7 +218,10 @@ pub async fn update_config_field(field: String, value: String) -> Result<(), Str
                 .or_insert_with(|| toml::Value::Table(toml::Table::new()));
             if let Some(t) = engine.as_table_mut() {
                 t.insert("concurrency".to_string(), toml::Value::Integer(num));
-                t.insert("max_write_concurrency".to_string(), toml::Value::Integer(num));
+                t.insert(
+                    "max_write_concurrency".to_string(),
+                    toml::Value::Integer(num),
+                );
             }
         }
         "auto_confirm_clone" => {
