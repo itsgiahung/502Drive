@@ -1517,11 +1517,24 @@ pub async fn retry_failed_watch_initial_clone_job(
 
             tx.execute(
                 "UPDATE traversal_folders
-                 SET scan_state = 'pending', last_error = NULL, updated_at_ms = ?1
-                 WHERE job_id = ?2 AND scan_state = 'failed'",
+                 SET scan_state = 'pending',
+                     next_page_token = NULL,
+                     last_error = NULL,
+                     updated_at_ms = ?1
+                 WHERE job_id = ?2
+                   AND (
+                       scan_state = 'failed'
+                       OR source_folder_id IN (
+                           SELECT DISTINCT source_parent_id
+                           FROM job_items
+                           WHERE job_id = ?2
+                             AND status = 'failed'
+                             AND source_parent_id IS NOT NULL
+                       )
+                   )",
                 params![now, job_id],
             )?;
-            tx.execute(
+            let job_items_requeued = tx.execute(
                 "UPDATE job_items
                  SET status = 'ready',
                      attempts = 0,
@@ -1539,14 +1552,15 @@ pub async fn retry_failed_watch_initial_clone_job(
             let changed = tx.execute(
                 "UPDATE jobs
                  SET status = 'recovering',
+                     total_discovered = MAX(0, total_discovered - ?1),
                      failed_items = 0,
                      error_summary = NULL,
-                     updated_at_ms = ?1
-                 WHERE id = ?2
+                     updated_at_ms = ?2
+                 WHERE id = ?3
                    AND kind = 'watch_initial_clone'
-                   AND watch_id = ?3
+                   AND watch_id = ?4
                    AND status = 'failed'",
-                params![now, job_id, watch_id],
+                params![job_items_requeued as i64, now, job_id, watch_id],
             )?;
             tx.commit()?;
             Ok(changed > 0)
@@ -1588,8 +1602,21 @@ pub async fn retry_failed_job_for_user(
 
             let traversal_folders_requeued = tx.execute(
                 "UPDATE traversal_folders
-                 SET scan_state = 'pending', last_error = NULL, updated_at_ms = ?1
-                 WHERE job_id = ?2 AND scan_state = 'failed'",
+                 SET scan_state = 'pending',
+                     next_page_token = NULL,
+                     last_error = NULL,
+                     updated_at_ms = ?1
+                 WHERE job_id = ?2
+                   AND (
+                       scan_state = 'failed'
+                       OR source_folder_id IN (
+                           SELECT DISTINCT source_parent_id
+                           FROM job_items
+                           WHERE job_id = ?2
+                             AND status = 'failed'
+                             AND source_parent_id IS NOT NULL
+                       )
+                   )",
                 params![now, job_id],
             )?;
             let job_items_requeued = tx.execute(
@@ -1620,11 +1647,12 @@ pub async fn retry_failed_job_for_user(
             tx.execute(
                 "UPDATE jobs
                  SET status = 'recovering',
+                     total_discovered = MAX(0, total_discovered - ?1),
                      failed_items = 0,
                      error_summary = NULL,
-                     updated_at_ms = ?1
-                 WHERE id = ?2",
-                params![now, job_id],
+                     updated_at_ms = ?2
+                 WHERE id = ?3",
+                params![job_items_requeued as i64, now, job_id],
             )?;
             tx.commit()?;
             Ok(Some(summary))
@@ -1761,6 +1789,7 @@ pub async fn increment_job_counts(
 pub struct NewItem {
     pub job_id: String,
     pub source_item_id: String,
+    pub source_parent_id: Option<String>,
     pub destination_parent_id: String,
     pub mime_type: String,
     pub item_kind: String,
@@ -1774,6 +1803,7 @@ pub async fn insert_item(db: &Database, item: NewItem) -> anyhow::Result<String>
         id.clone(),
         item.job_id,
         item.source_item_id,
+        item.source_parent_id,
         item.destination_parent_id,
         item.mime_type,
         item.item_kind,
@@ -1784,11 +1814,19 @@ pub async fn insert_item(db: &Database, item: NewItem) -> anyhow::Result<String>
         .call(move |conn| {
             conn.execute(
                 "INSERT OR IGNORE INTO job_items (
-                    id, job_id, source_item_id, destination_parent_id,
+                    id, job_id, source_item_id, source_parent_id, destination_parent_id,
                     mime_type, item_kind, source_name, size_bytes, status
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'ready')",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'ready')",
                 params![
-                    values.0, values.1, values.2, values.3, values.4, values.5, values.6, values.7,
+                    values.0,
+                    values.1,
+                    values.2,
+                    values.3,
+                    values.4,
+                    values.5,
+                    values.6,
+                    values.7,
+                    values.8,
                 ],
             )?;
             Ok::<(), rusqlite::Error>(())
@@ -2075,6 +2113,138 @@ pub async fn mark_item_done(
         })
         .await?;
     Ok(())
+}
+
+pub async fn complete_item_and_count(
+    db: &Database,
+    job_id: &str,
+    source_item_id: &str,
+    dest_item_id: &str,
+) -> anyhow::Result<bool> {
+    let job_id = job_id.to_string();
+    let source_item_id = source_item_id.to_string();
+    let dest_item_id = dest_item_id.to_string();
+    Ok(db
+        .conn()
+        .call(move |conn| {
+            let now = now_ms();
+            let tx = conn.transaction()?;
+            let status = tx
+                .query_row(
+                    "SELECT status FROM job_items
+                     WHERE job_id = ?1 AND source_item_id = ?2",
+                    params![job_id, source_item_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?;
+            let Some(status) = status else {
+                return Ok::<bool, rusqlite::Error>(false);
+            };
+
+            if status == "done" {
+                tx.execute(
+                    "UPDATE job_items
+                     SET destination_item_id = ?1
+                     WHERE job_id = ?2 AND source_item_id = ?3",
+                    params![dest_item_id, job_id, source_item_id],
+                )?;
+                tx.commit()?;
+                return Ok(false);
+            }
+
+            tx.execute(
+                "UPDATE job_items
+                 SET status = 'done',
+                     destination_item_id = ?1,
+                     completed_at_ms = ?2,
+                     last_error_code = NULL,
+                     last_error_message = NULL,
+                     last_error_reason = NULL,
+                     retry_class = NULL,
+                     next_attempt_at_ms = NULL
+                 WHERE job_id = ?3 AND source_item_id = ?4",
+                params![dest_item_id, now, job_id, source_item_id],
+            )?;
+
+            if status == "failed" {
+                tx.execute(
+                    "UPDATE jobs
+                     SET completed_items = completed_items + 1,
+                         failed_items = MAX(0, failed_items - 1),
+                         updated_at_ms = ?1
+                     WHERE id = ?2",
+                    params![now, job_id],
+                )?;
+            } else {
+                tx.execute(
+                    "UPDATE jobs
+                     SET total_discovered = total_discovered + 1,
+                         completed_items = completed_items + 1,
+                         updated_at_ms = ?1
+                     WHERE id = ?2",
+                    params![now, job_id],
+                )?;
+            }
+
+            tx.commit()?;
+            Ok(true)
+        })
+        .await?)
+}
+
+pub async fn fail_item_and_count(
+    db: &Database,
+    job_id: &str,
+    source_item_id: &str,
+    error_code: &str,
+    error_message: &str,
+) -> anyhow::Result<bool> {
+    let job_id = job_id.to_string();
+    let source_item_id = source_item_id.to_string();
+    let error_code = error_code.to_string();
+    let error_message = error_message.to_string();
+    Ok(db
+        .conn()
+        .call(move |conn| {
+            let now = now_ms();
+            let tx = conn.transaction()?;
+            let status = tx
+                .query_row(
+                    "SELECT status FROM job_items
+                     WHERE job_id = ?1 AND source_item_id = ?2",
+                    params![job_id, source_item_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?;
+            let Some(status) = status else {
+                return Ok::<bool, rusqlite::Error>(false);
+            };
+            if status == "done" {
+                return Ok(false);
+            }
+
+            tx.execute(
+                "UPDATE job_items
+                 SET status = 'failed',
+                     last_error_code = ?1,
+                     last_error_message = ?2
+                 WHERE job_id = ?3 AND source_item_id = ?4",
+                params![error_code, error_message, job_id, source_item_id],
+            )?;
+            if status != "failed" {
+                tx.execute(
+                    "UPDATE jobs
+                     SET total_discovered = total_discovered + 1,
+                         failed_items = failed_items + 1,
+                         updated_at_ms = ?1
+                     WHERE id = ?2",
+                    params![now, job_id],
+                )?;
+            }
+            tx.commit()?;
+            Ok(status != "failed")
+        })
+        .await?)
 }
 
 pub async fn mark_item_copying(
@@ -2605,6 +2775,34 @@ pub async fn mark_operation_executing(db: &Database, idempotency_key: &str) -> a
                     OperationStatus::Executing.as_str(),
                     now_ms(),
                     idempotency_key,
+                ],
+            )?;
+            Ok::<(), rusqlite::Error>(())
+        })
+        .await?;
+    Ok(())
+}
+
+pub async fn mark_operation_failed(
+    db: &Database,
+    idempotency_key: &str,
+    error: &str,
+) -> anyhow::Result<()> {
+    let idempotency_key = idempotency_key.to_string();
+    let error = error.to_string();
+    db.conn()
+        .call(move |conn| {
+            conn.execute(
+                "UPDATE operation_intents
+                 SET status = ?1, last_error = ?2, updated_at_ms = ?3
+                 WHERE idempotency_key = ?4
+                   AND status != ?5",
+                params![
+                    OperationStatus::Failed.as_str(),
+                    error,
+                    now_ms(),
+                    idempotency_key,
+                    OperationStatus::Applied.as_str(),
                 ],
             )?;
             Ok::<(), rusqlite::Error>(())

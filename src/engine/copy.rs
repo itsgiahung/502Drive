@@ -642,15 +642,16 @@ impl CloneService {
                 )
                 .await?
             }
-        } else if repo::existing_dest_for_source(
+        } else if let Some(destination_item_id) = repo::existing_dest_for_source(
             &self.db,
             ScopeType::Job.as_str(),
             &job.id,
             &source.id,
         )
         .await?
-        .is_some()
         {
+            repo::complete_item_and_count(&self.db, &job.id, &source.id, &destination_item_id)
+                .await?;
             self.transition_job_status_guarded(
                 &job.id,
                 JobStatusValue::Completed,
@@ -809,6 +810,7 @@ impl CloneService {
             NewItem {
                 job_id: job_id.to_string(),
                 source_item_id: source.id.clone(),
+                source_parent_id: source.parents.first().cloned(),
                 destination_parent_id: destination_parent_id.to_string(),
                 mime_type: source.mime_type.clone(),
                 item_kind: item_kind(source).to_string(),
@@ -817,49 +819,71 @@ impl CloneService {
             },
         )
         .await?;
-        let operation_type = if source.is_shortcut() {
-            OperationType::CreateShortcut
-        } else {
-            OperationType::CopyFile
-        };
-        let request_json = if source.is_shortcut() {
-            let details = source
-                .shortcut_details
-                .as_ref()
-                .context("shortcut is missing shortcutDetails")?;
-            create_shortcut_request_json(
-                root_name,
-                destination_parent_id,
-                &details.target_id,
-                details.target_resource_key.as_deref(),
-                &props,
+        let copy_result: anyhow::Result<DriveFile> = async {
+            let operation_type = if source.is_shortcut() {
+                OperationType::CreateShortcut
+            } else {
+                OperationType::CopyFile
+            };
+            let request_json = if source.is_shortcut() {
+                let details = source
+                    .shortcut_details
+                    .as_ref()
+                    .context("shortcut is missing shortcutDetails")?;
+                create_shortcut_request_json(
+                    root_name,
+                    destination_parent_id,
+                    &details.target_id,
+                    details.target_resource_key.as_deref(),
+                    &props,
+                )
+            } else {
+                copy_file_request_json(root_name, destination_parent_id, &props)
+            };
+            repo::plan_operation_intent(
+                &self.db,
+                NewOperationIntent {
+                    idempotency_key: props.gdclone_copy_key.clone(),
+                    job_id: Some(job_id.to_string()),
+                    watch_id: None,
+                    operation_type,
+                    source_item_id: Some(source.id.clone()),
+                    destination_parent_id: Some(destination_parent_id.to_string()),
+                    destination_item_id: None,
+                    request_json,
+                },
             )
-        } else {
-            copy_file_request_json(root_name, destination_parent_id, &props)
-        };
-        repo::plan_operation_intent(
-            &self.db,
-            NewOperationIntent {
-                idempotency_key: props.gdclone_copy_key.clone(),
-                job_id: Some(job_id.to_string()),
-                watch_id: None,
-                operation_type,
-                source_item_id: Some(source.id.clone()),
-                destination_parent_id: Some(destination_parent_id.to_string()),
-                destination_item_id: None,
-                request_json,
-            },
-        )
-        .await?;
+            .await?;
 
-        let copied = if source.is_shortcut() {
-            self.create_shortcut_idempotent(source, destination_parent_id, root_name, &props)
-                .await?
-        } else {
-            self.copy_file_idempotent(source_reference, root_name, destination_parent_id, &props)
-                .await?
+            if source.is_shortcut() {
+                self.create_shortcut_idempotent(source, destination_parent_id, root_name, &props)
+                    .await
+            } else {
+                self.copy_file_idempotent(
+                    source_reference,
+                    root_name,
+                    destination_parent_id,
+                    &props,
+                )
+                .await
+            }
+        }
+        .await;
+
+        let copied = match copy_result {
+            Ok(copied) => copied,
+            Err(err) => {
+                repo::fail_item_and_count(
+                    &self.db,
+                    job_id,
+                    &source.id,
+                    "copy_failed",
+                    &err.to_string(),
+                )
+                .await?;
+                return Err(err);
+            }
         };
-        repo::mark_item_done(&self.db, job_id, &source.id, &copied.id).await?;
         record_mapping(
             &self.db,
             MappingRecord {
@@ -877,7 +901,7 @@ impl CloneService {
             },
         )
         .await?;
-        repo::update_job_counts(&self.db, job_id, 1, 1, 0, 0).await?;
+        repo::complete_item_and_count(&self.db, job_id, &source.id, &copied.id).await?;
         self.transition_job_status_guarded(job_id, JobStatusValue::Completed, None, &["running"])
             .await?;
 
@@ -948,7 +972,7 @@ impl CloneService {
                 if err.downcast_ref::<JobControlStop>().is_some() {
                     return Err(err);
                 }
-                repo::mark_item_failed(
+                repo::fail_item_and_count(
                     &self.db,
                     job_id,
                     &child.id,
@@ -956,7 +980,6 @@ impl CloneService {
                     &err.to_string(),
                 )
                 .await?;
-                repo::increment_job_counts(&self.db, job_id, 1, 0, 1, 0).await?;
             }
         }
 
@@ -1100,10 +1123,17 @@ impl CloneService {
         parent: &TraversalFolder,
         source: &DriveFile,
     ) -> anyhow::Result<()> {
-        if repo::existing_dest_for_source(&self.db, ScopeType::Job.as_str(), job_id, &source.id)
-            .await?
-            .is_some()
+        if let Some(destination_item_id) =
+            repo::existing_dest_for_source(&self.db, ScopeType::Job.as_str(), job_id, &source.id)
+                .await?
         {
+            repo::complete_item_and_count(
+                &self.db,
+                job_id,
+                &source.id,
+                &destination_item_id,
+            )
+            .await?;
             return Ok(());
         }
         repo::insert_item(
@@ -1111,6 +1141,7 @@ impl CloneService {
             NewItem {
                 job_id: job_id.to_string(),
                 source_item_id: source.id.clone(),
+                source_parent_id: Some(parent.source_folder_id.clone()),
                 destination_parent_id: parent.destination_folder_id.clone(),
                 mime_type: source.mime_type.clone(),
                 item_kind: item_kind(source).to_string(),
@@ -1184,7 +1215,6 @@ impl CloneService {
             )
             .await?
         };
-        repo::mark_item_done(&self.db, job_id, &source.id, &copied.id).await?;
         record_mapping(
             &self.db,
             MappingRecord {
@@ -1202,7 +1232,7 @@ impl CloneService {
             },
         )
         .await?;
-        repo::increment_job_counts(&self.db, job_id, 1, 1, 0, 0).await?;
+        repo::complete_item_and_count(&self.db, job_id, &source.id, &copied.id).await?;
         Ok(())
     }
 
@@ -1219,10 +1249,22 @@ impl CloneService {
             return Ok(existing);
         }
         repo::mark_operation_executing(&self.db, &props.gdclone_copy_key).await?;
-        let created = self
+        let created = match self
             .copy_limiter
             .run(self.create_folder_retry(name, destination_parent_id, props))
-            .await?;
+            .await
+        {
+            Ok(created) => created,
+            Err(err) => {
+                repo::mark_operation_failed(
+                    &self.db,
+                    &props.gdclone_copy_key,
+                    &err.to_string(),
+                )
+                .await?;
+                return Err(err);
+            }
+        };
         repo::mark_operation_applied(&self.db, &props.gdclone_copy_key, &created.id).await?;
         Ok(created)
     }
@@ -1241,10 +1283,22 @@ impl CloneService {
             return Ok(existing);
         }
         repo::mark_operation_executing(&self.db, &props.gdclone_copy_key).await?;
-        let copied = self
+        let copied = match self
             .copy_limiter
             .run(self.copy_file_retry(source_reference, name, destination_parent_id, props))
-            .await?;
+            .await
+        {
+            Ok(copied) => copied,
+            Err(err) => {
+                repo::mark_operation_failed(
+                    &self.db,
+                    &props.gdclone_copy_key,
+                    &err.to_string(),
+                )
+                .await?;
+                return Err(err);
+            }
+        };
         repo::mark_operation_applied(&self.db, &props.gdclone_copy_key, &copied.id).await?;
         Ok(copied)
     }
@@ -1267,7 +1321,7 @@ impl CloneService {
             .as_ref()
             .context("shortcut is missing shortcutDetails")?;
         repo::mark_operation_executing(&self.db, &props.gdclone_copy_key).await?;
-        let shortcut = self
+        let shortcut = match self
             .copy_limiter
             .run(self.create_shortcut_retry(
                 name,
@@ -1276,7 +1330,19 @@ impl CloneService {
                 details.target_resource_key.as_deref(),
                 props,
             ))
-            .await?;
+            .await
+        {
+            Ok(shortcut) => shortcut,
+            Err(err) => {
+                repo::mark_operation_failed(
+                    &self.db,
+                    &props.gdclone_copy_key,
+                    &err.to_string(),
+                )
+                .await?;
+                return Err(err);
+            }
+        };
         repo::mark_operation_applied(&self.db, &props.gdclone_copy_key, &shortcut.id).await?;
         Ok(shortcut)
     }

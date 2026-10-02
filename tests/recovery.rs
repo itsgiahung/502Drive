@@ -63,6 +63,7 @@ async fn startup_recovery_requeues_interrupted_work() {
         NewItem {
             job_id: job_id.clone(),
             source_item_id: "src-file".to_string(),
+            source_parent_id: Some("src-folder".to_string()),
             destination_parent_id: "dst-folder".to_string(),
             mime_type: "application/octet-stream".to_string(),
             item_kind: "binary".to_string(),
@@ -364,6 +365,137 @@ async fn failed_watch_initial_clone_job_can_recover_without_failed_children() {
 }
 
 #[tokio::test]
+async fn watch_initial_clone_retry_requeues_done_parent_for_failed_file() {
+    let db = Database::in_memory().await.unwrap();
+    db.run_migrations().await.unwrap();
+    repo::upsert_google_account(
+        &db,
+        "default",
+        Some("user@example.com"),
+        vec![1, 2, 3],
+        "test",
+        r#"["https://www.googleapis.com/auth/drive"]"#,
+    )
+    .await
+    .unwrap();
+
+    let job = repo::get_or_create_watch_initial_clone_job(
+        &db,
+        "watch-child-retry",
+        repo::NewJob {
+            chat_id: 100,
+            telegram_user_id: 200,
+            google_account_id: "default".to_string(),
+            source_root_id: "source-root".to_string(),
+            source_resource_key: None,
+            source_drive_id: None,
+            source_name: Some("Source".to_string()),
+            destination_parent_id: "dest-parent".to_string(),
+            destination_drive_id: None,
+            destination_name: None,
+            progress_message_id: None,
+            duplicate_policy: "skip_same_source".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+
+    repo::record_traversal_folder(
+        &db,
+        &job.id,
+        "src-folder",
+        None,
+        "dst-folder",
+        None,
+    )
+    .await
+    .unwrap();
+    repo::finish_traversal_folder(&db, &job.id, "src-folder")
+        .await
+        .unwrap();
+    repo::insert_item(
+        &db,
+        NewItem {
+            job_id: job.id.clone(),
+            source_item_id: "src-file".to_string(),
+            source_parent_id: Some("src-folder".to_string()),
+            destination_parent_id: "dst-folder".to_string(),
+            mime_type: "application/octet-stream".to_string(),
+            item_kind: "binary".to_string(),
+            source_name: "file.bin".to_string(),
+            size_bytes: Some(42),
+        },
+    )
+    .await
+    .unwrap();
+    repo::mark_item_failed(&db, &job.id, "src-file", "copy_failed", "try later")
+        .await
+        .unwrap();
+
+    let key = idempotency_key(ScopeType::Job, &job.id, "src-file", "dst-folder", 1);
+    repo::plan_operation_intent(
+        &db,
+        NewOperationIntent {
+            idempotency_key: key.clone(),
+            job_id: Some(job.id.clone()),
+            watch_id: None,
+            operation_type: OperationType::CopyFile,
+            source_item_id: Some("src-file".to_string()),
+            destination_parent_id: Some("dst-folder".to_string()),
+            destination_item_id: None,
+            request_json: "{}".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    repo::mark_operation_executing(&db, &key).await.unwrap();
+    repo::mark_operation_failed(&db, &key, "rate limit")
+        .await
+        .unwrap();
+    repo::update_job_counts(&db, &job.id, 2, 1, 1, 0)
+        .await
+        .unwrap();
+    repo::update_job_status(
+        &db,
+        &job.id,
+        JobStatusValue::Failed,
+        Some("child copy failed"),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        repo::retry_failed_watch_initial_clone_job(&db, "watch-child-retry", &job.id)
+            .await
+            .unwrap()
+    );
+
+    let pending = repo::next_pending_traversal_folder(&db, &job.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(pending.source_folder_id, "src-folder");
+    assert_eq!(
+        repo::item_status(&db, &job.id, "src-file")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("ready")
+    );
+    assert_eq!(
+        repo::find_operation_intent_by_key(&db, &key)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        "planned"
+    );
+    let counts = repo::job_counts(&db, &job.id).await.unwrap();
+    assert_eq!(counts.total_discovered, 1);
+    assert_eq!(counts.failed_items, 0);
+}
+
+#[tokio::test]
 async fn job_visibility_queries_are_scoped_to_user() {
     let (db, active_job_id) = test_db().await;
     repo::update_job_counts(&db, &active_job_id, 3, 2, 1, 0)
@@ -468,12 +600,62 @@ async fn job_control_transitions_are_guarded_by_owner_and_state() {
 }
 
 #[tokio::test]
+async fn item_failure_and_completion_update_job_counters_once() {
+    let (db, job_id) = test_db().await;
+    repo::insert_item(
+        &db,
+        NewItem {
+            job_id: job_id.clone(),
+            source_item_id: "counter-file".to_string(),
+            source_parent_id: None,
+            destination_parent_id: "dest-parent".to_string(),
+            mime_type: "application/octet-stream".to_string(),
+            item_kind: "binary".to_string(),
+            source_name: "counter.bin".to_string(),
+            size_bytes: Some(5),
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        repo::fail_item_and_count(&db, &job_id, "counter-file", "copy_failed", "first failure")
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repo::fail_item_and_count(&db, &job_id, "counter-file", "copy_failed", "same failure")
+            .await
+            .unwrap()
+    );
+    let failed = repo::job_counts(&db, &job_id).await.unwrap();
+    assert_eq!(failed.total_discovered, 1);
+    assert_eq!(failed.completed_items, 0);
+    assert_eq!(failed.failed_items, 1);
+
+    assert!(
+        repo::complete_item_and_count(&db, &job_id, "counter-file", "dest-file")
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repo::complete_item_and_count(&db, &job_id, "counter-file", "dest-file")
+            .await
+            .unwrap()
+    );
+    let completed = repo::job_counts(&db, &job_id).await.unwrap();
+    assert_eq!(completed.total_discovered, 1);
+    assert_eq!(completed.completed_items, 1);
+    assert_eq!(completed.failed_items, 0);
+}
+
+#[tokio::test]
 async fn retry_failed_job_requeues_failed_work() {
     let (db, job_id) = test_db().await;
     repo::record_traversal_folder(&db, &job_id, "src-folder", None, "dst-folder", None)
         .await
         .unwrap();
-    repo::fail_traversal_folder(&db, &job_id, "src-folder", "rate limit")
+    repo::finish_traversal_folder(&db, &job_id, "src-folder")
         .await
         .unwrap();
     repo::insert_item(
@@ -481,6 +663,7 @@ async fn retry_failed_job_requeues_failed_work() {
         NewItem {
             job_id: job_id.clone(),
             source_item_id: "src-file".to_string(),
+            source_parent_id: Some("src-folder".to_string()),
             destination_parent_id: "dst-folder".to_string(),
             mime_type: "application/octet-stream".to_string(),
             item_kind: "binary".to_string(),
@@ -511,6 +694,9 @@ async fn retry_failed_job_requeues_failed_work() {
     .await
     .unwrap();
     repo::mark_operation_executing(&db, &key).await.unwrap();
+    repo::mark_operation_failed(&db, &key, "rate limit")
+        .await
+        .unwrap();
     repo::update_job_status(
         &db,
         &job_id,
@@ -519,7 +705,7 @@ async fn retry_failed_job_requeues_failed_work() {
     )
     .await
     .unwrap();
-    repo::update_job_counts(&db, &job_id, 2, 1, 2, 0)
+    repo::update_job_counts(&db, &job_id, 2, 1, 1, 0)
         .await
         .unwrap();
 
@@ -536,15 +722,15 @@ async fn retry_failed_job_requeues_failed_work() {
         .unwrap();
     assert_eq!(summary.traversal_folders_requeued, 1);
     assert_eq!(summary.job_items_requeued, 1);
+    assert_eq!(summary.operation_intents_replanned, 1);
 
     assert_eq!(
         repo::job_status(&db, &job_id).await.unwrap().as_deref(),
         Some("recovering")
     );
-    assert_eq!(
-        repo::job_counts(&db, &job_id).await.unwrap().failed_items,
-        0
-    );
+    let counts = repo::job_counts(&db, &job_id).await.unwrap();
+    assert_eq!(counts.total_discovered, 1);
+    assert_eq!(counts.failed_items, 0);
     assert_eq!(
         repo::item_status(&db, &job_id, "src-file")
             .await
@@ -552,12 +738,11 @@ async fn retry_failed_job_requeues_failed_work() {
             .as_deref(),
         Some("ready")
     );
-    assert!(
-        repo::next_pending_traversal_folder(&db, &job_id)
-            .await
-            .unwrap()
-            .is_some()
-    );
+    let pending = repo::next_pending_traversal_folder(&db, &job_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(pending.source_folder_id, "src-folder");
 }
 
 #[tokio::test]

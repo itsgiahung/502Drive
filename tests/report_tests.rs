@@ -38,6 +38,7 @@ async fn job_report_contains_items_and_folder_mappings() {
         NewItem {
             job_id: job_id.clone(),
             source_item_id: "file-ok".to_string(),
+            source_parent_id: None,
             destination_parent_id: "dest-parent".to_string(),
             mime_type: "application/octet-stream".to_string(),
             item_kind: "binary".to_string(),
@@ -56,6 +57,7 @@ async fn job_report_contains_items_and_folder_mappings() {
         NewItem {
             job_id: job_id.clone(),
             source_item_id: "file-failed".to_string(),
+            source_parent_id: None,
             destination_parent_id: "dest-parent".to_string(),
             mime_type: "application/octet-stream".to_string(),
             item_kind: "binary".to_string(),

@@ -68,6 +68,7 @@ async fn marks_item_done_and_mapping_supports_resume_idempotency() {
         NewItem {
             job_id: job_id.clone(),
             source_item_id: "src-file".to_string(),
+            source_parent_id: None,
             destination_parent_id: "dest".to_string(),
             mime_type: "application/octet-stream".to_string(),
             item_kind: "binary".to_string(),
