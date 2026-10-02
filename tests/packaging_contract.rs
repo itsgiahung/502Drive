@@ -56,20 +56,16 @@ fn linux_installer_generates_daemon_unit_from_effective_config() {
     assert!(!LINUX_INSTALLER.contains(
         "cp \"$SCRIPT_DIR/gdclone-bot.service\" \"$SYSTEMD_USER_DIR/gdclone-bot.service\""
     ));
-    assert!(!LINUX_PACKAGER.contains(
-        "cp packaging/gdclone-bot.service \"$TAR_DIR/packaging/\""
-    ));
-    assert!(SYSTEMD_INSTALLER.contains(
-        "\"$BINARY_PATH\" --config \"$CONFIG_PATH\" service-install"
-    ));
+    assert!(!LINUX_PACKAGER.contains("cp packaging/gdclone-bot.service \"$TAR_DIR/packaging/\""));
+    assert!(
+        SYSTEMD_INSTALLER.contains("\"$BINARY_PATH\" --config \"$CONFIG_PATH\" service-install")
+    );
     assert!(!SYSTEMD_INSTALLER.contains("ReadWritePaths=$DATA_DIR"));
 }
 
 #[test]
 fn shell_backup_uses_consistent_cli_snapshot() {
-    assert!(
-        BACKUP_SCRIPT.contains("\"$BIN\" --config \"$CONFIG_PATH\" backup \"$SNAPSHOT_DIR\"")
-    );
+    assert!(BACKUP_SCRIPT.contains("\"$BIN\" --config \"$CONFIG_PATH\" backup \"$SNAPSHOT_DIR\""));
     assert!(!BACKUP_SCRIPT.contains("FILES+=(\"$DATA_DIR/\")"));
 }
 
