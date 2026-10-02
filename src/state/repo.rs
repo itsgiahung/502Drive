@@ -459,6 +459,32 @@ pub async fn job_status_counts(db: &Database) -> anyhow::Result<Vec<JobStatusCou
         .await?)
 }
 
+pub async fn user_visible_job_status_counts(
+    db: &Database,
+) -> anyhow::Result<Vec<JobStatusCount>> {
+    Ok(db
+        .conn()
+        .call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT status, COUNT(*)
+                 FROM jobs
+                 WHERE kind = 'one_shot'
+                 GROUP BY status
+                 ORDER BY status",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok(JobStatusCount {
+                        status: row.get(0)?,
+                        count: row.get(1)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok::<Vec<JobStatusCount>, rusqlite::Error>(rows)
+        })
+        .await?)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JobSummary {
     pub id: String,

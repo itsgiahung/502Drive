@@ -196,15 +196,26 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
                 destination_label = Some(profile.label);
                 destination_id = Some(profile.destination_parent_id);
             }
-            if let Ok(counts) = repo::job_status_counts(&db).await {
+            if let Ok(counts) = repo::user_visible_job_status_counts(&db).await {
                 for count in counts {
                     total_jobs += count.count;
                     if count.status == "completed" {
                         completed_jobs = count.count;
                     }
+                    if matches!(
+                        count.status.as_str(),
+                        "queued"
+                            | "discovering"
+                            | "running"
+                            | "pausing"
+                            | "paused"
+                            | "cancelling"
+                            | "recovering"
+                    ) {
+                        active_jobs += count.count;
+                    }
                 }
             }
-            active_jobs = repo::active_job_count(&db).await.unwrap_or(0);
         }
     } else {
         db_integrity = "no_db_yet".to_string();

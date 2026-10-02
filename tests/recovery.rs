@@ -258,6 +258,17 @@ async fn watch_initial_clone_job_is_unique_and_excluded_from_generic_resume() {
     assert_eq!(first.status, "queued");
     assert!(repo::resumable_one_shot_jobs(&db).await.unwrap().is_empty());
 
+    let visible_job = repo::create_job(&db, 100, 200, "default", "visible-source", "dest-parent")
+        .await
+        .unwrap();
+    let visible_counts = repo::user_visible_job_status_counts(&db).await.unwrap();
+    assert_eq!(visible_counts.len(), 1);
+    assert_eq!(visible_counts[0].status, "queued");
+    assert_eq!(visible_counts[0].count, 1);
+
+    repo::update_job_status(&db, &visible_job, JobStatusValue::Completed, None)
+        .await
+        .unwrap();
     repo::update_job_status(&db, &first.id, JobStatusValue::Completed, None)
         .await
         .unwrap();
