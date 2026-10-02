@@ -127,12 +127,23 @@ impl Database {
     pub async fn ensure_owner(&self, owner_telegram_id: i64) -> anyhow::Result<()> {
         self.conn
             .call(move |conn| {
-                conn.execute(
-                    "INSERT OR IGNORE INTO authorized_users
-                     (telegram_user_id, role, enabled, created_at_ms)
-                     VALUES (?1, 'owner', 1, ?2)",
+                let tx = conn.transaction()?;
+                tx.execute(
+                    "UPDATE authorized_users
+                     SET role = 'operator'
+                     WHERE role = 'owner' AND telegram_user_id != ?1",
+                    [owner_telegram_id],
+                )?;
+                tx.execute(
+                    "INSERT INTO authorized_users
+                        (telegram_user_id, role, enabled, created_at_ms)
+                     VALUES (?1, 'owner', 1, ?2)
+                     ON CONFLICT(telegram_user_id) DO UPDATE SET
+                        role = 'owner',
+                        enabled = 1",
                     (owner_telegram_id, now_ms()),
                 )?;
+                tx.commit()?;
                 Ok::<(), rusqlite::Error>(())
             })
             .await?;
@@ -192,6 +203,30 @@ pub fn now_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn ensure_owner_promotes_new_owner_and_demotes_previous_owner() {
+        let db = Database::in_memory().await.unwrap();
+        db.run_migrations().await.unwrap();
+
+        db.ensure_owner(1).await.unwrap();
+        super::super::repo::grant_operator(&db, 2).await.unwrap();
+        db.ensure_owner(2).await.unwrap();
+
+        let old_owner = super::super::repo::authorized_user(&db, 1)
+            .await
+            .unwrap()
+            .unwrap();
+        let new_owner = super::super::repo::authorized_user(&db, 2)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(old_owner.role, "operator");
+        assert!(old_owner.enabled);
+        assert_eq!(new_owner.role, "owner");
+        assert!(new_owner.enabled);
+    }
 
     #[tokio::test]
     #[cfg(unix)]
