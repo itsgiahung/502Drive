@@ -13,6 +13,8 @@ pub struct JobSummary {
     pub status: String,
     pub source_root_id: String,
     pub destination_parent_id: String,
+    pub source_name: Option<String>,
+    pub destination_name: Option<String>,
     pub total_discovered: i64,
     pub completed_items: i64,
     pub failed_items: i64,
@@ -40,7 +42,7 @@ pub async fn list_jobs(limit: Option<usize>) -> Result<Vec<JobSummary>, String> 
         .prepare(
             "SELECT id, kind, status, source_root_id, destination_parent_id,
                 total_discovered, completed_items, failed_items, skipped_items,
-                error_summary, created_at_ms, updated_at_ms
+                error_summary, created_at_ms, updated_at_ms, source_name, destination_name
          FROM jobs
          ORDER BY updated_at_ms DESC
          LIMIT ?1;",
@@ -70,6 +72,8 @@ pub async fn list_jobs(limit: Option<usize>) -> Result<Vec<JobSummary>, String> 
                 status: row.get(2)?,
                 source_root_id: row.get(3)?,
                 destination_parent_id: row.get(4)?,
+                source_name: row.get(12)?,
+                destination_name: row.get(13)?,
                 total_discovered: total,
                 completed_items: completed,
                 failed_items: row.get(7)?,

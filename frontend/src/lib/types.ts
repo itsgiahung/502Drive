@@ -50,6 +50,8 @@ export interface JobSummary {
   status: JobStatus
   source_root_id: string
   destination_parent_id: string
+  source_name?: string | null
+  destination_name?: string | null
   total_discovered: number
   completed_items: number
   failed_items: number
