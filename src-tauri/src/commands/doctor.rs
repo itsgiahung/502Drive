@@ -7,6 +7,7 @@ use std::time::Duration;
 
 const RELEASES_API: &str = "https://api.github.com/repos/GiaHung07/502Drive/releases/latest";
 const RELEASES_PAGE: &str = "https://github.com/GiaHung07/502Drive/releases";
+const DEFAULT_CONFIG_TEMPLATE: &str = include_str!("../../../config.sample.toml");
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DoctorCheckItem {
@@ -174,20 +175,7 @@ pub async fn run_preflight_check() -> Result<PreflightReport, String> {
         if let Some(parent) = cfg_path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        let default_content = r#"# Cấu hình 502Drive
-[telegram]
-bot_token = ""
-owner_telegram_id = 0
-
-[google_oauth]
-client_id = ""
-client_secret = ""
-
-[engine]
-concurrency = 8
-auto_confirm_clone = false
-"#;
-        if super::config::write_config_file(&cfg_path, default_content).is_ok() {
+        if super::config::write_config_file(&cfg_path, DEFAULT_CONFIG_TEMPLATE).is_ok() {
             cfg_auto_fixed = true;
         }
     } else if let Ok(content) = fs::read_to_string(&cfg_path) {
@@ -556,7 +544,13 @@ pub async fn run_doctor() -> Result<DoctorResult, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_newer_release, parse_release_version};
+    use super::{is_newer_release, parse_release_version, DEFAULT_CONFIG_TEMPLATE};
+
+    #[test]
+    fn preflight_template_matches_runtime_config_schema() {
+        let parsed = toml::from_str::<gdclone_bot::config::AppConfig>(DEFAULT_CONFIG_TEMPLATE);
+        assert!(parsed.is_ok(), "preflight template must deserialize as AppConfig");
+    }
 
     #[test]
     fn release_version_parser_handles_v_prefix_and_suffixes() {
