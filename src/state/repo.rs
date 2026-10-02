@@ -1248,6 +1248,51 @@ pub async fn resumable_one_shot_jobs(db: &Database) -> anyhow::Result<Vec<Resuma
         .await?)
 }
 
+pub async fn transition_job_status(
+    db: &Database,
+    job_id: &str,
+    status: JobStatusValue,
+    error_summary: Option<&str>,
+    allowed_current: &[&str],
+) -> anyhow::Result<bool> {
+    if allowed_current.is_empty() {
+        return Ok(false);
+    }
+
+    let job_id = job_id.to_string();
+    let error_summary = error_summary.map(ToOwned::to_owned);
+    let allowed_current: Vec<String> = allowed_current
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    Ok(db
+        .conn()
+        .call(move |conn| {
+            use rusqlite::types::Value;
+
+            let placeholders = (0..allowed_current.len())
+                .map(|i| format!("?{}", i + 5))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "UPDATE jobs
+                 SET status = ?1, error_summary = ?2, updated_at_ms = ?3
+                 WHERE id = ?4 AND status IN ({placeholders})"
+            );
+
+            let mut values = vec![
+                Value::Text(status.as_str().to_string()),
+                error_summary.map(Value::Text).unwrap_or(Value::Null),
+                Value::Integer(now_ms()),
+                Value::Text(job_id),
+            ];
+            values.extend(allowed_current.into_iter().map(Value::Text));
+            let changed = conn.execute(&sql, rusqlite::params_from_iter(values))?;
+            Ok::<bool, rusqlite::Error>(changed > 0)
+        })
+        .await?)
+}
+
 pub async fn update_job_status(
     db: &Database,
     job_id: &str,

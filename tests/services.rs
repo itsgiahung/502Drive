@@ -231,6 +231,45 @@ async fn cancel_running_job_uses_cooperative_cancelling() {
     );
 }
 
+#[tokio::test]
+async fn engine_transition_cannot_overwrite_cancelling_job() {
+    let db = test_db().await;
+    let job_id = repo::create_job(&db, 1, 42, "default", "src", "dst")
+        .await
+        .unwrap();
+
+    repo::update_job_status(&db, &job_id, JobStatusValue::Running, None)
+        .await
+        .unwrap();
+    assert!(JobService::cancel(&db, 42, &job_id).await.unwrap());
+
+    let completed = repo::transition_job_status(
+        &db,
+        &job_id,
+        JobStatusValue::Completed,
+        None,
+        &["running", "discovering", "recovering"],
+    )
+    .await
+    .unwrap();
+    let failed = repo::transition_job_status(
+        &db,
+        &job_id,
+        JobStatusValue::Failed,
+        Some("late copy error"),
+        &["queued", "running", "discovering", "recovering"],
+    )
+    .await
+    .unwrap();
+
+    assert!(!completed);
+    assert!(!failed);
+    assert_eq!(
+        repo::job_status(&db, &job_id).await.unwrap().as_deref(),
+        Some("cancelling")
+    );
+}
+
 // ── JobService::progress ─────────────────────────────────────────────────────
 
 #[test]

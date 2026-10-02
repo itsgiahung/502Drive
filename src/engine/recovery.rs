@@ -92,15 +92,29 @@ pub async fn resume_startup_jobs(
                 if err.downcast_ref::<JobControlStop>().is_some() {
                     continue;
                 }
-                summary.failed_jobs += 1;
                 let error_summary = err.to_string();
-                repo::update_job_status(&db, &job.id, JobStatusValue::Failed, Some(&error_summary))
-                    .await?;
-                error!(
-                    job_id = job.id,
-                    error = %error_summary,
-                    "one-shot job resume failed"
-                );
+                let marked_failed = repo::transition_job_status(
+                    &db,
+                    &job.id,
+                    JobStatusValue::Failed,
+                    Some(&error_summary),
+                    &["queued", "recovering", "discovering", "running"],
+                )
+                .await?;
+                if marked_failed {
+                    summary.failed_jobs += 1;
+                    error!(
+                        job_id = job.id,
+                        error = %error_summary,
+                        "one-shot job resume failed"
+                    );
+                } else {
+                    warn!(
+                        job_id = job.id,
+                        error = %error_summary,
+                        "resume failed after job state changed; preserving newer state"
+                    );
+                }
             }
         }
     }

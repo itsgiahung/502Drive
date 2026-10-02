@@ -47,8 +47,17 @@ impl StateCoordinator {
             return Ok(false);
         }
 
-        repo::update_job_status(&self.db, job_id, target_status, error_summary).await?;
-        Ok(true)
+        // The status can change after validation (for example a concurrent
+        // pause/cancel request). Apply the transition only if the row still
+        // has the exact status we validated.
+        repo::transition_job_status(
+            &self.db,
+            job_id,
+            target_status,
+            error_summary,
+            &[current.as_str()],
+        )
+        .await
     }
 
     /// Pure transition validation logic.

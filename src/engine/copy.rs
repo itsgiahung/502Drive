@@ -409,14 +409,30 @@ impl CloneService {
                         report_paths: None,
                     });
                 }
-                let _ = repo::update_job_status(
+                let error_summary = err.to_string();
+                let marked_failed = repo::transition_job_status(
                     &self.db,
                     &job_id,
                     JobStatusValue::Failed,
-                    Some(&err.to_string()),
+                    Some(&error_summary),
+                    &["queued", "recovering", "discovering", "running"],
                 )
-                .await;
-                if let Some(tx) = &self.notify_tx {
+                .await
+                .unwrap_or(false);
+                if !marked_failed {
+                    if let Err(control_err) = self.check_job_control(&job_id).await
+                        && let Some(stop) = control_err.downcast_ref::<JobControlStop>()
+                    {
+                        return Ok(CloneOutcome {
+                            job_id,
+                            message: stop.to_string(),
+                            report_paths: None,
+                        });
+                    }
+                }
+                if marked_failed
+                    && let Some(tx) = &self.notify_tx
+                {
                     let _ = tx.try_send(crate::watch::NotificationEvent::job_failed(
                         request.telegram_user_id,
                         request.chat_id,
@@ -502,13 +518,27 @@ impl CloneService {
                         report_paths: None,
                     });
                 }
-                let _ = repo::update_job_status(
+                let error_summary = err.to_string();
+                let marked_failed = repo::transition_job_status(
                     &self.db,
                     &job_id,
                     JobStatusValue::Failed,
-                    Some(&err.to_string()),
+                    Some(&error_summary),
+                    &["queued", "recovering", "discovering", "running"],
                 )
-                .await;
+                .await
+                .unwrap_or(false);
+                if !marked_failed {
+                    if let Err(control_err) = self.check_job_control(&job_id).await
+                        && let Some(stop) = control_err.downcast_ref::<JobControlStop>()
+                    {
+                        return Ok(CloneOutcome {
+                            job_id,
+                            message: stop.to_string(),
+                            report_paths: None,
+                        });
+                    }
+                }
                 Err(err)
             }
         }
@@ -535,8 +565,13 @@ impl CloneService {
 
         let message = if source.is_folder() {
             if repo::has_traversal_rows(&self.db, &job.id).await? {
-                repo::update_job_status(&self.db, &job.id, JobStatusValue::Discovering, None)
-                    .await?;
+                self.transition_job_status_guarded(
+                    &job.id,
+                    JobStatusValue::Discovering,
+                    None,
+                    &["queued", "recovering"],
+                )
+                .await?;
                 self.process_traversal(&job.id).await?;
                 self.finish_folder_job(&job.id).await?
             } else {
@@ -558,7 +593,13 @@ impl CloneService {
         .await?
         .is_some()
         {
-            repo::update_job_status(&self.db, &job.id, JobStatusValue::Completed, None).await?;
+            self.transition_job_status_guarded(
+                &job.id,
+                JobStatusValue::Completed,
+                None,
+                &["queued", "recovering"],
+            )
+            .await?;
             format!(
                 "Job {} completed. Existing copied file mapping reused.",
                 job.id
@@ -598,8 +639,13 @@ impl CloneService {
         source_reference: &DriveReference,
         root_name: &str,
     ) -> anyhow::Result<String> {
-        repo::update_job_status(&self.db, job_id, JobStatusValue::Running, None).await?;
-        self.check_job_control(job_id).await?;
+        self.transition_job_status_guarded(
+            job_id,
+            JobStatusValue::Running,
+            None,
+            &["queued", "recovering"],
+        )
+        .await?;
 
         let props =
             AppProperties::new(ScopeType::Job, job_id, &source.id, destination_parent_id, 1);
@@ -651,7 +697,13 @@ impl CloneService {
         )
         .await?;
         repo::update_job_counts(&self.db, job_id, 1, 1, 0, 0).await?;
-        repo::update_job_status(&self.db, job_id, JobStatusValue::Discovering, None).await?;
+        self.transition_job_status_guarded(
+            job_id,
+            JobStatusValue::Discovering,
+            None,
+            &["running"],
+        )
+        .await?;
         self.process_traversal(job_id).await?;
 
         self.finish_folder_job(job_id).await
@@ -664,7 +716,13 @@ impl CloneService {
         } else {
             JobStatusValue::Completed
         };
-        repo::update_job_status(&self.db, job_id, final_status, None).await?;
+        self.transition_job_status_guarded(
+            job_id,
+            final_status,
+            None,
+            &["discovering", "running", "recovering"],
+        )
+        .await?;
 
         Ok(format!(
             "Job {job_id} đã hoàn tất. Đã quét: {} Hoàn tất: {} Lỗi: {} Bỏ qua: {}",
@@ -683,8 +741,13 @@ impl CloneService {
         source_reference: &DriveReference,
         root_name: &str,
     ) -> anyhow::Result<String> {
-        repo::update_job_status(&self.db, job_id, JobStatusValue::Running, None).await?;
-        self.check_job_control(job_id).await?;
+        self.transition_job_status_guarded(
+            job_id,
+            JobStatusValue::Running,
+            None,
+            &["queued", "recovering"],
+        )
+        .await?;
 
         let props =
             AppProperties::new(ScopeType::Job, job_id, &source.id, destination_parent_id, 1);
@@ -762,7 +825,13 @@ impl CloneService {
         )
         .await?;
         repo::update_job_counts(&self.db, job_id, 1, 1, 0, 0).await?;
-        repo::update_job_status(&self.db, job_id, JobStatusValue::Completed, None).await?;
+        self.transition_job_status_guarded(
+            job_id,
+            JobStatusValue::Completed,
+            None,
+            &["running"],
+        )
+        .await?;
 
         Ok(format!(
             "Job {job_id} đã hoàn tất. Đã copy file: {}",
@@ -855,6 +924,38 @@ impl CloneService {
             repo::finish_traversal_folder(&self.db, job_id, &folder.source_folder_id).await?;
         }
         Ok(())
+    }
+
+    async fn transition_job_status_guarded(
+        &self,
+        job_id: &str,
+        next: JobStatusValue,
+        error_summary: Option<&str>,
+        allowed_current: &[&str],
+    ) -> anyhow::Result<()> {
+        if repo::transition_job_status(
+            &self.db,
+            job_id,
+            next,
+            error_summary,
+            allowed_current,
+        )
+        .await?
+        {
+            return Ok(());
+        }
+
+        // A pause/cancel request may have won the CAS race. Convert that
+        // control request to its stable terminal state instead of overwriting
+        // it with a late engine transition.
+        self.check_job_control(job_id).await?;
+        let current = repo::job_status(&self.db, job_id)
+            .await?
+            .unwrap_or_else(|| "missing".to_string());
+        bail!(
+            "job {job_id} cannot transition to {} from {current}",
+            next.as_str()
+        )
     }
 
     async fn check_job_control(&self, job_id: &str) -> anyhow::Result<()> {
