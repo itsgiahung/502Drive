@@ -18,7 +18,7 @@ use crate::{
         db::Database,
         repo::{
             self, WatchBatchEntry, WatchBatchQuery, WatchSubscription, active_watches,
-            advance_watch_consumed_sequence, pending_events_for_watch, upsert_event_application,
+            advance_watch_consumed_sequence, pending_events_for_watch,
             upsert_event_applications_batch,
         },
     },
@@ -29,6 +29,20 @@ use super::classifier::{Classification, ItemFingerprint, classify};
 use super::errors::format_anyhow_error;
 
 const DISPATCH_BATCH: usize = 200;
+
+fn event_claim_stale_after_ms(config: &AppConfig) -> i64 {
+    let attempts = u64::from(config.engine.max_retry_attempts).saturating_add(1);
+    let request_ms = config.engine.request_timeout_seconds.saturating_mul(1_000);
+    let per_attempt_ms = request_ms
+        .saturating_mul(2)
+        .saturating_add(config.engine.retry_max_delay_ms);
+    let worst_case_ms = attempts
+        .saturating_mul(per_attempt_ms)
+        .saturating_add(request_ms)
+        .saturating_add(60_000)
+        .max(300_000);
+    i64::try_from(worst_case_ms).unwrap_or(i64::MAX)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DeletionAction {
@@ -302,15 +316,20 @@ async fn dispatch_one(
             break;
         }
 
-        // Record the application row as pending before trying to apply.
-        upsert_event_application(
+        // Claim before any external Drive side effect. A second daemon
+        // sharing this DB must stop at the same event instead of applying
+        // later events out of order.
+        if !repo::claim_event_application(
             db,
             &watch.id,
             event.sequence,
             classification.as_str(),
-            "applying",
+            event_claim_stale_after_ms(config),
         )
-        .await?;
+        .await?
+        {
+            break;
+        }
 
         let apply_result = apply_classification(
             config,

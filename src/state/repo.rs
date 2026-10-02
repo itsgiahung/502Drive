@@ -3355,6 +3355,44 @@ pub async fn pending_events_for_watch(
         .await?)
 }
 
+/// Atomically claim one watch event before any external Drive side effect.
+pub async fn claim_event_application(
+    db: &Database,
+    watch_id: &str,
+    event_sequence: i64,
+    classification: &str,
+    stale_after_ms: i64,
+) -> anyhow::Result<bool> {
+    let watch_id = watch_id.to_string();
+    let classification = classification.to_string();
+    let now = now_ms();
+    let stale_before = now.saturating_sub(stale_after_ms.max(0));
+    let changed = db
+        .conn()
+        .call(move |conn| {
+            let changed = conn.execute(
+                "INSERT INTO watch_event_applications (
+                    watch_id, event_sequence, classification, status,
+                    attempts, updated_at_ms
+                 ) VALUES (?1, ?2, ?3, 'applying', 0, ?4)
+                 ON CONFLICT(watch_id, event_sequence) DO UPDATE SET
+                    classification = excluded.classification,
+                    status = 'applying',
+                    attempts = watch_event_applications.attempts + 1,
+                    updated_at_ms = excluded.updated_at_ms
+                 WHERE watch_event_applications.status IN ('pending', 'failed')
+                    OR (
+                        watch_event_applications.status = 'applying'
+                        AND watch_event_applications.updated_at_ms <= ?5
+                    )",
+                params![watch_id, event_sequence, classification, now, stale_before],
+            )?;
+            Ok::<bool, rusqlite::Error>(changed > 0)
+        })
+        .await?;
+    Ok(changed)
+}
+
 pub async fn upsert_event_application(
     db: &Database,
     watch_id: &str,
