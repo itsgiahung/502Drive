@@ -148,10 +148,35 @@ pub fn main_menu_keyboard(watch_enabled: bool, lang: UiLanguage) -> InlineKeyboa
     InlineKeyboardMarkup::new(rows)
 }
 
-/// Settings panel keyboard: language is the only per-user preference with a
-/// Telegram surface; notifications are app-level (informational row only).
-pub fn settings_keyboard(lang: UiLanguage) -> InlineKeyboardMarkup {
+pub fn settings_keyboard(
+    lang: UiLanguage,
+    notify_job_complete: bool,
+    notify_job_error: bool,
+    notify_watch_conflicts: bool,
+) -> InlineKeyboardMarkup {
+    let state = |enabled: bool| match (lang, enabled) {
+        (UiLanguage::Vi, true) => "Bật",
+        (UiLanguage::Vi, false) => "Tắt",
+        (UiLanguage::En, true) => "On",
+        (UiLanguage::En, false) => "Off",
+    };
+    let (complete, error, conflicts) = match lang {
+        UiLanguage::Vi => ("Job hoàn tất", "Job lỗi", "Xung đột Watch"),
+        UiLanguage::En => ("Job completed", "Job errors", "Watch conflicts"),
+    };
     InlineKeyboardMarkup::new([
+        vec![callback_btn(
+            format!("{complete}: {}", state(notify_job_complete)),
+            "notif:toggle:job_complete",
+        )],
+        vec![callback_btn(
+            format!("{error}: {}", state(notify_job_error)),
+            "notif:toggle:job_error",
+        )],
+        vec![callback_btn(
+            format!("{conflicts}: {}", state(notify_watch_conflicts)),
+            "notif:toggle:watch_conflicts",
+        )],
         vec![
             callback_btn(lang.text(T::SettingsLanguage), "lang:open:panel"),
             callback_btn(lang.text(T::Account), "menu:open:account"),

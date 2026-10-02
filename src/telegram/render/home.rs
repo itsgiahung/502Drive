@@ -95,27 +95,35 @@ pub(crate) async fn render_home_dashboard(
     Ok(lines.join("\n"))
 }
 
-/// Settings panel — app-level configuration surfaced read-only. Notifications
-/// are app config (config.toml `[notifications]`), not per-user preferences.
+/// Settings panel with preferences scoped to the current Telegram user.
 pub(crate) fn render_settings_panel(
     lang: keyboards::UiLanguage,
     drive_status: &str,
-    notifications_on: bool,
+    prefs: &repo::TelegramUserPreferences,
 ) -> String {
     let lang_value = match lang {
         keyboards::UiLanguage::Vi => "Tiếng Việt",
         keyboards::UiLanguage::En => "English",
     };
-    let notif_value = if notifications_on {
-        lang.text(T::SettingsEnabled)
-    } else {
-        lang.text(T::SettingsDisabled)
+    let state = |enabled: bool| {
+        if enabled {
+            lang.text(T::SettingsEnabled)
+        } else {
+            lang.text(T::SettingsDisabled)
+        }
+    };
+    let (job_complete, job_error, watch_conflicts) = match lang {
+        keyboards::UiLanguage::Vi => ("Job hoàn tất", "Job lỗi", "Xung đột Watch"),
+        keyboards::UiLanguage::En => ("Job completed", "Job errors", "Watch conflicts"),
     };
     let lines = vec![
         lang.text(T::SettingsTitle).to_string(),
         String::new(),
         format!("{}  {}", lang.text(T::HomeDriveLabel), drive_status),
-        format!("{}  {}", lang.text(T::SettingsNotifications), notif_value),
+        format!("{}:", lang.text(T::SettingsNotifications)),
+        format!("• {job_complete}: {}", state(prefs.notify_job_complete)),
+        format!("• {job_error}: {}", state(prefs.notify_job_error)),
+        format!("• {watch_conflicts}: {}", state(prefs.notify_watch_conflicts)),
         format!("{}  {}", lang.text(T::SettingsLanguage), lang_value),
     ];
     lines.join("\n")
