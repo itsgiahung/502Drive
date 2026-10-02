@@ -161,10 +161,10 @@ async fn dispatch_one(
             config.watch.max_backlog_events_per_watch
         );
         let _ = notify_tx.try_send(NotificationEvent::watch_error(
-                    watch.telegram_user_id,
-                    watch.chat_id,
-                    msg,
-                ));
+            watch.telegram_user_id,
+            watch.chat_id,
+            msg,
+        ));
         return Ok(());
     }
 
@@ -257,10 +257,10 @@ async fn dispatch_one(
                 event.sequence
             );
             let _ = notify_tx.try_send(NotificationEvent::watch_error(
-                    watch.telegram_user_id,
-                    watch.chat_id,
-                    msg,
-                ));
+                watch.telegram_user_id,
+                watch.chat_id,
+                msg,
+            ));
             break;
         }
 
@@ -618,10 +618,10 @@ pub(crate) async fn apply_classification(
                         "⚠ Watch `{short_id}`: nguồn `{file_id}` bị xoá/vào thùng rác.\nDùng lệnh /watch_status {short_id} để chọn hành động.",
                     );
                     let _ = notify_tx.try_send(NotificationEvent::watch_error(
-                    watch.telegram_user_id,
-                    watch.chat_id,
-                    msg,
-                ));
+                        watch.telegram_user_id,
+                        watch.chat_id,
+                        msg,
+                    ));
                     info!(
                         watch_id = watch.id,
                         file_id, "source removed — manual confirmation required (notified)"
@@ -845,10 +845,10 @@ pub(crate) async fn apply_classification(
                         "⚠ Watch `{short_id}`: tệp `{file_name}` có phiên bản mới.\nDùng lệnh /watch_status {short_id} để chọn hành động.",
                     );
                     let _ = notify_tx.try_send(NotificationEvent::watch_error(
-                    watch.telegram_user_id,
-                    watch.chat_id,
-                    msg,
-                ));
+                        watch.telegram_user_id,
+                        watch.chat_id,
+                        msg,
+                    ));
                     info!(
                         watch_id = watch.id,
                         file_id, "content changed — manual confirmation notified"
