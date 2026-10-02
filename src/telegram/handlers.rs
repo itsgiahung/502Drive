@@ -56,6 +56,26 @@ async fn apply_user_language(config: &mut AppConfig, db: &Database, telegram_use
     }
 }
 
+async fn notification_preferences(
+    db: &Database,
+    telegram_user_id: i64,
+    lang: keyboards::UiLanguage,
+) -> repo::TelegramUserPreferences {
+    repo::telegram_user_preferences(db, telegram_user_id)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| repo::TelegramUserPreferences {
+            language: match lang {
+                keyboards::UiLanguage::Vi => "vi".to_string(),
+                keyboards::UiLanguage::En => "en".to_string(),
+            },
+            notify_job_complete: true,
+            notify_job_error: true,
+            notify_watch_conflicts: true,
+        })
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ReplyPrompt {
@@ -420,12 +440,11 @@ pub(crate) async fn handle_message(
                     }
                     _ => lang.text(crate::telegram::i18n::TextKey::HomeStatusNotConnected),
                 };
-                let n = &config.notifications;
-                let notifications_on = n.job_completed || n.job_failed || n.watch_errors;
+                let prefs = notification_preferences(&db, user_id, lang).await;
                 let text = crate::telegram::render::home::render_settings_panel(
                     lang,
                     drive_status,
-                    notifications_on,
+                    &prefs,
                 );
                 let recent_id = get_recent_control_message(msg.chat.id.0);
                 edit_or_send_with_keyboard(
@@ -433,7 +452,12 @@ pub(crate) async fn handle_message(
                     msg.chat.id,
                     recent_id,
                     text,
-                    Some(keyboards::settings_keyboard(lang)),
+                    Some(keyboards::settings_keyboard(
+                        lang,
+                        prefs.notify_job_complete,
+                        prefs.notify_job_error,
+                        prefs.notify_watch_conflicts,
+                    )),
                 )
                 .await?;
             }
@@ -1003,6 +1027,69 @@ pub async fn handle_callback_query(
             .await?;
             return Ok(());
         }
+        Some(("notif", "toggle", kind)) => {
+            let lang = ui_language(&config);
+            let prefs = notification_preferences(&db, user_id, lang).await;
+            let (preference, enabled) = match kind {
+                "job_complete" => (
+                    repo::TelegramNotificationPreference::JobComplete,
+                    !prefs.notify_job_complete,
+                ),
+                "job_error" => (
+                    repo::TelegramNotificationPreference::JobError,
+                    !prefs.notify_job_error,
+                ),
+                "watch_conflicts" => (
+                    repo::TelegramNotificationPreference::WatchConflicts,
+                    !prefs.notify_watch_conflicts,
+                ),
+                _ => return Ok(()),
+            };
+            let language = match lang {
+                keyboards::UiLanguage::Vi => "vi",
+                keyboards::UiLanguage::En => "en",
+            };
+            let _ = repo::set_telegram_notification_preference(
+                &db,
+                user_id,
+                language,
+                preference,
+                enabled,
+            )
+            .await;
+            let prefs = notification_preferences(&db, user_id, lang).await;
+            let account = repo::account_status(&db)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            let drive_status = match account.as_str() {
+                "connected" => lang.text(crate::telegram::i18n::TextKey::HomeStatusConnected),
+                "reconnect_required" => {
+                    lang.text(crate::telegram::i18n::TextKey::HomeStatusReconnect)
+                }
+                _ => lang.text(crate::telegram::i18n::TextKey::HomeStatusNotConnected),
+            };
+            let text = crate::telegram::render::home::render_settings_panel(
+                lang,
+                drive_status,
+                &prefs,
+            );
+            edit_or_send_with_keyboard(
+                &bot,
+                chat_id,
+                query.message.as_ref().map(|m| m.id()),
+                text,
+                Some(keyboards::settings_keyboard(
+                    lang,
+                    prefs.notify_job_complete,
+                    prefs.notify_job_error,
+                    prefs.notify_watch_conflicts,
+                )),
+            )
+            .await?;
+            return Ok(());
+        }
         Some(("menu", "open", "settings")) => {
             let lang = ui_language(&config);
             let account = repo::account_status(&db)
@@ -1017,19 +1104,23 @@ pub async fn handle_callback_query(
                 }
                 _ => lang.text(crate::telegram::i18n::TextKey::HomeStatusNotConnected),
             };
-            let n = &config.notifications;
-            let notifications_on = n.job_completed || n.job_failed || n.watch_errors;
+            let prefs = notification_preferences(&db, user_id, lang).await;
             let text = crate::telegram::render::home::render_settings_panel(
                 lang,
                 drive_status,
-                notifications_on,
+                &prefs,
             );
             edit_or_send_with_keyboard(
                 &bot,
                 chat_id,
                 query.message.as_ref().map(|m| m.id()),
                 text,
-                Some(keyboards::settings_keyboard(lang)),
+                Some(keyboards::settings_keyboard(
+                    lang,
+                    prefs.notify_job_complete,
+                    prefs.notify_job_error,
+                    prefs.notify_watch_conflicts,
+                )),
             )
             .await?;
             return Ok(());
