@@ -154,6 +154,41 @@ async fn watch_active_destination_ignores_detached_mapping() {
 }
 
 #[tokio::test]
+async fn active_watch_mapping_count_uses_mapping_state() {
+    let db = test_db().await;
+    for source in ["active-1", "active-2", "detached"] {
+        record_mapping(
+            &db,
+            MappingRecord {
+                scope_type: "watch".to_string(),
+                scope_id: "watch-count".to_string(),
+                source_item_id: source.to_string(),
+                destination_item_id: format!("dst-{source}"),
+                source_parent_id: None,
+                destination_parent_id: Some("dst-root".to_string()),
+                mime_type: "application/pdf".to_string(),
+                source_name: source.to_string(),
+                source_version: None,
+                source_modified_time: None,
+                source_md5_checksum: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    repo::mark_watch_mapping_detached(&db, "watch-count", "detached")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        repo::count_active_source_mappings_for_watch(&db, "watch-count")
+            .await
+            .unwrap(),
+        2
+    );
+}
+
+#[tokio::test]
 async fn watch_folder_scan_lists_only_active_folders() {
     let db = test_db().await;
     for (source, dest, mime, state) in [

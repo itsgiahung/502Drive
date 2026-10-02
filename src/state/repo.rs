@@ -2987,7 +2987,10 @@ pub async fn count_active_source_mappings_for_watch(
         .conn()
         .call(move |conn| {
             let count: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM source_mappings WHERE scope_type = 'watch' AND scope_id = ?1 AND status = 'active'",
+                "SELECT COUNT(*) FROM source_mappings
+                 WHERE scope_type = 'watch'
+                   AND scope_id = ?1
+                   AND mapping_state = 'active'",
                 params![watch_id],
                 |row| row.get(0),
             )?;
