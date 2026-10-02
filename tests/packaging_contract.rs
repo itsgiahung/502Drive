@@ -11,9 +11,8 @@ fn docker_uses_canonical_binary_and_creates_legacy_alias() {
         "Docker builder must compile the canonical 502drive binary"
     );
     assert!(
-        DOCKERFILE.contains(
-            "COPY --from=builder /app/target/release/502drive /usr/local/bin/502drive"
-        ),
+        DOCKERFILE
+            .contains("COPY --from=builder /app/target/release/502drive /usr/local/bin/502drive"),
         "Docker runtime must copy the canonical binary"
     );
     assert!(
