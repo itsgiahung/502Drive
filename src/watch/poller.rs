@@ -29,6 +29,7 @@ pub enum NotificationKind {
     JobCompleted,
     JobFailed,
     WatchError,
+    WatchConflict,
     WatchActivity,
 }
 
@@ -68,6 +69,15 @@ impl NotificationEvent {
         }
     }
 
+    pub fn watch_conflict(telegram_user_id: i64, chat_id: i64, text: String) -> Self {
+        Self {
+            telegram_user_id,
+            chat_id,
+            kind: NotificationKind::WatchConflict,
+            text,
+        }
+    }
+
     pub fn watch_activity(telegram_user_id: i64, chat_id: i64, text: String) -> Self {
         Self {
             telegram_user_id,
@@ -81,7 +91,7 @@ impl NotificationEvent {
         match self.kind {
             NotificationKind::JobCompleted => config.job_completed,
             NotificationKind::JobFailed => config.job_failed,
-            NotificationKind::WatchError => config.watch_errors,
+            NotificationKind::WatchError | NotificationKind::WatchConflict => config.watch_errors,
             NotificationKind::WatchActivity => config.watch_activity,
         }
     }
