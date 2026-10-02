@@ -179,6 +179,9 @@ impl AppConfig {
     }
 
     fn validate_shape(&self) -> anyhow::Result<()> {
+        if self.google_oauth.redirect_port_start == 0 || self.google_oauth.redirect_port_end == 0 {
+            bail!("google_oauth redirect ports must be > 0");
+        }
         if self.google_oauth.redirect_port_start > self.google_oauth.redirect_port_end {
             bail!("google_oauth.redirect_port_start must be <= redirect_port_end");
         }
@@ -487,6 +490,17 @@ mod tests {
 
         let mut config = sample_config();
         config.watch.cold_idle_poll_seconds = 0;
+        assert!(config.validate_shape().is_err());
+    }
+
+    #[test]
+    fn oauth_redirect_port_zero_is_rejected() {
+        let mut config = sample_config();
+        config.google_oauth.redirect_port_start = 0;
+        assert!(config.validate_shape().is_err());
+
+        let mut config = sample_config();
+        config.google_oauth.redirect_port_end = 0;
         assert!(config.validate_shape().is_err());
     }
 }
