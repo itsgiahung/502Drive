@@ -41,6 +41,26 @@ fn parse_editable_config(content: &str) -> Result<toml::Table, String> {
     }
 }
 
+fn read_auto_confirm_clone(table: &toml::Table) -> bool {
+    if let Some(value) = table
+        .get("destination")
+        .and_then(|v| v.as_table())
+        .and_then(|destination| destination.get("auto_confirm_clone"))
+        .and_then(|v| v.as_bool())
+    {
+        return value;
+    }
+
+    // Compatibility with GUI-written configs from before this setting was
+    // correctly stored under [destination].
+    table
+        .get("engine")
+        .and_then(|v| v.as_table())
+        .and_then(|engine| engine.get("auto_confirm_clone"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
 /// Write the config file and restrict permissions to the owner on Unix so
 /// bot tokens / OAuth secrets are not world- or group-readable.
 pub(crate) fn write_config_file(path: &Path, contents: &str) -> Result<(), String> {
@@ -101,7 +121,7 @@ pub async fn get_config_summary() -> Result<ConfigSummary, String> {
     // Matches the engine's effective write-semaphore default
     // (config.sample.toml: max_write_concurrency = 8).
     let mut concurrency = 8usize;
-    let mut auto_confirm = true;
+    let mut auto_confirm = false;
     let mut bot_token_configured = false;
     let mut bot_token: Option<String> = None;
     let mut owner_id = 0i64;
@@ -138,6 +158,7 @@ pub async fn get_config_summary() -> Result<ConfigSummary, String> {
                         oauth_client_secret_configured = is_configured(sec);
                     }
                 }
+                auto_confirm = read_auto_confirm_clone(&value);
                 if let Some(engine) = value.get("engine").and_then(|v| v.as_table()) {
                     // The engine's write semaphore resolves from
                     // max_write_concurrency; `concurrency` is the legacy GUI key.
@@ -147,9 +168,6 @@ pub async fn get_config_summary() -> Result<ConfigSummary, String> {
                         .and_then(|v| v.as_integer());
                     if let Some(c) = engine_concurrency {
                         concurrency = c.clamp(1, 32) as usize;
-                    }
-                    if let Some(b) = engine.get("auto_confirm_clone").and_then(|v| v.as_bool()) {
-                        auto_confirm = b;
                     }
                 }
                 // Read [app] section for GUI-only settings
@@ -226,11 +244,14 @@ pub async fn update_config_field(field: String, value: String) -> Result<(), Str
         }
         "auto_confirm_clone" => {
             let b = parse_bool_setting(&value)?;
-            let engine = table
-                .entry("engine")
+            let destination = table
+                .entry("destination")
                 .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-            if let Some(t) = engine.as_table_mut() {
+            if let Some(t) = destination.as_table_mut() {
                 t.insert("auto_confirm_clone".to_string(), toml::Value::Boolean(b));
+            }
+            if let Some(engine) = table.get_mut("engine").and_then(|v| v.as_table_mut()) {
+                engine.remove("auto_confirm_clone");
             }
         }
         "owner_telegram_id" => {
@@ -380,14 +401,17 @@ pub async fn save_wizard_config(input: WizardConfigInput) -> Result<(), String> 
     }
 
     if let Some(auto_confirm) = input.auto_confirm_clone {
-        let eng = table
-            .entry("engine")
+        let destination = table
+            .entry("destination")
             .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-        if let Some(t) = eng.as_table_mut() {
+        if let Some(t) = destination.as_table_mut() {
             t.insert(
                 "auto_confirm_clone".to_string(),
                 toml::Value::Boolean(auto_confirm),
             );
+        }
+        if let Some(engine) = table.get_mut("engine").and_then(|v| v.as_table_mut()) {
+            engine.remove("auto_confirm_clone");
         }
     }
 
@@ -490,7 +514,7 @@ pub async fn verify_telegram_bot(token: String) -> Result<TelegramBotCheckResult
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_bool_setting, parse_editable_config};
+    use super::{parse_bool_setting, parse_editable_config, read_auto_confirm_clone};
 
     #[test]
     fn editable_config_rejects_invalid_existing_toml() {
@@ -503,5 +527,28 @@ mod tests {
         assert_eq!(parse_bool_setting("true").unwrap(), true);
         assert_eq!(parse_bool_setting("0").unwrap(), false);
         assert!(parse_bool_setting("yes").is_err());
+    }
+
+    #[test]
+    fn auto_confirm_prefers_destination_and_supports_legacy_engine_key() {
+        let canonical = r#"
+[destination]
+auto_confirm_clone = true
+
+[engine]
+auto_confirm_clone = false
+"#;
+        let canonical = canonical.parse::<toml::Table>().unwrap();
+        assert!(read_auto_confirm_clone(&canonical));
+
+        let legacy = r#"
+[engine]
+auto_confirm_clone = true
+"#;
+        let legacy = legacy.parse::<toml::Table>().unwrap();
+        assert!(read_auto_confirm_clone(&legacy));
+
+        let missing = toml::Table::new();
+        assert!(!read_auto_confirm_clone(&missing));
     }
 }
