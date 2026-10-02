@@ -3,6 +3,10 @@ use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::process::Command;
+use std::time::Duration;
+
+const RELEASES_API: &str = "https://api.github.com/repos/GiaHung07/502Drive/releases/latest";
+const RELEASES_PAGE: &str = "https://github.com/GiaHung07/502Drive/releases";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DoctorCheckItem {
@@ -43,6 +47,25 @@ pub struct PreflightReport {
     pub needs_setup: bool,
     pub steps: Vec<PreflightStep>,
     pub remote_update: Option<RemoteUpdateInfo>,
+}
+
+fn parse_release_version(value: &str) -> Option<(u64, u64, u64)> {
+    let core = value.trim().trim_start_matches('v').split(['-', '+']).next()?;
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
+}
+
+fn is_newer_release(current: &str, latest: &str) -> bool {
+    match (parse_release_version(current), parse_release_version(latest)) {
+        (Some(current), Some(latest)) => latest > current,
+        _ => false,
+    }
 }
 
 #[tauri::command]
@@ -282,15 +305,9 @@ auto_confirm_clone = false
         needs_setup = true;
     }
 
-    // 6. Remote Update Information (OTA check)
-    let remote_update = Some(RemoteUpdateInfo {
-        current_version: "v0.1.0".to_string(),
-        latest_version: "v0.1.0".to_string(),
-        update_available: false,
-        changelog: "Phiên bản ổn định mới nhất với giao diện macOS và bộ lọc tự động kiểm tra."
-            .to_string(),
-        download_url: Some("https://github.com/GiaHung07/502Drive/releases".to_string()),
-    });
+    // 6. Remote update information. Network failure must not fabricate a
+    // version; the rest of preflight remains useful offline.
+    let remote_update = check_remote_update().await.ok();
 
     let all_passed = steps.iter().all(|s| s.status == "passed");
 
@@ -304,12 +321,52 @@ auto_confirm_clone = false
 
 #[tauri::command]
 pub async fn check_remote_update() -> Result<RemoteUpdateInfo, String> {
+    let current_version = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .build()
+        .map_err(|_| "cannot initialize update HTTP client".to_string())?;
+    let response = client
+        .get(RELEASES_API)
+        .header(reqwest::header::USER_AGENT, "502Drive-Desktop")
+        .send()
+        .await
+        .map_err(|_| "cannot reach GitHub Releases".to_string())?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "GitHub Releases returned HTTP {}",
+            response.status().as_u16()
+        ));
+    }
+
+    let payload = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| "invalid GitHub Releases response".to_string())?;
+    let latest_version = payload
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .filter(|v| parse_release_version(v).is_some())
+        .ok_or_else(|| "latest release has no valid semantic version tag".to_string())?
+        .to_string();
+    let changelog = payload
+        .get("body")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let download_url = payload
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .or_else(|| Some(RELEASES_PAGE.to_string()));
+
     Ok(RemoteUpdateInfo {
-        current_version: "v0.1.0".to_string(),
-        latest_version: "v0.1.0".to_string(),
-        update_available: false,
-        changelog: "Bạn đang sử dụng phiên bản mới nhất v0.1.0.".to_string(),
-        download_url: Some("https://github.com/GiaHung07/502Drive/releases".to_string()),
+        update_available: is_newer_release(&current_version, &latest_version),
+        current_version,
+        latest_version,
+        changelog,
+        download_url,
     })
 }
 
@@ -367,39 +424,119 @@ pub async fn run_doctor() -> Result<DoctorResult, String> {
         },
     });
 
-    let db_exists = db.exists();
+    let (db_ok, db_detail, google_connected, google_detail) = if db.exists() {
+        match Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY) {
+            Ok(conn) => {
+                let integrity = conn
+                    .query_row("PRAGMA integrity_check;", [], |row| row.get::<_, String>(0))
+                    .unwrap_or_else(|e| format!("integrity check failed: {e}"));
+                let db_ok = integrity == "ok";
+                let google = conn
+                    .query_row(
+                        "SELECT email, status
+                         FROM google_accounts
+                         ORDER BY updated_at_ms DESC
+                         LIMIT 1",
+                        [],
+                        |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
+                    )
+                    .ok();
+                let google_connected = matches!(google.as_ref(), Some((_, status)) if status == "connected");
+                let google_detail = match google {
+                    Some((email, status)) => format!(
+                        "{} ({status})",
+                        email.unwrap_or_else(|| "Google account".to_string())
+                    ),
+                    None => "Chưa có tài khoản Google trong cơ sở dữ liệu".to_string(),
+                };
+                (
+                    db_ok,
+                    if db_ok {
+                        format!("integrity_check=ok ({})", db.display())
+                    } else {
+                        integrity
+                    },
+                    google_connected,
+                    google_detail,
+                )
+            }
+            Err(err) => (
+                false,
+                format!("Không thể mở DB: {err}"),
+                false,
+                "Không thể kiểm tra tài khoản Google".to_string(),
+            ),
+        }
+    } else {
+        (
+            false,
+            "Chưa khởi tạo".to_string(),
+            false,
+            "Cần đăng nhập".to_string(),
+        )
+    };
+
     checks.push(DoctorCheckItem {
         name: "Cơ sở dữ liệu".to_string(),
-        passed: db_exists,
-        detail: if db_exists {
-            format!("Toàn vẹn WAL ({})", db.display())
-        } else {
-            "Chưa khởi tạo".to_string()
-        },
+        passed: db_ok,
+        detail: db_detail,
     });
+
+    let telegram_check = if cfg_exists {
+        fs::read_to_string(&cfg)
+            .ok()
+            .and_then(|content| content.parse::<toml::Value>().ok())
+            .and_then(|value| {
+                value
+                    .get("telegram")
+                    .and_then(|t| t.get("bot_token"))
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            })
+    } else {
+        None
+    };
+
+    let (telegram_ok, telegram_detail) = match telegram_check {
+        Some(token) if super::config::is_configured(&token) => {
+            match super::config::verify_telegram_bot_token(&token).await {
+                Ok(check) if check.ok => (
+                    true,
+                    check
+                        .username
+                        .map(|u| format!("@{u}"))
+                        .unwrap_or_else(|| "Bot token hợp lệ".to_string()),
+                ),
+                Ok(check) => (
+                    false,
+                    check
+                        .error
+                        .unwrap_or_else(|| "Telegram token không hợp lệ".to_string()),
+                ),
+                Err(err) => (false, err),
+            }
+        }
+        _ => (false, "Chưa cấu hình Telegram Bot Token".to_string()),
+    };
 
     checks.push(DoctorCheckItem {
         name: "Telegram Bot".to_string(),
-        passed: true,
-        detail: "@Drive502_Bot (Dịch vụ sẵn sàng)".to_string(),
+        passed: telegram_ok,
+        detail: telegram_detail,
     });
 
     checks.push(DoctorCheckItem {
         name: "Tài khoản Google".to_string(),
-        passed: db_exists,
-        detail: if db_exists {
-            "Đã kết nối".to_string()
-        } else {
-            "Cần đăng nhập".to_string()
-        },
+        passed: google_connected,
+        detail: google_detail,
     });
 
     let raw = format!(
-        "$ 502drive doctor\n502Drive doctor\n===============\nCấu hình: {}\n  Đường dẫn DB: {}\n  Đường dẫn Config: {}\nCơ sở dữ liệu: {}\nTelegram: Sẵn sàng\n",
-        if cfg_exists { "OK" } else { "CHƯA CÓ" },
-        db.display(),
-        cfg.display(),
-        if db_exists { "OK" } else { "ĐANG CHỜ" }
+        "$ 502drive doctor\n502Drive doctor\n===============\nConfig: {}\nDB: {}\nTelegram: {}\nGoogle: {}\n",
+        if cfg_exists { "OK" } else { "MISSING" },
+        if db_ok { "OK" } else { "FAIL" },
+        if telegram_ok { "OK" } else { "FAIL" },
+        if google_connected { "OK" } else { "FAIL" },
     );
 
     Ok(DoctorResult {

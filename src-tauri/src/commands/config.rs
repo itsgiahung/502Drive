@@ -66,7 +66,7 @@ pub struct WizardConfigInput {
     pub shared_drive_id: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct TelegramBotCheckResult {
     pub ok: bool,
     pub username: Option<String>,
@@ -388,8 +388,9 @@ pub async fn save_wizard_config(input: WizardConfigInput) -> Result<(), String> 
     Ok(())
 }
 
-#[tauri::command]
-pub async fn verify_telegram_bot(token: String) -> Result<TelegramBotCheckResult, String> {
+pub(crate) async fn verify_telegram_bot_token(
+    token: &str,
+) -> Result<TelegramBotCheckResult, String> {
     let trimmed = token.trim();
     if trimmed.is_empty() {
         return Ok(TelegramBotCheckResult {
@@ -401,61 +402,57 @@ pub async fn verify_telegram_bot(token: String) -> Result<TelegramBotCheckResult
         });
     }
 
+    // Keep the token inside this process. Passing it to curl as part of argv
+    // exposes the credential to local process inspection tools.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(6))
+        .build()
+        .map_err(|_| "Không thể khởi tạo Telegram HTTP client".to_string())?;
     let url = format!("https://api.telegram.org/bot{trimmed}/getMe");
-    let output = std::process::Command::new("curl")
-        .args(["-s", "--max-time", "6", &url])
-        .output();
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|_| "Không thể kết nối Telegram API".to_string())?;
+    let v = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| "Không thể phân tích phản hồi từ máy chủ Telegram".to_string())?;
 
-    match output {
-        Ok(out) => {
-            let body = String::from_utf8_lossy(&out.stdout);
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
-                if v.get("ok").and_then(|b| b.as_bool()) == Some(true) {
-                    let res = v.get("result");
-                    let username = res
-                        .and_then(|r| r.get("username"))
-                        .and_then(|u| u.as_str())
-                        .map(String::from);
-                    let first_name = res
-                        .and_then(|r| r.get("first_name"))
-                        .and_then(|f| f.as_str())
-                        .map(String::from);
-                    let bot_id = res.and_then(|r| r.get("id")).and_then(|i| i.as_i64());
-                    return Ok(TelegramBotCheckResult {
-                        ok: true,
-                        username,
-                        first_name,
-                        bot_id,
-                        error: None,
-                    });
-                } else {
-                    let desc = v
-                        .get("description")
-                        .and_then(|d| d.as_str())
-                        .unwrap_or("Token không hợp lệ hoặc bot không tồn tại");
-                    return Ok(TelegramBotCheckResult {
-                        ok: false,
-                        username: None,
-                        first_name: None,
-                        bot_id: None,
-                        error: Some(desc.to_string()),
-                    });
-                }
-            }
-            Ok(TelegramBotCheckResult {
-                ok: false,
-                username: None,
-                first_name: None,
-                bot_id: None,
-                error: Some("Không thể phân tích phản hồi từ máy chủ Telegram".to_string()),
-            })
-        }
-        Err(e) => Ok(TelegramBotCheckResult {
+    if v.get("ok").and_then(|b| b.as_bool()) == Some(true) {
+        let res = v.get("result");
+        let username = res
+            .and_then(|r| r.get("username"))
+            .and_then(|u| u.as_str())
+            .map(String::from);
+        let first_name = res
+            .and_then(|r| r.get("first_name"))
+            .and_then(|f| f.as_str())
+            .map(String::from);
+        let bot_id = res.and_then(|r| r.get("id")).and_then(|i| i.as_i64());
+        Ok(TelegramBotCheckResult {
+            ok: true,
+            username,
+            first_name,
+            bot_id,
+            error: None,
+        })
+    } else {
+        let desc = v
+            .get("description")
+            .and_then(|d| d.as_str())
+            .unwrap_or("Token không hợp lệ hoặc bot không tồn tại");
+        Ok(TelegramBotCheckResult {
             ok: false,
             username: None,
             first_name: None,
             bot_id: None,
-            error: Some(format!("Lỗi gọi curl: {e}")),
-        }),
+            error: Some(desc.to_string()),
+        })
     }
+}
+
+#[tauri::command]
+pub async fn verify_telegram_bot(token: String) -> Result<TelegramBotCheckResult, String> {
+    verify_telegram_bot_token(&token).await
 }

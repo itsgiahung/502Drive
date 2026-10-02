@@ -1,11 +1,37 @@
-use crate::commands::{config::verify_telegram_bot, get_config_path, get_db_path};
+use crate::commands::{config::verify_telegram_bot_token, get_config_path, get_db_path};
 use gdclone_bot::{
     config::AppConfig,
     state::{db::Database, repo},
 };
 use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
-use std::process::Command;
+use std::{
+    path::PathBuf,
+    process::Command,
+    sync::{Mutex, OnceLock},
+    time::{Duration, Instant},
+};
+
+const TELEGRAM_STATUS_TTL: Duration = Duration::from_secs(60);
+const DB_HEALTH_TTL: Duration = Duration::from_secs(60);
+
+#[derive(Clone)]
+struct CachedTelegramStatus {
+    token: String,
+    checked_at: Instant,
+    username: Option<String>,
+    status: String,
+}
+
+#[derive(Clone)]
+struct CachedDbHealth {
+    path: PathBuf,
+    checked_at: Instant,
+    value: String,
+}
+
+static TELEGRAM_STATUS_CACHE: OnceLock<Mutex<Option<CachedTelegramStatus>>> = OnceLock::new();
+static DB_HEALTH_CACHE: OnceLock<Mutex<Option<CachedDbHealth>>> = OnceLock::new();
 
 #[derive(Debug, Serialize, Clone)]
 pub struct SystemStats {
@@ -45,6 +71,56 @@ fn check_systemd_service_active(service_name: &str) -> bool {
     false
 }
 
+fn cached_db_health(conn: &Connection, path: &PathBuf) -> String {
+    let cache = DB_HEALTH_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = cache.lock() {
+        if let Some(cached) = guard.as_ref() {
+            if cached.path == *path && cached.checked_at.elapsed() < DB_HEALTH_TTL {
+                return cached.value.clone();
+            }
+        }
+    }
+
+    let value = conn
+        .query_row("PRAGMA quick_check;", [], |row| row.get::<_, String>(0))
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some(CachedDbHealth {
+            path: path.clone(),
+            checked_at: Instant::now(),
+            value: value.clone(),
+        });
+    }
+    value
+}
+
+async fn cached_telegram_status(token: &str) -> (Option<String>, String) {
+    let cache = TELEGRAM_STATUS_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = cache.lock() {
+        if let Some(cached) = guard.as_ref() {
+            if cached.token == token && cached.checked_at.elapsed() < TELEGRAM_STATUS_TTL {
+                return (cached.username.clone(), cached.status.clone());
+            }
+        }
+    }
+
+    let (username, status) = match verify_telegram_bot_token(token).await {
+        Ok(check) if check.ok => (check.username, "active".to_string()),
+        _ => (None, "error".to_string()),
+    };
+
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some(CachedTelegramStatus {
+            token: token.to_string(),
+            checked_at: Instant::now(),
+            username: username.clone(),
+            status: status.clone(),
+        });
+    }
+    (username, status)
+}
+
 #[tauri::command]
 pub async fn get_system_status() -> Result<SystemStatus, String> {
     let db_path = get_db_path();
@@ -63,15 +139,10 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
     let mut total_cloned_bytes = 0i64;
 
     if db_path.exists() {
-        // Read-only connection: integrity check plus the two aggregates that
-        // have no repo function yet (byte/file sums over job_items).
+        // Dashboard polling runs every few seconds. Cache the DB health check
+        // and use quick_check here; the explicit Doctor flow can do deeper checks.
         if let Ok(conn) = Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY) {
-            if let Ok(mut stmt) = conn.prepare("PRAGMA integrity_check;") {
-                let integrity: Result<String, _> = stmt.query_row([], |row| row.get(0));
-                if let Ok(val) = integrity {
-                    db_integrity = val;
-                }
-            }
+            db_integrity = cached_db_health(&conn, &db_path);
             if let Ok(mut stmt) =
                 conn.prepare("SELECT COALESCE(SUM(completed_items), 0) FROM jobs;")
             {
@@ -123,10 +194,8 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
                     if token.is_empty() {
                         (None, Some("no_token".to_string()))
                     } else {
-                        match verify_telegram_bot(token.to_string()).await {
-                            Ok(check) if check.ok => (check.username, Some("active".to_string())),
-                            _ => (None, Some("error".to_string())),
-                        }
+                        let (username, status) = cached_telegram_status(token).await;
+                        (username, Some(status))
                     }
                 }
                 Err(_) => (None, Some("error".to_string())),

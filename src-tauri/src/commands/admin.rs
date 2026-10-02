@@ -22,6 +22,53 @@ fn backup_dir() -> Result<std::path::PathBuf, String> {
     Ok(dirs.data_dir().join("backups"))
 }
 
+#[cfg(target_os = "linux")]
+fn stop_daemon_for_restore() -> Result<bool, String> {
+    let was_active = std::process::Command::new("systemctl")
+        .args(["--user", "is-active", "gdclone-bot"])
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim() == "active")
+        .unwrap_or(false);
+    if was_active {
+        let output = std::process::Command::new("systemctl")
+            .args(["--user", "stop", "gdclone-bot"])
+            .output()
+            .map_err(|e| format!("failed to stop daemon before restore: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "failed to stop daemon before restore: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+    }
+    Ok(was_active)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn stop_daemon_for_restore() -> Result<bool, String> {
+    Ok(false)
+}
+
+#[cfg(target_os = "linux")]
+fn restart_daemon_after_restore() -> Result<(), String> {
+    let output = std::process::Command::new("systemctl")
+        .args(["--user", "start", "gdclone-bot"])
+        .output()
+        .map_err(|e| format!("failed to restart daemon after restore: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "failed to restart daemon after restore: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn restart_daemon_after_restore() -> Result<(), String> {
+    Ok(())
+}
+
 // ── Default Destination ─────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -186,7 +233,16 @@ pub async fn backup_database() -> Result<BackupInfoDto, String> {
 
     if db_path.exists() {
         let dest_db = target_dir.join("state.db");
-        std::fs::copy(&db_path, &dest_db).map_err(|e| e.to_string())?;
+        let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        let dest = dest_db.to_string_lossy().into_owned();
+        conn.execute("VACUUM INTO ?1", [dest])
+            .map_err(|e| format!("failed to create consistent SQLite snapshot: {e}"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dest_db, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| e.to_string())?;
+        }
         total_size += std::fs::metadata(&dest_db).map(|m| m.len()).unwrap_or(0);
         files_count += 1;
     }
@@ -194,6 +250,12 @@ pub async fn backup_database() -> Result<BackupInfoDto, String> {
     if cfg_path.exists() {
         let dest_cfg = target_dir.join("config.toml");
         std::fs::copy(&cfg_path, &dest_cfg).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dest_cfg, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| e.to_string())?;
+        }
         total_size += std::fs::metadata(&dest_cfg).map(|m| m.len()).unwrap_or(0);
         files_count += 1;
     }
@@ -267,23 +329,50 @@ pub async fn restore_backup(backup_name: String) -> Result<(), String> {
 
     let db_path = get_db_path();
     let cfg_path = get_config_path();
+    let was_active = stop_daemon_for_restore()?;
 
-    let src_db = source_dir.join("state.db");
-    if src_db.exists() {
-        std::fs::copy(&src_db, &db_path).map_err(|e| e.to_string())?;
+    let restore_result = (|| -> Result<(), String> {
+        let src_db = source_dir.join("state.db");
+        if src_db.exists() {
+            // The backup is a single-file SQLite snapshot. Remove sidecar
+            // files from the old database before replacing it.
+            for sidecar in [db_path.with_extension("db-wal"), db_path.with_extension("db-shm")] {
+                if sidecar.exists() {
+                    std::fs::remove_file(&sidecar).map_err(|e| e.to_string())?;
+                }
+            }
+            std::fs::copy(&src_db, &db_path).map_err(|e| e.to_string())?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&db_path, std::fs::Permissions::from_mode(0o600))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        let src_cfg = source_dir.join("config.toml");
+        if src_cfg.exists() {
+            std::fs::copy(&src_cfg, &cfg_path).map_err(|e| e.to_string())?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&cfg_path, std::fs::Permissions::from_mode(0o600))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    })();
+
+    if was_active {
+        let restart_result = restart_daemon_after_restore();
+        if restore_result.is_ok() {
+            restart_result?;
+        } else {
+            let _ = restart_result;
+        }
     }
 
-    let src_cfg = source_dir.join("config.toml");
-    if src_cfg.exists() {
-        std::fs::copy(&src_cfg, &cfg_path).map_err(|e| e.to_string())?;
-    }
-
-    #[cfg(target_os = "linux")]
-    let _ = std::process::Command::new("systemctl")
-        .args(["--user", "restart", "gdclone-bot"])
-        .output();
-
-    Ok(())
+    restore_result
 }
 
 #[tauri::command]
@@ -318,33 +407,31 @@ pub async fn clear_app_logs() -> Result<(), String> {
     Ok(())
 }
 
-// ── Remote Update Execution ─────────────────────────────────────────────────
+// ── Remote Update Handoff ───────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn apply_remote_update() -> Result<String, String> {
-    // 1. Snapshot safety backup
-    let _ = backup_database().await;
-
-    // 2. Trigger packaging install or git pull
-    let cmd = "cd /home/admin/Projects/502Drive && (git pull --ff-only 2>&1 || true) && bash packaging/install.sh 2>&1";
-    let output = std::process::Command::new("bash")
-        .args(["-c", cmd])
-        .output()
-        .map_err(|e| format!("Lỗi tiến trình cập nhật: {e}"))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    if !output.status.success() && stdout.is_empty() {
-        return Err(format!("Cập nhật thất bại: {stderr}"));
+    // Do not execute a mutable git checkout or shell installer from the GUI.
+    // Resolve the latest release through the same verified GitHub API path as
+    // the update checker, then hand installation back to the user.
+    let update = super::doctor::check_remote_update().await?;
+    if !update.update_available {
+        return Ok("502Drive đang ở phiên bản mới nhất.".to_string());
     }
 
-    #[cfg(target_os = "linux")]
-    let _ = std::process::Command::new("systemctl")
-        .args(["--user", "restart", "gdclone-bot", "502drive-tray"])
-        .output();
+    let url = update
+        .download_url
+        .ok_or_else(|| "Bản phát hành mới không có URL tải xuống".to_string())?;
+    const TRUSTED_RELEASE_PREFIX: &str = "https://github.com/GiaHung07/502Drive/releases";
+    if !url.starts_with(TRUSTED_RELEASE_PREFIX) {
+        return Err("URL bản phát hành không thuộc kho 502Drive chính thức".to_string());
+    }
 
-    Ok("Cập nhật thành công! Bản mới nhất đã được cài đặt và khởi động lại dịch vụ.".to_string())
+    open::that(&url).map_err(|e| format!("Không thể mở trang tải bản cập nhật: {e}"))?;
+    Ok(format!(
+        "Đã mở trang GitHub Releases cho {}. Hãy tải gói phù hợp và kiểm tra SHA256 trước khi cài đặt.",
+        update.latest_version
+    ))
 }
 
 #[cfg(test)]
