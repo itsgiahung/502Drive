@@ -123,7 +123,10 @@ pub(crate) fn render_settings_panel(
         format!("{}:", lang.text(T::SettingsNotifications)),
         format!("• {job_complete}: {}", state(prefs.notify_job_complete)),
         format!("• {job_error}: {}", state(prefs.notify_job_error)),
-        format!("• {watch_conflicts}: {}", state(prefs.notify_watch_conflicts)),
+        format!(
+            "• {watch_conflicts}: {}",
+            state(prefs.notify_watch_conflicts)
+        ),
         format!("{}  {}", lang.text(T::SettingsLanguage), lang_value),
     ];
     lines.join("\n")

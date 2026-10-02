@@ -1050,11 +1050,7 @@ pub async fn handle_callback_query(
                 keyboards::UiLanguage::En => "en",
             };
             let _ = repo::set_telegram_notification_preference(
-                &db,
-                user_id,
-                language,
-                preference,
-                enabled,
+                &db, user_id, language, preference, enabled,
             )
             .await;
             let prefs = notification_preferences(&db, user_id, lang).await;
@@ -1070,11 +1066,8 @@ pub async fn handle_callback_query(
                 }
                 _ => lang.text(crate::telegram::i18n::TextKey::HomeStatusNotConnected),
             };
-            let text = crate::telegram::render::home::render_settings_panel(
-                lang,
-                drive_status,
-                &prefs,
-            );
+            let text =
+                crate::telegram::render::home::render_settings_panel(lang, drive_status, &prefs);
             edit_or_send_with_keyboard(
                 &bot,
                 chat_id,
@@ -1105,11 +1098,8 @@ pub async fn handle_callback_query(
                 _ => lang.text(crate::telegram::i18n::TextKey::HomeStatusNotConnected),
             };
             let prefs = notification_preferences(&db, user_id, lang).await;
-            let text = crate::telegram::render::home::render_settings_panel(
-                lang,
-                drive_status,
-                &prefs,
-            );
+            let text =
+                crate::telegram::render::home::render_settings_panel(lang, drive_status, &prefs);
             edit_or_send_with_keyboard(
                 &bot,
                 chat_id,
