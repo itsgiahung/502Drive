@@ -167,7 +167,10 @@ jobs:
         run: |
           set -euo pipefail
           rpm -Kv dist/502drive_*_linux_amd64.rpm | tee digest.txt
-          grep -q 'digests OK' digest.txt
+          # rpm 4.x prints "digests OK"; newer rpm prints one OK line per digest.
+          if grep -qiE 'NOT OK|BAD|FAILED' digest.txt; then exit 1; fi
+          grep -qE 'digests OK|Header SHA256 digest: OK' digest.txt
+          grep -qE 'digests OK|Payload SHA256 digest: OK' digest.txt
 
       - name: Install transaction test
         run: rpm -i --test dist/502drive_*_linux_amd64.rpm
