@@ -259,7 +259,12 @@ type harness struct {
 	now time.Time
 }
 
-func newHarness(t *testing.T, ownerID int64) *harness {
+func newHarness(t *testing.T, ownerID int64) *harness { return buildHarness(t, ownerID, true) }
+
+// newBareHarness has no destination at all: the first copy must still work.
+func newBareHarness(t *testing.T, ownerID int64) *harness { return buildHarness(t, ownerID, false) }
+
+func buildHarness(t *testing.T, ownerID int64, withDest bool) *harness {
 	t.Helper()
 	h := &harness{t: t, ownerID: ownerID, now: time.Now().UTC()}
 	store, err := state.Open(t.TempDir())
@@ -276,15 +281,17 @@ func newHarness(t *testing.T, ownerID int64) *harness {
 	h.svc = &app.Service{Store: store, Version: "test", Now: h.clock,
 		Provider: func(context.Context) (drive.Provider, error) { return h.drive, nil }}
 	h.api = newFakeAPI(t)
-	destFolder := h.drive.Folder("Archive", "root")
-	d, _, err := h.svc.AddDestination(context.Background(), app.Owner, "dst-1", app.DestinationRequest{Source: destFolder.ID, Name: "Archive"})
-	if err != nil {
-		t.Fatal(err)
+	if withDest {
+		destFolder := h.drive.Folder("Archive", "root")
+		d, _, err := h.svc.AddDestination(context.Background(), app.Owner, "dst-1", app.DestinationRequest{Source: destFolder.ID, Name: "Archive"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d, _, err = h.svc.SetDefaultDestination(context.Background(), app.Owner, "dst-default", d.ID, d.Revision); err != nil {
+			t.Fatal(err)
+		}
+		h.dest = d
 	}
-	if d, _, err = h.svc.SetDefaultDestination(context.Background(), app.Owner, "dst-default", d.ID, d.Revision); err != nil {
-		t.Fatal(err)
-	}
-	h.dest = d
 	h.tg = h.newTelegram()
 	return h
 }

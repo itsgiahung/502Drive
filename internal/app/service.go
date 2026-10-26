@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -119,10 +118,7 @@ func (s *Service) Inspect(ctx context.Context, p Principal, key string, req Plan
 	}
 	var dst state.Destination
 	if req.DestinationID == "" {
-		dst, err = s.Store.DefaultDestination(ctx)
-		if errors.Is(err, state.ErrNotFound) {
-			return PlanView{}, false, Fail(http.StatusConflict, "destination_required", "Choose a destination folder first.")
-		}
+		dst, err = s.defaultOrRoot(ctx)
 	} else {
 		dst, err = s.Store.GetDestination(ctx, req.DestinationID)
 	}

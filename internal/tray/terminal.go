@@ -20,13 +20,20 @@ func terminalSpecs(goos string) []termSpec {
 			{name: "cmd", exec: []string{"/c", "start", ""}},
 		}
 	}
+	// Native emulators come first: a wrapper that merely pretends to be
+	// gnome-terminal (or an alternatives symlink) may not pass arguments on.
 	return []termSpec{
-		{name: "x-terminal-emulator", exec: []string{"-e"}},
-		{name: "gnome-terminal", exec: []string{"--"}},
-		{name: "konsole", exec: []string{"-e"}},
-		{name: "xfce4-terminal", exec: []string{"-x"}},
+		{name: "ghostty", exec: []string{"-e"}},
 		{name: "kitty", exec: []string{}},
 		{name: "alacritty", exec: []string{"-e"}},
+		{name: "wezterm", exec: []string{"start", "--"}},
+		{name: "foot", exec: []string{}},
+		{name: "konsole", exec: []string{"-e"}},
+		{name: "gnome-terminal", exec: []string{"--"}},
+		{name: "xfce4-terminal", exec: []string{"-x"}},
+		{name: "tilix", exec: []string{"-e"}},
+		{name: "xterm", exec: []string{"-e"}},
+		{name: "x-terminal-emulator", exec: []string{"-e"}},
 	}
 }
 
@@ -56,7 +63,7 @@ func TerminalCommand(h Host, exe string) ([]string, error) {
 		argv := append([]string{spec.name}, spec.exec...)
 		return append(argv, exe, "menu"), nil
 	}
-	return nil, errors.New("no terminal emulator found (set $TERMINAL or install gnome-terminal/konsole/kitty)")
+	return nil, errors.New("no terminal emulator found (set $TERMINAL or install ghostty, kitty, konsole or gnome-terminal)")
 }
 
 // OpenTUI starts the menu in a terminal; the tray stays alive.

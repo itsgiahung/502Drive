@@ -507,24 +507,41 @@ func (t *Telegram) settingsPage(ctx context.Context, p app.Principal, chatID int
 		[]button{nav(tx.back, "home")})
 }
 
-func (t *Telegram) previewCard(ctx context.Context, p app.Principal, chatID int64, messageID int, view app.PlanView, note string) error {
+func (t *Telegram) previewCard(ctx context.Context, p app.Principal, chatID int64, messageID int, view app.PlanView, note, root string) error {
 	tx := t.text(ctx, p)
 	var b strings.Builder
-	fmt.Fprintf(&b, "<b>%s</b>\n", escape(fmt.Sprintf(tx.previewTitle, short(view.RootName, 60))))
-	fmt.Fprintf(&b, "%s: %s\n", tx.sourceLabel, escape(short(view.SourceName, 80)))
-	fmt.Fprintf(&b, "%s: %s\n", tx.targetLabel, escape(short(view.RootName, 80)))
+	fmt.Fprintf(&b, "📥 <b>%s</b>\n\n", escape(fmt.Sprintf(tx.previewTitle, short(view.SourceName, 60))))
 	seen := fmt.Sprintf("%d files, %d folders", view.Preview.ObservedFiles, view.Preview.ObservedFolders)
 	if !view.Preview.ScanComplete {
 		seen += " " + tx.scanIncomplete
 	}
-	fmt.Fprintf(&b, "%s: %s\n", tx.seenLabel, seen)
+	fmt.Fprintf(&b, "📎 %s: %s <i>(%s)</i>\n", tx.sourceLabel, escape(short(view.SourceName, 80)), escape(seen))
+	fmt.Fprintf(&b, "%s: <b>%s</b>\n", tx.saveToLabel, escape(short(t.destinationLabel(ctx, view.DestinationID), 60)))
+	fmt.Fprintf(&b, "%s: <b>%s</b>\n", tx.nameLabel, escape(short(view.RootName, 80)))
+	for _, w := range view.Warnings {
+		fmt.Fprintf(&b, "⚠️ %s\n", escape(short(w, 160)))
+	}
 	if note != "" {
 		fmt.Fprintf(&b, "\n%s\n", note)
 	}
-	payload, _ := json.Marshal(planPayload{Source: refOf(view.Plan), Root: view.RootName})
+	pl := planPayload{Source: refOf(view.Plan), Root: root, Destination: view.DestinationID}
+	payload, _ := json.Marshal(pl)
 	return t.showCard(ctx, p, chatID, messageID, b.String(),
-		[]button{styled(act("✅ "+tx.copy, "copy", view.ID, view.Revision, string(payload)), "success"), act("📁 "+tx.destination, "choose_dest", view.ID, view.Revision, string(payload))},
+		[]button{styled(act(tx.copyNow, "copy", view.ID, view.Revision, string(payload)), "success")},
+		[]button{act(tx.renameBtn, "rename", view.ID, view.Revision, string(payload)), act(tx.pickBtn, "pick", view.ID, view.Revision, string(payload))},
 		[]button{styled(act("✖ "+tx.cancel, "cancel_preview", view.ID, view.Revision, ""), "danger")})
+}
+
+// destinationLabel is the name shown for a destination id.
+func (t *Telegram) destinationLabel(ctx context.Context, id string) string {
+	if dests, err := t.svc.Destinations(ctx); err == nil {
+		for _, d := range dests {
+			if d.ID == id {
+				return d.Name
+			}
+		}
+	}
+	return id
 }
 
 // syncTimezone is the zone used by chat presets; schedules never use the host
@@ -588,6 +605,10 @@ func (t *Telegram) showError(ctx context.Context, p app.Principal, chatID int64,
 	if ae == nil {
 		ae = app.Fail(500, "internal_error", "Internal error.")
 	}
-	return t.showCard(ctx, p, chatID, messageID, fmt.Sprintf("%s: %s", tx.problemLabel, escape(ae.Message)),
+	msg := ae.Message
+	if local := tx.errMsg[ae.Code]; local != "" {
+		msg = local
+	}
+	return t.showCard(ctx, p, chatID, messageID, fmt.Sprintf("⚠️ %s: %s", tx.problemLabel, escape(msg)),
 		[]button{nav(tx.back, "home")})
 }

@@ -309,14 +309,18 @@ func TestTerminalCommandTriesTheDocumentedOrder(t *testing.T) {
 		want []string
 	}{
 		{"gnome", map[string]bool{"gnome-terminal": true}, nil, []string{"gnome-terminal", "--", exe, "menu"}},
-		{"x-terminal-emulator first", map[string]bool{"x-terminal-emulator": true, "gnome-terminal": true}, nil,
+		{"ghostty before a gnome-terminal wrapper", map[string]bool{"ghostty": true, "gnome-terminal": true}, nil,
+			[]string{"ghostty", "-e", exe, "menu"}},
+		{"x-terminal-emulator is the last resort", map[string]bool{"x-terminal-emulator": true, "gnome-terminal": true}, nil,
+			[]string{"gnome-terminal", "--", exe, "menu"}},
+		{"only x-terminal-emulator", map[string]bool{"x-terminal-emulator": true}, nil,
 			[]string{"x-terminal-emulator", "-e", exe, "menu"}},
 		{"konsole", map[string]bool{"konsole": true}, nil, []string{"konsole", "-e", exe, "menu"}},
 		{"kitty", map[string]bool{"kitty": true}, nil, []string{"kitty", exe, "menu"}},
 		{"env terminal wins", map[string]bool{"kitty": true, "alacritty": true}, map[string]string{"TERMINAL": "alacritty"},
 			[]string{"alacritty", "-e", exe, "menu"}},
-		{"unknown env terminal", map[string]bool{"foot": true}, map[string]string{"TERMINAL": "foot"},
-			[]string{"foot", "-e", exe, "menu"}},
+		{"unknown env terminal", map[string]bool{"mystery": true}, map[string]string{"TERMINAL": "mystery"},
+			[]string{"mystery", "-e", exe, "menu"}},
 		{"env terminal missing falls back", map[string]bool{"kitty": true}, map[string]string{"TERMINAL": "broken"},
 			[]string{"kitty", exe, "menu"}},
 	}

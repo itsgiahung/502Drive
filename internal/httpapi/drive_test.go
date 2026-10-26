@@ -142,3 +142,40 @@ func TestFileInfoReturnsOneItem(t *testing.T) {
 	}
 	h.conform("GET", "/v1/drive/files/{id}", r)
 }
+
+func TestFirstCopyNeedsNoSetupAndUsesMyDrive(t *testing.T) {
+	h := newHarness(t, false)
+	src := h.fake.Folder("Shared stuff", "root")
+	r := h.do("POST", "/v1/plans", map[string]any{"source": src.ID}, "p1", true)
+	if r.status != 201 {
+		t.Fatalf("a first plan without any destination = %d %s", r.status, r.body)
+	}
+	if got := h.data(r)["root_name"]; got != "Shared stuff" {
+		t.Fatalf("the output keeps the source's own name by default, got %v", got)
+	}
+	if r = h.do("POST", "/v1/plans", map[string]any{"source": src.ID}, "p2", true); r.status != 201 {
+		t.Fatalf("second plan = %d", r.status)
+	}
+	list := h.do("GET", "/v1/destinations", nil, "", true)
+	items := h.data(list)["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("exactly one automatic destination expected, got %d", len(items))
+	}
+	d := items[0].(map[string]any)
+	if d["name"] != "My Drive" || d["is_default"] != true {
+		t.Fatalf("destination = %v", d)
+	}
+}
+
+func TestOnceYouHaveDestinationsNothingIsCreatedBehindYourBack(t *testing.T) {
+	h := newHarness(t, false)
+	folder := h.fake.Folder("Mine", "root")
+	if r := h.do("POST", "/v1/destinations", map[string]any{"source": folder.ID}, "d1", true); r.status != 201 {
+		t.Fatalf("add destination = %d", r.status)
+	}
+	src := h.fake.Folder("Other", "root")
+	r := h.do("POST", "/v1/plans", map[string]any{"source": src.ID}, "p1", true)
+	if r.status != 409 {
+		t.Fatalf("destinations exist but none is the default: the user must choose, got %d %s", r.status, r.body)
+	}
+}

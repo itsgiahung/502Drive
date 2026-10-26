@@ -30,7 +30,11 @@ func (t *Telegram) onMessage(ctx context.Context, updateID int64, m *models.Mess
 		text = strings.TrimSpace(m.Caption)
 	}
 	if page := keyboardPage(text); page != "" {
+		t.await.Delete(m.Chat.ID)
 		return t.page(ctx, p, m.Chat.ID, 0, page)
+	}
+	if a, ok := t.takeAwait(m.Chat.ID, text); ok {
+		return t.finishAwait(ctx, p, m.Chat.ID, a, text, t.attemptKey(updateID))
 	}
 	if text == "" {
 		return t.page(ctx, p, m.Chat.ID, 0, "home")
@@ -128,7 +132,7 @@ func (t *Telegram) paste(ctx context.Context, p app.Principal, chatID int64, mes
 		if !previewOnSubmitError(err) {
 			return t.showError(ctx, p, chatID, messageID, err)
 		}
-		return t.previewCard(ctx, p, chatID, messageID, view, submitNote(err, tx))
+		return t.previewCard(ctx, p, chatID, messageID, view, submitNote(err, tx), "")
 	}
 	note := ""
 	if prefs.AutoCopy {
@@ -136,7 +140,7 @@ func (t *Telegram) paste(ctx context.Context, p app.Principal, chatID int64, mes
 		// destination is set: never copy to a target the user did not confirm.
 		note = tx.confirmDest
 	}
-	return t.previewCard(ctx, p, chatID, messageID, view, note)
+	return t.previewCard(ctx, p, chatID, messageID, view, note, "")
 }
 
 // previewOnSubmitError reports admission failures that belong on a fresh
@@ -211,6 +215,18 @@ func (t *Telegram) act(ctx context.Context, p app.Principal, st state.Callback, 
 		return t.actChooseDest(ctx, p, st, tx)
 	case "use_dest":
 		return t.actUseDest(ctx, p, st, tx)
+	case "rename":
+		return t.actRename(ctx, p, st, tx)
+	case "back_preview":
+		return t.actBackPreview(ctx, p, st, tx)
+	case "pick":
+		return t.actPick(ctx, p, st, tx)
+	case "browse":
+		return t.actBrowse(ctx, p, st, tx)
+	case "savehere":
+		return t.actSaveHere(ctx, p, st, tx)
+	case "newdir":
+		return t.actNewDir(ctx, p, st, tx)
 	case "cancel_preview":
 		return t.showCard(ctx, p, st.ChatID, st.MessageID, tx.cancelled, []button{nav(tx.back, "home")})
 	case "job":
@@ -288,7 +304,7 @@ func (t *Telegram) actUseDest(ctx context.Context, p app.Principal, st state.Cal
 	if err != nil {
 		return t.showError(ctx, p, st.ChatID, st.MessageID, err)
 	}
-	return t.previewCard(ctx, p, st.ChatID, st.MessageID, view, "")
+	return t.previewCard(ctx, p, st.ChatID, st.MessageID, view, "", pl.Root)
 }
 
 func (t *Telegram) actJob(ctx context.Context, p app.Principal, st state.Callback) error {

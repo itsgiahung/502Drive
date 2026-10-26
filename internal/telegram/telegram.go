@@ -71,6 +71,8 @@ type Telegram struct {
 	proc  sync.Mutex
 	// names remembers each chat's first name for the welcome card (memory only).
 	names sync.Map // int64 -> string
+	// await holds the free-text answer a chat owes (rename / new folder name).
+	await sync.Map // int64 -> awaitState
 }
 
 func New(ctx context.Context, o Options) (*Telegram, error) {

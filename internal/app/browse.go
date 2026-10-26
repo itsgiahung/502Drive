@@ -154,3 +154,56 @@ func (s *Service) Mkdir(ctx context.Context, p Principal, key, parentID, name st
 	}
 	return drive.File{}, false, err
 }
+
+// defaultOrRoot returns the default destination. When no destination exists at
+// all it creates "My Drive" (the root of the connected account) and makes it
+// the default, so the very first copy works without any setup. The two writes
+// use fixed idempotency keys, so concurrent first copies make one destination.
+func (s *Service) defaultOrRoot(ctx context.Context) (state.Destination, error) {
+	dst, err := s.Store.DefaultDestination(ctx)
+	if !errors.Is(err, state.ErrNotFound) {
+		return dst, err
+	}
+	existing, err := s.Store.ListDestinations(ctx)
+	if err != nil {
+		return state.Destination{}, err
+	}
+	if len(existing) > 0 {
+		return state.Destination{}, Fail(http.StatusConflict, "destination_required", "Choose a destination folder first.")
+	}
+	prov, err := s.provider(ctx)
+	if err != nil {
+		return state.Destination{}, err
+	}
+	root, err := prov.GetFile(ctx, RootFolder, "")
+	if err != nil {
+		return state.Destination{}, err
+	}
+	d, _, err := s.Store.AddDestination(ctx, Owner.ID, "auto-root-destination", DestinationRequest{Source: RootFolder},
+		state.Destination{FolderID: root.ID, DriveID: root.DriveID, Name: "My Drive"})
+	if err != nil {
+		return state.Destination{}, err
+	}
+	def, _, err := s.Store.SetDefaultDestination(ctx, Owner.ID, "auto-root-default:"+d.ID, d.ID, d.Revision)
+	return def, err
+}
+
+// EnsureDestination returns the destination that points at folderID, creating
+// it when there is none. The idempotency key is derived from the folder, so
+// choosing the same folder twice never makes a duplicate.
+func (s *Service) EnsureDestination(ctx context.Context, p Principal, folderID string) (state.Destination, error) {
+	if err := requireOwner(p); err != nil {
+		return state.Destination{}, err
+	}
+	existing, err := s.Store.ListDestinations(ctx)
+	if err != nil {
+		return state.Destination{}, err
+	}
+	for _, d := range existing {
+		if d.FolderID == folderID {
+			return d, nil
+		}
+	}
+	d, _, err := s.AddDestination(ctx, p, "dest-"+folderID, DestinationRequest{Source: folderID})
+	return d, err
+}

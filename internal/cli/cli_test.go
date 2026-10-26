@@ -131,7 +131,7 @@ func TestExitCodes(t *testing.T) {
 		{"bad color", []string{"--color", "rainbow", "status"}, ExitUsage},
 		{"not found", []string{"jobs", "get", "job_nope"}, ExitNotFound},
 		{"bad source", []string{"inspect", "https://evil.example/x"}, ExitUsage},
-		{"no destination yet", []string{"inspect", "abcdefghijk"}, ExitConflict},
+		{"unknown source", []string{"inspect", "abcdefghijk"}, ExitNotFound},
 	} {
 		if res := r.run(c.args...); res.code != c.want {
 			t.Errorf("%s: exit %d want %d (%s)", c.name, res.code, c.want, res.errOut)
@@ -439,11 +439,11 @@ func TestMenuCopyFlowAndCleanExit(t *testing.T) {
 	}
 }
 
-func TestMenuShowsActionableErrorsAndKeepsRunning(t *testing.T) {
-	r := newRig(t) // no destination configured
+func TestMenuCopiesToMyDriveWhenNoDestinationIsConfigured(t *testing.T) {
+	r := newRig(t) // no destination configured: "My Drive" is created on demand
 	src := r.fake.Folder("X", "root")
-	res := r.menu("1\n" + src.ID + "\n0\n")
-	if res.code != 0 || !strings.Contains(res.out, "destination") || !strings.Contains(res.out, "destinations add") {
+	res := r.menu("1\n" + src.ID + "\n1\n0\n")
+	if res.code != 0 || !strings.Contains(res.out, "Accepted: X") {
 		t.Fatalf("%+v", res)
 	}
 }

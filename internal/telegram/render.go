@@ -47,7 +47,12 @@ type texts struct {
 	kbCopy, kbJobs, kbSync, kbDest, kbAccount, kbSettings    string
 	kbPlaceholder, kbReady                                   string
 	welcomeTitle, welcomeHello, welcomeFeatures, welcomeTail string
-	states                                                   map[string]string
+	// Link-first copy flow.
+	copyNow, renameBtn, pickBtn, saveHere, newFolderBtn    string
+	upBtn, nextBtn, backBtn, askName, askFolder, pickTitle string
+	saveToLabel, nameLabel, noFolders, renamed             string
+	errMsg                                                 map[string]string
+	states                                                 map[string]string
 }
 
 func langOf(s string) language {
@@ -115,6 +120,28 @@ var vietnamese = texts{
 		"📁 <b>Thư mục đích</b> — chọn nơi lưu bản copy\n" +
 		"⚙️ <b>Cài đặt</b> — ngôn ngữ, thông báo, dán là copy",
 	welcomeTail: "Dán link Drive hoặc chọn một mục bên dưới 👇",
+	copyNow:     "✅ Copy ngay", renameBtn: "✏️ Đổi tên", pickBtn: "📁 Chọn nơi lưu", saveHere: "✅ Lưu vào đây",
+	newFolderBtn: "➕ Thư mục mới", upBtn: "⬆️ Lên", nextBtn: "⏭ Trang sau", backBtn: "↩️ Quay lại",
+	askName:   "✏️ Gửi tên mới cho thư mục kết quả (hoặc gửi /cancel để thôi).",
+	askFolder: "➕ Gửi tên cho thư mục mới (hoặc gửi /cancel để thôi).",
+	pickTitle: "📁 <b>Chọn nơi lưu</b>", saveToLabel: "📂 Lưu vào", nameLabel: "🏷 Tên kết quả",
+	noFolders: "Chưa có thư mục con nào ở đây.", renamed: "Đã đổi tên.",
+	errMsg: map[string]string{
+		"destination_required":       "Chọn thư mục đích trước (nhấn 📁 Chọn nơi lưu).",
+		"ambiguous_source":           "Link không rõ ràng. Hãy gửi đúng một link Drive.",
+		"source_not_found":           "Không tìm thấy mục này, hoặc bạn chưa được chia sẻ.",
+		"not_found":                  "Không tìm thấy mục này, hoặc bạn chưa được chia sẻ.",
+		"copy_not_permitted":         "Chủ sở hữu không cho phép copy file này.",
+		"unsupported_source":         "Không copy trực tiếp shortcut: hãy mở mục đích rồi gửi link của nó.",
+		"destination_not_writable":   "Tài khoản này không thêm được file vào thư mục đó.",
+		"capacity_exceeded":          "Hàng đợi đang đầy, thử lại sau ít phút.",
+		"rate_limited":               "Google đang giới hạn tốc độ, thử lại sau.",
+		"provider_unavailable":       "Google tạm thời không phản hồi, thử lại sau.",
+		"account_reconnect_required": "Cần kết nối lại Google: nhấn l trong TUI hoặc chạy 502drive account login.",
+		"forbidden":                  "Bạn không có quyền làm việc này.",
+		"not_a_folder":               "Mục này không phải thư mục.",
+		"invalid_request":            "Yêu cầu không hợp lệ.",
+	},
 	states: map[string]string{
 		state.JobQueued: "Đã xếp hàng", state.JobRunning: "Đang sao chép", state.JobPausing: "Đang dừng",
 		state.JobPaused: "Đã tạm dừng", state.JobCancelling: "Đang hủy", state.JobReconciling: "Đang xác minh",
@@ -174,6 +201,28 @@ var english = texts{
 		"📁 <b>Destination</b> — choose where copies go\n" +
 		"⚙️ <b>Settings</b> — language, notifications, paste-to-copy",
 	welcomeTail: "Paste a Drive link or pick an option below 👇",
+	copyNow:     "✅ Copy now", renameBtn: "✏️ Rename", pickBtn: "📁 Choose where", saveHere: "✅ Save here",
+	newFolderBtn: "➕ New folder", upBtn: "⬆️ Up", nextBtn: "⏭ Next page", backBtn: "↩️ Back",
+	askName:   "✏️ Send the new name for the output folder (or /cancel).",
+	askFolder: "➕ Send a name for the new folder (or /cancel).",
+	pickTitle: "📁 <b>Choose where to save</b>", saveToLabel: "📂 Save to", nameLabel: "🏷 Output name",
+	noFolders: "No sub-folders here yet.", renamed: "Renamed.",
+	errMsg: map[string]string{
+		"destination_required":       "Choose a destination first (tap 📁 Choose where).",
+		"ambiguous_source":           "That link is ambiguous. Send exactly one Drive link.",
+		"source_not_found":           "That item was not found, or it is not shared with you.",
+		"not_found":                  "That item was not found, or it is not shared with you.",
+		"copy_not_permitted":         "The owner does not allow this file to be copied.",
+		"unsupported_source":         "Shortcuts cannot be copied directly: open the target and send its link.",
+		"destination_not_writable":   "This account cannot add files to that folder.",
+		"capacity_exceeded":          "The queue is full, try again in a few minutes.",
+		"rate_limited":               "Google is rate limiting, try again shortly.",
+		"provider_unavailable":       "Google is not answering right now, try again later.",
+		"account_reconnect_required": "Google needs reconnecting: press l in the TUI or run 502drive account login.",
+		"forbidden":                  "You are not allowed to do that.",
+		"not_a_folder":               "That item is not a folder.",
+		"invalid_request":            "Invalid request.",
+	},
 	states: map[string]string{
 		state.JobQueued: "Queued", state.JobRunning: "Copying", state.JobPausing: "Stop requested",
 		state.JobPaused: "Paused", state.JobCancelling: "Cancel requested", state.JobReconciling: "Verifying",
