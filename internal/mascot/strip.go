@@ -2,56 +2,72 @@ package mascot
 
 import "math"
 
-var tinyFolder = []string{
-	"oo....",
-	"oHHHHo",
-	"offffo",
-	"oooooo",
-}
-
-func (cv *canvas) tinyFolder(x, y int, hi, fill rgb, a float64) {
-	for r, row := range tinyFolder {
-		for c, ch := range row {
-			switch ch {
-			case 'o':
-				cv.blend(x+c, y+r, mix(cOutline, fill, .2), a)
-			case 'H':
-				cv.blend(x+c, y+r, hi, a)
-			case 'f':
-				cv.blend(x+c, y+r, fill, a)
-			}
-		}
-	}
-}
-
-// Strip draws the file transfer in four text rows: a tiny source folder, a tiny
-// destination folder and files that hop between them. It is shown only while
-// something is copying or syncing.
-func Strip(t float64) *Frame {
-	cv := &canvas{}
-	const left, right = 1, StripCols - 7
-	for i, ph := range flow(t * 1.3) {
-		kind := int(math.Floor(t*1.3*flowSpeed+float64(i)/3)) + i
-		x := float64(left+4) + (float64(right-left-4))*ph
-		y := 4.2 - 4.4*math.Sin(ph*math.Pi) // hop: starts low, peaks near the top
-		base := paperTints[kind%len(paperTints)]
-		for r := 0; r < 3; r++ {
-			for c := 0; c < 2; c++ {
-				col := base
-				if r == 1 {
-					col = cGold
+// stripFolder splits the open lid/back and front lip so a packet really passes
+// through the opening instead of being painted over the folder.
+func (cv *canvas) stripFolder(x int, hi, fill rgb, open float64, front bool) {
+	lift := int(math.Round(open))
+	if !front {
+		for y, row := range []string{"oo.....", "oHHoooo", "oHHHHHo", "ooooooo"} {
+			for dx, ch := range row {
+				c := cOutline
+				if ch == 'H' {
+					c = hi
 				}
-				cv.blend(int(x)+c, int(y)+r, col, 1)
+				if ch != '.' {
+					cv.blend(x+dx, 3-lift+y, c, 1)
+				}
 			}
 		}
+		return
 	}
-	bump := 0
-	for _, ph := range flow(t * 1.3) {
-		if ph > .94 {
-			bump = 1
+	for y := 0; y < 3; y++ {
+		for dx := 0; dx < 7; dx++ {
+			c := fill
+			if dx == 0 || dx == 6 || y == 2 {
+				c = mix(cOutline, fill, .2)
+			}
+			if y == 0 && dx > 0 && dx < 6 {
+				c = hi
+			}
+			cv.blend(x+dx, 5+y, c, 1)
 		}
 	}
-	cv.tinyFolder(left, 4, hx(170, 178, 255), hx(120, 130, 240), 1)
-	cv.tinyFolder(right, 4-bump, hx(255, 228, 140), cGold, 1)
-	return &Frame{cv}
+	cv.blend(x+4, 6, mix(hi, cWhite, .4), .8)
+}
+
+func stripPos(ph float64) (x, y float64) {
+	x = 5 + 44*smooth(ph)
+	y = 3.6 - 3.1*math.Sin(ph*math.Pi)
+	return
+}
+
+// Strip is a separate four-row transfer scene; callers show it only while busy.
+func Strip(t float64) *Frame {
+	t = sceneTime(t)
+	cv := &canvas{}
+	phases := flow(t * 1.3)
+	srcOpen, dstOpen := 0.0, 0.0
+	for _, ph := range phases {
+		srcOpen = max(srcOpen, pulse(ph, 0, .25))
+		dstOpen = max(dstOpen, pulse(ph, .75, .25))
+	}
+	srcHi, srcFill := hx(171, 192, 255), hx(116, 130, 229)
+	dstHi, dstFill := hx(255, 230, 157), cGold
+	cv.stripFolder(1, srcHi, srcFill, srcOpen, false)
+	cv.stripFolder(48, dstHi, dstFill, dstOpen, false)
+	for i, ph := range phases {
+		kind := (int(math.Floor(t*1.3*flowSpeed+float64(i)/3)) + i) % 3
+		for j := 1; j <= 3; j++ {
+			x, y := stripPos(max(0, ph-float64(j)*.035))
+			cv.blend(int(x), int(y)+1, []rgb{cGold, cBlush, cHi}[j-1], .55/float64(j))
+		}
+		x, y := stripPos(ph)
+		cv.paper(int(x), int(y), kind, 1, nil)
+		if ph > .88 {
+			cv.star(48, 2, (ph-.88)/.12, cGold)
+		}
+	}
+	cv.stripFolder(1, srcHi, srcFill, srcOpen, true)
+	cv.stripFolder(48, dstHi, dstFill, dstOpen, true)
+	return &Frame{cv: cv}
 }

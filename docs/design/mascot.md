@@ -1,87 +1,74 @@
-# Mascot 502Drive — 2026-10-27
+# Mascot 502Drive — chibi sắc nét (2026-10-27)
 
-Giữ đầu tròn và sáu metaball của bản gốc, hai tai, palette xanh trời → tím,
-canvas 60×26, half-block `▀`/`▄` và toàn bộ chữ ký API hiện có. Không thêm dependency,
-không có goroutine/timer trong mascot. CLI/TUI quyết định khi nào vẽ và dừng motion.
+Hướng đã được người dùng chọn: **nhỏ, ít chi tiết, nét rõ**. Bản trước dùng
+supersampling/alpha cho một hình vốn đã rất nhỏ; viền, mắt, râu và highlight
+trộn thành nhiều mảng màu khi vào terminal. Không tiếp tục thu nhỏ bitmap đó.
 
-![Sáu mood, nền tối/sáng, ANSI256/ANSI, compact, fidgets và strip](../assets/mascot-sheet.png)
+![Cỡ terminal: ô 8×20, một pixel sprite = 8×10](../assets/mascot-terminal.png)
 
-![Demo sáu mood, 4 giây ở 15 fps](../assets/mascot.gif)
+![Sáu mood, mỗi ô 8×20, animation 4 giây](../assets/mascot.gif)
 
-## Kích thước và tích hợp
+## Quyết định thiết kế
 
-- `MiniCols = 20` giữ nguyên; `MiniRows = 11` thay 9; `miniY0 = 4` thay 8.
-  Crop 20×22 pixel cho đầu, thân, chân, đuôi và headroom. `MiniScale = .57` thay .44;
-  đầu gốc được nén dọc và đưa lên để có chỗ cho thân, không kéo dài khuôn mặt.
-- Chọn rộng 20 thay gợi ý 22–26: `internal/tui/home.go` hiện hard-code `catCols = 20`.
-  Chiều cao panel được tính từ `len(catColumn())`; không cần sửa TUI để nhận 11 dòng.
-  Đã `rg MiniCols/MiniRows`: chỉ renderer, preview và test dùng trực tiếp hai hằng.
-- `Options{Mini: true, Compact: true}` và `CompactRows = 7` là API bổ sung cho
-  terminal thấp. Vẽ lại cùng geometry ở scale 7/11 để mắt không bị blur do resize
-  bitmap; crop vẫn rộng 20 cột. TUI hiện chưa chọn chế độ này tự động.
-- Full vẫn 60×13 ô, crop full rộng 34, strip giữ 56×4 ô. Chỉ ASCII space và
-  half-block trong output; không thêm emoji/ký tự có độ rộng mơ hồ.
-- `Anim.Seed` mặc định 502, có thể đặt trước `Step` đầu. Cùng seed, mood và elapsed
-  time cho cùng chuyển động. `Static`/`StaticMini` dùng seed mặc định.
-- Frame cũ vẫn là snapshot độc lập sau `Step` tiếp theo. Workspace vẽ được tái dùng;
-  canvas snapshot và chuỗi output vẫn cần cấp phát để giữ hợp đồng này.
+- Vẽ trực tiếp sprite **14×10 pixel**, tai nhọn, mắt đen 1×2 pixel, miệng nhỏ,
+  thân ngắn/chân tách rõ, một mức bóng tím và khăn màu mood. Bỏ râu mờ, viền AA,
+  ngực nhiều lớp, chuông/highlight nhỏ hơn một pixel.
+- Pixel nhân vật chỉ có alpha 0 hoặc 1; tối đa 9 màu/khung. Không resize/phối màu
+  giữa hai pixel. Chỉ di chuyển nguyên pixel, chọn pose theo thời gian và spring
+  hiện có, không đếm frame. Renderer lớn nhân nguyên 2× cùng sprite.
+- `MiniCols = 18` thay 20; `MiniRows = 7` thay 9 ở HEAD (bản soft thử trước
+  đó là 11 dòng); `miniY0 = 12` thay 8 ở HEAD.
+  Viewport 18×14 pixel chứa nhân vật cùng khoảng trống cho nhảy/đuôi/marker.
+  `CompactRows = 6` thay 7, giữ nguyên pixel, chỉ đổi viewport/đặt chân thấp hơn.
+- `internal/tui/home.go` vẫn có `catCols = 20`; `centerCell`/`padCell` tự căn giữa
+  kết quả rộng 18 cột. Panel lấy chiều cao theo số dòng thực tế. Không sửa TUI.
+- Full vẫn 60×13 ô; crop full 34 cột. Strip vẫn 56×4 ô. Giữ mọi chữ ký API,
+  `Options.Dark/Profile/Crop/Mini/Compact`, seed, snapshot Frame độc lập và NoMotion
+  do caller điều khiển. Không thêm dependency/goroutine.
+- Nền sáng làm màu đậm hơn bằng nhánh palette hiện có. ANSI16/256 vẫn dùng
+  quantization hiện có; mắt phải khác màu lông trong cả hai profile.
 
-## Thiết kế và motion
+Đối chiếu hình chibi Claude trong ảnh người dùng cung cấp: học silhouette và
+khoảng trống quanh mắt. Tham khảo thêm bài chính chủ
+[GitHub về animation CLI của Copilot](https://github.blog/engineering/from-pixels-to-characters-the-engineering-behind-github-copilot-clis-animated-ascii-banner/):
+nhóm thiết kế dùng frame và palette theo vai trò, chú ý khác biệt terminal.
+Ứng dụng ở đây là sprite pixel đơn giản, không chép nhân vật hay thêm toolchain.
 
-`body.go` giữ metaball/triangle tai, supersample mask 2× rồi lấy coverage 4 mẫu;
-viền khoảng một pixel, ba mức xanh–tím, highlight trán, lòng tai/má hồng. Thân có
-ngực sáng, bàn chân nhỏ, đuôi cong và khăn với chuông vàng; màu khăn chuyển theo
-mood. `Options.Dark = false` làm palette đậm hơn 12% để đứng trên nền sáng.
+## Đọc hành động
 
-`face.go` giữ hốc mắt tại chỗ: đồng tử, highlight, mí, mũi nhỏ, miệng hai nét cong,
-râu mờ tách riêng. Gaze, pupil, biểu cảm và màu khăn được ease; blink nhanh hơn
-để không bị spring nuốt mất. ANSI16/256 lấy màu gần nhất theo RGB từ palette
-terminal; vẫn giữ tương phản mắt/lông, không chạy phép chuyển màu cảm nhận tốn
-nhiều cấp phát mỗi frame. Palette 16 màu thực tế phụ thuộc theme terminal.
+| Mood | Dấu hiệu chính |
+| --- | --- |
+| Idle | Đứng yên, đảo mắt/chớp mắt có seed, đuôi hai pose; thỉnh thoảng ngáp/chải má/vươn |
+| Busy | Hai chân trước thay nhau gõ trên hàng phím vàng, đầu/mắt theo nhịp file |
+| Happy | Ngồi thấp trước bật lên, giơ hai chân, mắt cười và sao hồng/vàng |
+| Error | Dấu ! đỏ, mắt mở lớn rồi bình tĩnh, run đầu giảm dần |
+| Wait | Đầu dịch ngang một pixel, mắt nhìn sang, ba chấm vàng/trắng sáng lần lượt |
+| Sleep | Silhouette thấp và rộng, mắt nhắm, đuôi cuộn, Z nổi lên |
 
-`motion.go` lấy ngẫu nhiên từ seed + bucket thời gian, không đếm frame. Idle có
-saccade, blink đơn/chậm/kép và mỗi khoảng 12 giây chọn ngáp, vươn, chải má, liếc
-xuống vị trí nhập ảo, hoặc ngồi thấp. Đây là điểm nhìn ảo; không đọc caret thật.
-Busy theo cùng phase file với strip, nghiêng đầu, gõ chân, giọt mồ hôi. Happy hạ
-thân trước nhảy, co/giãn, đầu trễ khi bật, sao nhiều màu. Error run/lông dựng/dấu !
-rồi giảm dần; wait nghiêng đầu và ba chấm; sleep hạ đầu, cuộn đuôi trước chân,
-thở chậm và Z trôi/mờ. Tai, đuôi, đầu/thân lệch pha.
+Mỗi mood có silhouette khác nhau ngay cả khi bỏ màu. Không lắc/zoom toàn bộ
+bitmap theo phần lẻ pixel vì sẽ đưa hiện tượng nhòe trở lại. Spring và clock
+vẫn làm mượt thời điểm đổi pose; bản thân hình luôn bám lưới.
 
-`anim.go` giải spring tắt dần bằng công thức đóng; lấy target theo substep tối đa
-1/120 giây. `dt` âm/NaN/Inf không chạy thời gian. Sau pause dài, clock đi tới trước,
-chỉ tích phân quarter-second cuối, giới hạn pause một lần ở 60 giây. Procedural
-phase giới hạn trong một ngày; thời gian âm/không hữu hạn của Static/Strip về 0.
-Không-motion vẫn do caller gọi Static ở thời điểm cố định; test TUI xác nhận không
-lập lịch animation khi `NoMotion`.
+## Các vòng chỉnh sau phản hồi bị mờ
 
-`strip.go` dùng đường cung có ease ngang, folder tách nắp/lưng và mép trước để file
-thực sự đi qua cửa. Có tài liệu hai dòng mực, ảnh với đồi xanh/mặt trời, file nén
-khóa kéo, đuôi sáng và sao khi tới đích. Caller Home chỉ gọi strip khi busy.
+1. Xem ảnh terminal người dùng gửi và đối chiếu bản soft trong snapshot ngoài repo.
+   Chốt nguyên nhân ở renderer subpixel, không phải thiếu độ phân giải ảnh PNG.
+2. V1: giữ bảng xanh–tím, tai hồng, khăn và đuôi; thay phần vẽ mèo bằng sprite
+   native. Preview đã tách được mắt, đầu, bàn chân và hành động, không còn halo.
+3. V2: tai từ cạnh bẹt hai pixel thành chóp một pixel. Thêm PNG/GIF đúng tỷ lệ
+   ô terminal 8×20; GIF bố trí ba cột/hai hàng để chat không ép hình xuống quá nhỏ.
+4. V3: bỏ nhịp nhấc riêng đầu trong idle vì tạo cảm giác cổ rời khỏi thân.
+   Giữ thay đổi đầu khi vươn vai và nhịp nod khi busy. Người dùng đã xem preview
+   và chọn “Đúng hướng, giữ nhỏ và sắc nét”.
+5. GIF xuất palette trực tiếp từ các màu thật của frame, có assert <=256 màu;
+   không còn quantize sang Plan9 làm lệch màu bản demo. Đã mở PNG và các frame
+   của GIF bằng công cụ đọc ảnh trước bàn giao.
+6. Người dùng hỏi hình Wait là gì: việc hạ một nửa đầu xuống một pixel làm lệch
+   tai/mắt/miệng, không còn rõ mặt mèo. Bỏ shear, dịch nguyên đầu sang bên, giữ
+   đủ ba chấm và chỉ đổi chấm sáng. Test mới bắt hai lòng tai lệch hàng đã đỏ
+   trước sửa và xanh sau sửa. Đã mở lại sheet, ảnh tỷ lệ terminal và frame GIF.
 
-## Các vòng xem ảnh và chỉnh
-
-1. Xem `/tmp/claude-1000/mini.png`, frame từ GIF cũ và ảnh tham chiếu 8/9/10.
-   Sheet cũ bị cắt chỉ còn ba mood đầu. Mèo có mặt chiếm toàn thân; học silhouette
-   và mắt rõ của chibi tham chiếu, giữ chi tiết/màu riêng của mèo.
-2. Preview v1: thêm thân, scarf, mắt và AA. Thấy thân mảnh như cột, mắt nhạt,
-   đuôi thành chấm rời. Tăng thân tròn, lõi tối đồng tử; vẽ toàn viền đuôi trước
-   rồi toàn phần màu, tránh từng đoạn ghi đè nhau. Sleep thêm đuôi phủ bàn chân.
-3. Preview v2 và filmstrip chuyển mood: thấy chóp tai bị cắt khi nhảy. Thêm test
-   quét 120 thời điểm/mood, hạ ground xuống 24, chốt scale .57, đầu trễ nhịp nhảy
-   .7 pixel để giữ tai trong crop. Chiều rộng vẫn vừa cột Home 20.
-4. Preview v3: bản compact resize bị nhòe mắt; đổi sang vẽ geometry ở scale nhỏ
-   trực tiếp. V4 đã xem lại cả compact, nền sáng/tối, six moods và strip.
-5. Kiểm low-color: ANSI16 cũ mất khoảng 4.89 ms/frame. Đổi quantization RGB và
-   dùng buffer byte trên stack để ghép dòng, giữ snapshot; xem lại sheet cuối
-   có hàng ANSI16/256. Đã mở PNG cuối và filmstrip các frame 0/15/30/59 của GIF
-   bằng công cụ đọc ảnh; nắp folder và ba loại file phân biệt được.
-6. Quét crop dài hơn từ 8 lên 80 giây (1.200 thời điểm/mood) bắt thêm lỗi tai
-   khi vươn vai ở giây 44; cho đầu theo thân trễ trong stretch, giữ headroom.
-   Đã tái xuất và mở xem lại sheet cuối, gồm hàng fidget stretch đã sửa.
-
-## Tái tạo preview
-
-Đường dẫn output dùng đường dẫn tuyệt đối vì `go test` chạy từ thư mục package:
+## Tái tạo
 
 ```sh
 export PATH=/home/admin/D/.local/502drive-toolchains/go1.27.3/go/bin:$PATH
@@ -91,81 +78,59 @@ MASCOT_GIF_DIR="$PWD/docs/assets/mascot" \
 go test -count=1 -run TestWritePreview ./internal/mascot
 ```
 
-Các GIF riêng đều 60 frame/4.000 ms, cadence 7/6/7 centisecond cho 15 fps:
+Đặt đường dẫn tuyệt đối vì test chạy trong thư mục package. PNG terminal nằm
+cạnh sheet; [sheet](../assets/mascot-sheet.png) còn có nền sáng/tối, ANSI256/16,
+compact, full, strip và năm fidget. GIF từng mood đều 4 giây/60 frame ở 15 fps:
 [idle](../assets/mascot/idle.gif), [busy](../assets/mascot/busy.gif),
 [happy](../assets/mascot/happy.gif), [error](../assets/mascot/error.gif),
 [wait](../assets/mascot/wait.gif), [sleep](../assets/mascot/sleep.gif).
-[Chuyển mood](../assets/mascot/transitions.gif) dài 8 giây. Sheet gồm phóng lớn,
-raster 1×, nền sáng/tối, ANSI256/16, compact, full scene, strip và đủ năm fidget.
-GIF chỉ có strip khi có mood Busy trong khung.
+[Chuyển mood](../assets/mascot/transitions.gif) dài 8 giây. Strip chỉ hiện khi Busy.
 
-## TUI thật qua tmux
+## Kiểm chứng
 
-Build `/tmp/502d`, chạy bare command trong tmux session `m`, 120×34. Dùng HTTP/SSE
-fixture Python ở loopback, config/token giả trong `/tmp`, tắt tray; không đọc config,
-DB hay tài khoản thật. Môi trường shell có `NO_COLOR=1`, nên đã bỏ biến này riêng
-cho process kiểm màu và dùng `TERM=xterm-256color`, `COLORTERM=truecolor`.
-
-Capture idle/busy đều: panel **13 dòng** gồm hai viền, terminal **34 dòng**, dòng
-rộng nhất **108** codepoint (<120). Mèo không chạm separator/tràn panel. Busy có
-strip bốn dòng; prompt/footer còn đủ chỗ. Đã kiểm bằng `tmux capture-pane -t m -p`;
-capture không chứng minh màu/phông chữ terminal.
-
-Không cần sửa layout TUI cho bản mặc định. Đề xuất cho người phụ trách TUI:
-`internal/tui/home.go`, `catColumn()`: cho terminal cao 18–23 dòng dùng
-`Options{Mini: true, Compact: true}` thay fallback chữ; vẫn giữ `NoMotion` và các
-guard màu/ASCII. Có thể thay `catCols = 20` bằng `catCols = mascot.MiniCols` để tránh
-hard-code. Chưa áp dụng vì phạm vi này không được sửa `internal/tui/*`.
-
-## Kiểm chứng và benchmark
-
-Go 1.27.3, Linux amd64, Intel i7-11850H. Các lệnh được yêu cầu (output nguyên văn;
-những lệnh không có output đều exit 0):
+Go 1.27.3, linux/amd64, Intel Core i7-11850H. Lượt đầu tất cả lệnh đều qua.
+Lượt cuối có test CLI/tray mới được sửa đồng thời ngoài phạm vi mascot:
+`gofmt` liệt kê file tray và `vet` không compile được hai test đó như bên dưới.
+`gofmt -l internal/mascot` không in output; test mascot/TUI và build vẫn qua.
+Không commit/push; không sửa TUI,
+telegram, engine, state hay thay đổi đồng thời ngoài phạm vi mascot.
 
 ```text
+$ export PATH=/home/admin/D/.local/502drive-toolchains/go1.27.3/go/bin:$PATH
 $ gofmt -l cmd internal
+internal/tray/tray_test.go
 $ go vet ./...
+# github.com/itsgiahung/502Drive/internal/tray
+# [github.com/itsgiahung/502Drive/internal/tray]
+vet: internal/tray/tray_test.go:217:149: undefined: ActionStopDaemon
+# github.com/itsgiahung/502Drive/internal/cli
+# [github.com/itsgiahung/502Drive/internal/cli]
+vet: internal/cli/stop_test.go:118:9: undefined: daemonStopWait
 $ go test -race -count=1 ./internal/mascot ./internal/tui
-ok  	github.com/itsgiahung/502Drive/internal/mascot	11.280s
-ok  	github.com/itsgiahung/502Drive/internal/tui	1.536s
+ok  	github.com/itsgiahung/502Drive/internal/mascot	1.951s
+ok  	github.com/itsgiahung/502Drive/internal/tui	1.328s
 $ python3 scripts/check-docs-links.py .
-checked 348 relative links, 0 broken
+checked 352 relative links, 0 broken
 $ go build ./...
 ```
 
-Doc checker ban đầu có 333 links/0 broken. Trong lúc làm việc có ba link lỗi
-ở handoff ngoài phạm vi; file đó được cập nhật tiếp trong workspace. Lần kiểm
-cuối là 348 links/0 broken như trên. Không sửa file handoff. Kiểm riêng
-`python3 scripts/check-docs-links.py docs/design` cũng qua: 7 links/0 broken.
+Đã chạy thêm `go test -race -count=1 ./...` trước khi các test CLI/tray mới xuất
+hiện: mọi package qua, gồm engine, daemon, Telegram và tray. Kết quả đó không
+chứng minh các thay đổi đồng thời về sau đã qua. `git diff --check` không in output.
+Test gồm cùng seed/thời gian, dt âm/lớn/NaN/Inf, spring, snapshot giữ nguyên,
+đối xứng nhìn thẳng, crop ở 80 giây mỗi mood, alpha/palette, kích thước mọi
+profile, ANSI16/256 và các mood khác silhouette.
 
-`git diff --check` exit 0. Test bao phủ đối xứng nhìn thẳng, mọi mood/cùng seed,
-elapsed time thay tick size, spring với dt âm/lớn/NaN/Inf, Static/Strip với t
-âm/lớn/NaN/Inf, crop đầu/tai trong chuyển động, snapshot frame cũ, chuyển mood,
-kích thước full/mini/compact/strip, ANSI16/256 và glyph an toàn. Test TUI hiện có
-bao phủ NoMotion.
+### Benchmark
 
-Các file ngoài mascot đang được sửa đồng thời trong workspace (power/lifecycle,
-engine/state/HTTP/config và go.mod); không thuộc diff của nhiệm vụ này, đã giữ nguyên.
-Không kiểm live Google/Telegram; không cần các dịch vụ này để xác minh renderer.
+Đo riêng sau khi race test kết thúc để tránh tranh CPU. Mini TrueColor
+**0,028–0,034 ms/frame**, ANSI256 **0,040–0,041 ms**, full
+**0,072–0,076 ms**; đều dưới 1 ms. So với mốc người dùng nêu khoảng 0,6 ms,
+đây chỉ là đối chiếu tham khảo vì không cùng lượt đo/bản dựng.
 
-
-Benchmark bản cuối (ba lần, không race, `Step + Lines`, buffer/snapshot và output
-cùng được tính; benchmark báo toàn bộ cấp phát):
-
-| Cảnh/profile | ms/frame | B/frame | allocs/frame |
-| --- | ---: | ---: | ---: |
-| Mini truecolor | 0.339–0.347 | 77,298 | 147 |
-| Full truecolor | 0.365–0.372 | ~80,596 | 176 |
-| Mini ANSI256 | 0.421–0.430 | ~75,034 | 147 |
-| Mini ANSI16 | 0.331–0.334 | ~72,604 | 147 |
-| Strip + render | 0.025–0.026 | 62,087 | 41 |
-
-Baseline trước sửa trên cùng máy: full 387,661 ns/op, 85,915 B/op,
-1,066 allocs/op. Bản cuối giữ mức dưới ~1 ms và giảm cấp phát full xuống 176;
-không bỏ snapshot để đổi lấy benchmark. Mask 2× chỉ quét bounding box đầu,
-không quét cả canvas cho mọi subpixel. Byte buffer ghép dòng tái dùng trên stack.
-
-Output benchmark nguyên văn:
+Mini 23 allocs/frame, khoảng 59 KB; full 59 allocs, khoảng 66 KB. Workspace
+vẽ được tái dùng, nhưng Frame vẫn copy snapshot canvas để caller giữ frame cũ
+không bị đổi, và Lines trả string sở hữu riêng. Không tuyên bố zero allocation.
 
 ```text
 $ go test -run '^$' -bench 'Benchmark(Anim|Mini|Strip)' -benchmem -count=3 ./internal/mascot
@@ -173,154 +138,47 @@ goos: linux
 goarch: amd64
 pkg: github.com/itsgiahung/502Drive/internal/mascot
 cpu: 11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz
-BenchmarkMiniStepAndRender-16    	    3469	    345801 ns/op	   77298 B/op	     147 allocs/op
-BenchmarkMiniStepAndRender-16    	    3382	    339046 ns/op	   77298 B/op	     147 allocs/op
-BenchmarkMiniStepAndRender-16    	    3490	    346516 ns/op	   77298 B/op	     147 allocs/op
-BenchmarkMiniLowColor/ANSI256-16 	    2761	    430036 ns/op	   75033 B/op	     147 allocs/op
-BenchmarkMiniLowColor/ANSI256-16 	    2628	    422683 ns/op	   75028 B/op	     147 allocs/op
-BenchmarkMiniLowColor/ANSI256-16 	    2823	    421329 ns/op	   75040 B/op	     147 allocs/op
-BenchmarkMiniLowColor/ANSI-16    	    3560	    333979 ns/op	   72603 B/op	     147 allocs/op
-BenchmarkMiniLowColor/ANSI-16    	    3357	    331096 ns/op	   72605 B/op	     147 allocs/op
-BenchmarkMiniLowColor/ANSI-16    	    3410	    332681 ns/op	   72604 B/op	     147 allocs/op
-BenchmarkStripAndRender-16       	   44564	     25584 ns/op	   62087 B/op	      41 allocs/op
-BenchmarkStripAndRender-16       	   46808	     25428 ns/op	   62087 B/op	      41 allocs/op
-BenchmarkStripAndRender-16       	   46731	     25353 ns/op	   62087 B/op	      41 allocs/op
-BenchmarkAnimStepAndRender-16    	    3194	    368336 ns/op	   80595 B/op	     176 allocs/op
-BenchmarkAnimStepAndRender-16    	    2974	    365412 ns/op	   80597 B/op	     176 allocs/op
-BenchmarkAnimStepAndRender-16    	    3176	    372385 ns/op	   80597 B/op	     176 allocs/op
+BenchmarkMiniStepAndRender-16    	   34353	     32529 ns/op	   59406 B/op	      23 allocs/op
+BenchmarkMiniStepAndRender-16    	   39650	     28087 ns/op	   59406 B/op	      23 allocs/op
+BenchmarkMiniStepAndRender-16    	   35985	     33688 ns/op	   59406 B/op	      23 allocs/op
+BenchmarkMiniLowColor/ANSI256-16 	   29343	     41301 ns/op	   59090 B/op	      23 allocs/op
+BenchmarkMiniLowColor/ANSI256-16 	   33054	     40259 ns/op	   59090 B/op	      23 allocs/op
+BenchmarkMiniLowColor/ANSI256-16 	   29313	     39865 ns/op	   59090 B/op	      23 allocs/op
+BenchmarkMiniLowColor/ANSI-16    	   38325	     34143 ns/op	   58733 B/op	      23 allocs/op
+BenchmarkMiniLowColor/ANSI-16    	   42081	     32507 ns/op	   58732 B/op	      23 allocs/op
+BenchmarkMiniLowColor/ANSI-16    	   37149	     31730 ns/op	   58732 B/op	      23 allocs/op
+BenchmarkStripAndRender-16       	   37971	     31442 ns/op	   62071 B/op	      41 allocs/op
+BenchmarkStripAndRender-16       	   40080	     32187 ns/op	   62071 B/op	      41 allocs/op
+BenchmarkStripAndRender-16       	   33507	     31906 ns/op	   62071 B/op	      41 allocs/op
+BenchmarkAnimStepAndRender-16    	   18350	     76499 ns/op	   66021 B/op	      59 allocs/op
+BenchmarkAnimStepAndRender-16    	   17799	     72035 ns/op	   66021 B/op	      59 allocs/op
+BenchmarkAnimStepAndRender-16    	   17185	     74320 ns/op	   66021 B/op	      59 allocs/op
 PASS
-ok  	github.com/itsgiahung/502Drive/internal/mascot	18.722s
+ok  	github.com/itsgiahung/502Drive/internal/mascot	24.723s
 ```
 
-Bộ race toàn repo **chưa qua**. Lần chạy cuối fail trong daemon lifecycle ngoài
-phạm vi mascot; không sửa/bỏ qua test này. Output nguyên văn:
+### TUI thật trong tmux
 
-```text
-$ go test -race -count=1 ./...
-?   	github.com/itsgiahung/502Drive/cmd/502drive	[no test files]
-?   	github.com/itsgiahung/502Drive/cmd/502drive-tray	[no test files]
-ok  	github.com/itsgiahung/502Drive/internal/app	3.040s
-ok  	github.com/itsgiahung/502Drive/internal/cli	14.765s
-ok  	github.com/itsgiahung/502Drive/internal/config	1.027s
---- FAIL: TestLifecycleResumeProbesWithBackoffThenOpensTheGate (0.17s)
-    lifecycle_test.go:184: the engine was not woken after the probe
-FAIL
-FAIL	github.com/itsgiahung/502Drive/internal/daemon	6.669s
-ok  	github.com/itsgiahung/502Drive/internal/drive	1.434s
-?   	github.com/itsgiahung/502Drive/internal/drive/drivetest	[no test files]
-ok  	github.com/itsgiahung/502Drive/internal/engine	17.492s
-ok  	github.com/itsgiahung/502Drive/internal/httpapi	10.867s
-ok  	github.com/itsgiahung/502Drive/internal/i18n	1.026s
-ok  	github.com/itsgiahung/502Drive/internal/maintenance	4.028s
-ok  	github.com/itsgiahung/502Drive/internal/mascot	11.019s
-ok  	github.com/itsgiahung/502Drive/internal/power	1.140s
-ok  	github.com/itsgiahung/502Drive/internal/schedule	1.043s
-ok  	github.com/itsgiahung/502Drive/internal/state	1.613s
-ok  	github.com/itsgiahung/502Drive/internal/telegram	12.663s
-ok  	github.com/itsgiahung/502Drive/internal/tray	6.136s
-ok  	github.com/itsgiahung/502Drive/internal/tui	1.654s
-ok  	github.com/itsgiahung/502Drive/internal/update	1.042s
-FAIL
-```
-
-Lần chạy trước còn gặp `internal/engine/TestUnreachableReleasesWithoutPenaltyAndReportsIt`:
-`offline_test.go:123: copy calls = 2, want exactly the failed one`.
-Chạy riêng `go test -race -count=3 -run
-'^TestUnreachableReleasesWithoutPenaltyAndReportsIt$' ./internal/engine` cũng đã exit 1:
-`offline_test.go:119: transport failure left item in executing` (fixture giả).
-Ở lần chạy cuối engine đã qua (17.492s). Không sửa engine, state hay daemon;
-workspace đang được cập nhật đồng thời ở các phần này.
-
-## Capture tmux với fixture giả
-
-Đã build bằng `go build -o /tmp/502d ./cmd/502drive`. Cấu hình HTTP fixture qua
-`DRIVE502_CONFIG=/tmp/502drive-mascot-tui/config.json`,
-`DRIVE502_NO_TRAY=1`, bỏ `NO_COLOR` chỉ trong process kiểm. Chạy binary thật:
+Build `/tmp/502d` từ source vừa sửa; dùng HTTP/SSE fixture tổng hợp ở `/tmp`
+cho tài khoản/đích/job demo, không đọc cấu hình hay token thật. Môi trường mặc
+định có NO_COLOR và TERM=dumb, nên bỏ NO_COLOR và đặt TERM cho phiên xem màu.
 
 ```sh
+go build -o /tmp/502d ./cmd/502drive
 tmux new-session -d -s m -x 120 -y 34 'env -u NO_COLOR DRIVE502_CONFIG=/tmp/502drive-mascot-tui/config.json DRIVE502_NO_TRAY=1 TERM=xterm-256color COLORTERM=truecolor /tmp/502d --color always'
 tmux capture-pane -t m -p
 ```
 
-Idle, output nguyên văn:
+Ở 120×34: panel 9 dòng (idle và busy), strip busy 4 dòng bên dưới; không tràn.
+Ở 80×24: panel 11 dòng, không tràn, strip ẩn theo logic TUI hiện có. Phiên tmux
+và fixture đã dừng sau kiểm tra. Capture-pane bỏ màu nên chỉ xác nhận bố cục.
 
-```text
-╭─ 502Drive · ● trực tiếp ─────────────────────────────────────────────────────────────────────────────────╮
-│                      │                                      │                                            │
-│      ▀▄     ▄▀       │                                      │                                            │
-│      ▀▀▀▄▄▄▀▀▀▀      │                                      │                                            │
-│    ▄▀▀▀▀▀▀▀▀▀▀▀▀▄    │ Chào buổi sáng! Sẵn sàng copy.       │                                            │
-│   ▄▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀   │                                      │ Bắt đầu                                    │
-│   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀   │ Google: Demo account                 │ Dán link Drive vào ô dưới, nhấn Enter để … │
-│    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀    │ Thư mục đích: Demo destination       │ Gõ / xem lệnh · nhấn 1–7 để chuyển màn     │
-│      ▄▀▀▀▀▀▀▀▀▄▄▀▀▀▄ │ 0 đang chạy · 0 đang chờ · 0 cần xử… │                                            │
-│      ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ │                                      │                                            │
-│      ▀▀▀▀▀▀▀▀▀▀▀     │                                      │                                            │
-│      ▀▀▀▀▀▀▀▀▀▄      │                                      │                                            │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+Không cần sửa layout hiện tại. Compact 6 dòng có trong API/preview; TUI hiện
+chuyển sang ASCII khi height <24 nên chưa dùng nó. Nếu muốn dùng mèo pixel
+ở terminal thấp: đề xuất `internal/tui/home.go`, `catColumn`: ngưỡng `>=24`
+thành `>=20`, thêm `o.Compact = m.height > 0 && m.height < 24`; cần kiểm lại
+layout 20–23 dòng khi tích hợp. Chưa sửa vì người dùng cấm thay đổi TUI.
 
-  Hoạt động gần đây
-  Chưa có công việc nào
-
-
-
-
-
-
-
-
-
-
-
-
-
-╭──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ❯ Dán link Drive, hoặc gõ / để xem lệnh                                                                  │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-/ lệnh · 1–7 chuyển màn · c copy · l đăng nhập · ? trợ giúp · q thoát
-```
-
-Busy, output nguyên văn:
-
-```text
-╭─ 502Drive · ● trực tiếp ─────────────────────────────────────────────────────────────────────────────────╮
-│       ▄              │                                      │                                            │
-│      ▄▀▀▄   ▄▀▀      │                                      │                                            │
-│     ▄▀▀▀▀▀▀▀▀▀▀ ▄    │                                      │                                            │
-│    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀    │ Chào buổi sáng! Sẵn sàng copy.       │                                            │
-│   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    │                                      │ Bắt đầu                                    │
-│   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀   │ Google: Demo account                 │ Dán link Drive vào ô dưới, nhấn Enter để … │
-│     ▀▀▀▀▀▀▀▀▀▀▀▀     │ Thư mục đích: Demo destination       │ Gõ / xem lệnh · nhấn 1–7 để chuyển màn     │
-│      ▄▀▀▀▀▀▀▀▀▄▄▄    │ 1 đang chạy · 0 đang chờ · 0 cần xử… │                                            │
-│      ▀▀▀▀▀▀▀▀▀▀▀▀▀   │                                      │                                            │
-│      ▀▀▀▀▀▀▀▀▀▀▀▀    │                                      │                                            │
-│      ▄▀▀▀▀▀▀▀▀▄      │                                      │                                            │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-            ▄▄▄          ▄ ▄  ▄ ▀▀▀
-   ▄▄   ▄▄▀ ▀▀▀                 ▀▀▀          ▀▀ ▄▀▀▀▄▄▄▄▄
-   ▀▀▀▀▀▀▀  ▀▀▀                                  ▀▀▀▀▀▀▀▀
-   ▀▀▀▀▀▀▀                                        ▀▀▀▀▀▀▀
-  Đang copy 0 / 0 mục
-  Demo copy  mục: 0 xong · chưa rõ tổng
-
-  Hoạt động gần đây
-  ⠋ Demo copy                        RUNNING RUNNING
-
-
-
-
-
-
-╭──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ❯ Dán link Drive, hoặc gõ / để xem lệnh                                                                  │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-/ lệnh · 1–7 chuyển màn · c copy · l đăng nhập · ? trợ giúp · q thoát
-```
-
-Đã thoát client bằng `q` và đóng HTTP fixture sau khi capture; không để daemon
-hay tray thử nghiệm chạy ngầm. Chưa xem màu trong terminal GUI thật với nhiều
-font/theme, chưa kiểm hành vi live Google/Telegram. GIF/PNG là mô phỏng renderer,
-không chứng minh mọi terminal sẽ hiển thị cùng màu và tỉ lệ ô.
+Chưa kiểm màu trên nhiều terminal/font/theme thật hoặc copy Google thật.
+Phần ear/highlight/râu chuyển động nhỏ hơn một pixel đã bỏ theo hướng chibi
+được chọn; chuyển động bám lưới nên cố ý theo pose, không nội suy subpixel.

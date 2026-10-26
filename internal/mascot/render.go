@@ -1,18 +1,18 @@
 package mascot
 
 import (
-	"fmt"
 	"math"
-	"strings"
+	"strconv"
 
 	"github.com/muesli/termenv"
 )
 
 const (
 	// MiniCols and MiniRows are the text size of the small cat.
-	MiniCols = 20
-	MiniRows = 9
-	miniY0   = 8
+	MiniCols    = 18
+	MiniRows    = 7
+	CompactRows = 6
+	miniY0      = 12
 	// StripCols and StripRows are the text size of the file-transfer strip.
 	StripCols = 56
 	StripRows = 4
@@ -34,6 +34,8 @@ type Options struct {
 	Crop bool
 	// Mini crops tightly around the small cat (NewMini / StaticMini).
 	Mini bool
+	// Compact fits the same mini artwork into six text rows for short terminals.
+	Compact bool
 }
 
 func (o Options) background() rgb {
@@ -47,7 +49,11 @@ func final(p px, bg rgb) (rgb, bool) {
 	if p.a < .12 {
 		return rgb{}, false
 	}
-	return mix(bg, p.c, math.Min(1, p.a)), true
+	c := p.c
+	if bg.r > 200 {
+		c = mix(c, cOutline, .12)
+	}
+	return mix(bg, c, math.Min(1, p.a)), true
 }
 
 type painter struct {
@@ -63,11 +69,49 @@ func (p *painter) seq(c rgb, bg bool) string {
 	if s, ok := p.cache[key]; ok {
 		return s
 	}
-	col := p.o.Profile.Color(fmt.Sprintf("#%02x%02x%02x", int(c.r), int(c.g), int(c.b)))
-	s := ""
-	if col != nil {
-		s = "\x1b[" + col.Sequence(bg) + "m"
+	var buf [32]byte
+	b := append(buf[:0], "\x1b["...)
+	if p.o.Profile == termenv.TrueColor {
+		if bg {
+			b = append(b, "48;2;"...)
+		} else {
+			b = append(b, "38;2;"...)
+		}
+		for i, v := range [...]uint32{uint32(c.r), uint32(c.g), uint32(c.b)} {
+			if i > 0 {
+				b = append(b, ';')
+			}
+			b = strconv.AppendUint(b, uint64(v), 10)
+		}
+	} else if p.o.Profile == termenv.ANSI || p.o.Profile == termenv.ANSI256 {
+		n := 256
+		if p.o.Profile == termenv.ANSI {
+			n = 16
+		}
+		idx := nearestTerminalColor(c, n)
+		if n == 256 {
+			if bg {
+				b = append(b, "48;5;"...)
+			} else {
+				b = append(b, "38;5;"...)
+			}
+			b = strconv.AppendInt(b, int64(idx), 10)
+		} else {
+			code := 30 + idx
+			if idx >= 8 {
+				code = 90 + idx - 8
+			}
+			if bg {
+				code += 10
+			}
+			b = strconv.AppendInt(b, int64(code), 10)
+		}
+	} else {
+		return ""
 	}
+
+	b = append(b, 'm')
+	s := string(b)
 	p.cache[key] = s
 	return s
 }
@@ -83,6 +127,9 @@ func (f *Frame) Lines(o Options) []string {
 	case o.Crop:
 		x0, x1 = cropX0, cropX0+CropCols
 	}
+	if o.Mini && o.Compact {
+		return f.compact(o)
+	}
 	return f.lines(o, x0, x1, y0, y1)
 }
 
@@ -95,8 +142,9 @@ func (f *Frame) lines(o Options, x0, x1, y0, y1 int) []string {
 	bgc := o.background()
 	pt := &painter{o: o, cache: map[uint32]string{}}
 	out := make([]string, 0, (y1-y0)/2)
+	var buf [W * 64]byte
 	for y := y0; y < y1; y += 2 {
-		var sb strings.Builder
+		b := buf[:0]
 		var lastFG, lastBG string
 		for x := x0; x < x1; x++ {
 			top, tok := final(f.cv[y][x], bgc)
@@ -113,22 +161,22 @@ func (f *Frame) lines(o Options, x0, x1, y0, y1 int) []string {
 				ch = " "
 			}
 			if bg == "" && lastBG != "" {
-				sb.WriteString("\x1b[49m")
+				b = append(b, "\x1b[49m"...)
 			}
 			if bg != "" && bg != lastBG {
-				sb.WriteString(bg)
+				b = append(b, bg...)
 			}
 			if fg != "" && fg != lastFG {
-				sb.WriteString(fg)
+				b = append(b, fg...)
 			}
 			if fg != "" {
 				lastFG = fg
 			}
 			lastBG = bg
-			sb.WriteString(ch)
+			b = append(b, ch...)
 		}
-		sb.WriteString("\x1b[0m")
-		out = append(out, sb.String())
+		b = append(b, "\x1b[0m"...)
+		out = append(out, string(b))
 	}
 	return out
 }
@@ -137,4 +185,18 @@ func (f *Frame) lines(o Options, x0, x1, y0, y1 int) []string {
 // tests use it to check the cat is symmetric.
 func (f *Frame) Visible(x, y int) bool {
 	return x >= 0 && x < W && y >= 0 && y < H && f.cv[y][x].a >= .12
+}
+
+// Compact uses the same native pixels in a shorter viewport; no bitmap resize.
+func (f *Frame) compact(o Options) []string {
+	cv := f.compactCanvas()
+	ff := Frame{cv: &cv}
+	return ff.lines(o, int(cx)-MiniCols/2, int(cx)+MiniCols/2, H-CompactRows*2, H)
+}
+func (f *Frame) compactCanvas() (cv canvas) {
+	if f.p.sx <= 0 {
+		return *f.cv
+	}
+	cv.cat(f.mood, f.t, f.p, f.face, f.accent, 1, true)
+	return
 }
