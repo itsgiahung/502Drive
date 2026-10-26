@@ -156,7 +156,7 @@ func TestTUIRendersVietnameseFromPreferences(t *testing.T) {
 	m := New(fake.Actions(), Options{Width: 80, NoMotion: true})
 	m = run(t, m, m.fetch())
 	view := m.View()
-	for _, want := range []string{"Trang chính", "Công việc", "Thư viện & sync", "Đang copy 63 / 84"} {
+	for _, want := range []string{"Bắt đầu", "Hoạt động gần đây", "Đang copy 63 / 84", "Dán link Drive"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("vi home misses %q:\n%s", want, view)
 		}
@@ -174,7 +174,7 @@ func TestTUIRendersVietnameseFromPreferences(t *testing.T) {
 func TestHomeRendersStatusAndMascot(t *testing.T) {
 	m, _ := newTestModel(t, Options{Width: 80})
 	view := m.View()
-	for _, want := range []string{"502Drive", "ready", "Google: connected", "1 running", "2 queued", "Jobs", "Library"} {
+	for _, want := range []string{"502Drive", "ready", "Google:", "Archive", "1 running", "2 queued", "Get started", "Recent activity"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("home view misses %q:\n%s", want, view)
 		}

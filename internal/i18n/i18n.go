@@ -124,6 +124,27 @@ const (
 	MetaWrite       Key = "meta_write"
 	Yes             Key = "yes"
 	No              Key = "no"
+	PanelStart      Key = "panel_start"
+	PanelTip1       Key = "panel_tip1"
+	PanelTip2       Key = "panel_tip2"
+	PanelRecent     Key = "panel_recent"
+	NoRecent        Key = "no_recent"
+	PromptHint      Key = "prompt_hint"
+	DestLine        Key = "dest_line"
+	NoDestLine      Key = "no_dest_line"
+	FooterHome      Key = "footer_home"
+	CmdCopy         Key = "cmd_copy"
+	CmdJobs         Key = "cmd_jobs"
+	CmdLibrary      Key = "cmd_library"
+	CmdDest         Key = "cmd_dest"
+	CmdAccount      Key = "cmd_account"
+	CmdSettings     Key = "cmd_settings"
+	CmdDrive        Key = "cmd_drive"
+	CmdLogin        Key = "cmd_login"
+	CmdHelp         Key = "cmd_help"
+	CmdRefresh      Key = "cmd_refresh"
+	CmdQuit         Key = "cmd_quit"
+	UnknownCmd      Key = "unknown_cmd"
 	Language        Key = "language"
 	Timezone        Key = "timezone"
 	Save            Key = "save"
@@ -280,6 +301,27 @@ var VI = map[Key]string{
 	MetaWrite:       "Thêm file vào được",
 	Yes:             "có",
 	No:              "không",
+	PanelStart:      `Bắt đầu`,
+	PanelTip1:       `Dán link Drive vào ô dưới, nhấn Enter để copy`,
+	PanelTip2:       `Gõ / xem lệnh · nhấn 1–7 để chuyển màn`,
+	PanelRecent:     `Hoạt động gần đây`,
+	NoRecent:        `Chưa có job nào`,
+	PromptHint:      `Dán link Drive, hoặc gõ / để xem lệnh`,
+	DestLine:        `Đích`,
+	NoDestLine:      `chưa chọn (nhấn 7 → d)`,
+	FooterHome:      `/ lệnh · 1–7 chuyển màn · c copy · l đăng nhập · ? trợ giúp · q thoát`,
+	CmdCopy:         `Copy một link (chọn tên và thư mục đích)`,
+	CmdJobs:         `Danh sách công việc`,
+	CmdLibrary:      `Thư viện và đồng bộ`,
+	CmdDest:         `Thư mục đích`,
+	CmdAccount:      `Tài khoản Google và kiểm tra`,
+	CmdSettings:     `Ngôn ngữ và múi giờ`,
+	CmdDrive:        `Duyệt Google Drive`,
+	CmdLogin:        `Đăng nhập / kết nối lại Google`,
+	CmdHelp:         `Phím tắt`,
+	CmdRefresh:      `Làm mới ngay`,
+	CmdQuit:         `Thoát TUI (daemon vẫn chạy)`,
+	UnknownCmd:      `Không có lệnh “%s”. Gõ / để xem danh sách.`,
 	Language:        "Ngôn ngữ", Timezone: "Múi giờ", Save: "Lưu", Cancel: "Hủy",
 	Pause: "Tạm dừng", Resume: "Tiếp tục", Retry: "Thử lại", RunNow: "Chạy ngay",
 	EnableSync: "Bật sync", ChangeSched: "Đổi lịch", StopSync: "Dừng sync",
@@ -394,6 +436,27 @@ var EN = map[Key]string{
 	MetaWrite:       "Can add files",
 	Yes:             "yes",
 	No:              "no",
+	PanelStart:      `Get started`,
+	PanelTip1:       `Paste a Drive link below, press Enter to copy`,
+	PanelTip2:       `Type / for commands · 1–7 switch screens`,
+	PanelRecent:     `Recent activity`,
+	NoRecent:        `No jobs yet`,
+	PromptHint:      `Paste a Drive link, or type / for commands`,
+	DestLine:        `Destination`,
+	NoDestLine:      `not set (press 7 → d)`,
+	FooterHome:      `/ commands · 1–7 screens · c copy · l sign in · ? help · q quit`,
+	CmdCopy:         `Copy a link (choose the name and destination)`,
+	CmdJobs:         `Jobs list`,
+	CmdLibrary:      `Library and sync`,
+	CmdDest:         `Destination folders`,
+	CmdAccount:      `Google account and checks`,
+	CmdSettings:     `Language and timezone`,
+	CmdDrive:        `Browse Google Drive`,
+	CmdLogin:        `Sign in / reconnect Google`,
+	CmdHelp:         `Key map`,
+	CmdRefresh:      `Refresh now`,
+	CmdQuit:         `Leave the TUI (the daemon keeps running)`,
+	UnknownCmd:      `No command “%s”. Type / for the list.`,
 	Language:        "Language", Timezone: "Timezone", Save: "Save", Cancel: "Cancel",
 	Pause: "Pause", Resume: "Resume", Retry: "Retry", RunNow: "Run now",
 	EnableSync: "Enable sync", ChangeSched: "Change schedule", StopSync: "Stop sync",

@@ -11,6 +11,8 @@ const (
 	ground = 23
 	cx     = 30.0
 	S      = 0.58
+	// MiniScale is the cat's size in panels (about 10 pixels, 5 text rows).
+	MiniScale = 0.44
 )
 
 type rgb struct{ r, g, b float64 }
@@ -285,13 +287,13 @@ func trackPacket(t float64) (gx, gy float64) {
 func frac(x float64) float64 { return x - math.Floor(x) }
 
 // target returns the pose and face a mood wants at local time t.
-func target(mood string, t float64) (pose, face) {
-	p := pose{sx: S, sy: S}
+func target(mood string, t, sc float64) (pose, face) {
+	p := pose{sx: sc, sy: sc}
 	f := face{eyes: "open", mouth: "smile", blush: .35}
 	switch mood {
 	case "idle":
 		s := math.Sin(2.2 * t)
-		p.sy, p.sx = S*(1+.035*s), S*(1-.02*s)
+		p.sy, p.sx = sc*(1+.035*s), sc*(1-.02*s)
 		switch m := math.Mod(t, 6); {
 		case m > 2 && m < 3.2:
 			f.gx = -1
@@ -307,8 +309,8 @@ func target(mood string, t float64) (pose, face) {
 	case "busy":
 		g := gulp(t)
 		p.lift = .4*math.Abs(math.Sin(6*t)) + 1.2*g
-		p.sy = S * (1 + .03*math.Sin(12*t) + .07*g)
-		p.sx = S * (1 - .03*g)
+		p.sy = sc * (1 + .03*math.Sin(12*t) + .07*g)
+		p.sx = sc * (1 - .03*g)
 		p.ear = 1.4 * g
 		f.gx, f.gy = trackPacket(t)
 		f.mouth, f.blush = "flat", 0
@@ -322,25 +324,25 @@ func target(mood string, t float64) (pose, face) {
 		ph := frac(t / .85)
 		p.lift = 3 * 4 * ph * (1 - ph)
 		if ph < .1 || ph > .9 {
-			p.sx, p.sy = S*1.12, S*.84
+			p.sx, p.sy = sc*1.12, sc*.84
 		} else {
-			p.sx, p.sy = S*.95, S*1.08
+			p.sx, p.sy = sc*.95, sc*1.08
 		}
 		p.ear = .9 * math.Sin(t*14)
 		f = face{eyes: "happy", mouth: "open", blush: .95}
 	case "error":
 		p.shake = math.Sin(t*38) * math.Exp(-t*1.6) * 1.0
-		p.sx, p.sy = S*1.03, S*.96
+		p.sx, p.sy = sc*1.03, sc*.96
 		p.droop = 5
 		f = face{eyes: "open", mouth: "sad", brows: true}
 	case "wait":
 		s := math.Sin(1.6 * t)
-		p.sy, p.sx = S*(1+.02*s), S*(1-.01*s)
+		p.sy, p.sx = sc*(1+.02*s), sc*(1-.01*s)
 		p.droop = 2
 		f = face{eyes: "open", gx: -1.2, gy: -.8, mouth: "flat"}
 	case "sleep":
 		s := math.Sin(1.2 * t)
-		p.sy, p.sx = S*(.94+.05*s), S*(1-.03*s)
+		p.sy, p.sx = sc*(.94+.05*s), sc*(1-.03*s)
 		p.droop = 3
 		f = face{eyes: "closed", mouth: "tiny", blush: .5}
 	}
@@ -454,7 +456,7 @@ func (cv *canvas) packets(t float64) {
 	}
 }
 
-func scene(mood string, t float64, p pose, f face) *canvas {
+func scene(mood string, t float64, p pose, f face, props bool) *canvas {
 	cv := &canvas{}
 	h := p.lift
 	cv.ellipse(cx+p.shake, ground+1.1, 8.5*(1-h/12), 1, rgb{0, 0, 0}, .35*(1-h/6))
@@ -472,8 +474,10 @@ func scene(mood string, t float64, p pose, f face) *canvas {
 		srcA, dstA = .5, 1
 		dstBump = math.Max(0, math.Sin(t*7.4)) * .99
 	}
-	cv.folder(srcX, ground-folderRows+1, hx(170, 178, 255), hx(120, 130, 240), srcA)
-	cv.folder(dstX, ground-folderRows+1-int(dstBump+.5), hx(255, 228, 140), cGold, dstA)
+	if props {
+		cv.folder(srcX, ground-folderRows+1, hx(170, 178, 255), hx(120, 130, 240), srcA)
+		cv.folder(dstX, ground-folderRows+1-int(dstBump+.5), hx(255, 228, 140), cGold, dstA)
+	}
 	for _, s := range []float64{-1, 1} {
 		cv.ellipse(p.X(s*5.2), p.Y(.9), 3.1*p.sx, 1.0, cFoot, 1)
 	}
@@ -486,7 +490,7 @@ func scene(mood string, t float64, p pose, f face) *canvas {
 	}
 	cv.body(p, tintColor, tint)
 	cv.face(p, f)
-	if mood == "busy" {
+	if mood == "busy" && props {
 		cv.packets(t)
 	}
 	switch mood {
@@ -495,12 +499,13 @@ func scene(mood string, t float64, p pose, f face) *canvas {
 		cv.blend(int(p.X(12)), int(p.Y(-17+d*5)), hx(150, 215, 255), 1-d)
 		cv.blend(int(p.X(12)), int(p.Y(-18+d*5)), hx(200, 235, 255), 1-d)
 	case "happy":
-		pos := [][3]float64{{20, 4, 0}, {40, 5, .33}, {12, 9, .66}, {49, 6, .15}, {8, 3, .5}}
+		// Sparkles around the cat, in its own coordinates so they follow any scale.
+		pos := [][3]float64{{-19, -25, 0}, {19, -23, .33}, {-22, -11, .66}, {22, -15, .15}, {-12, -29, .5}}
 		for _, s := range pos {
-			cv.star(int(s[0]), int(s[1]), frac(t*1.4+s[2]), cGold)
+			cv.star(int(p.X(s[0])), int(p.Y(s[1])), frac(t*1.4+s[2]), cGold)
 		}
 	case "error":
-		x, y := int(p.X(14.5)), 2
+		x, y := int(p.X(14.5)), int(p.Y(-27))
 		for k := 0; k < 3; k++ {
 			cv.blend(x, y+k, cCoral, 1)
 		}

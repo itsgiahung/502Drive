@@ -43,7 +43,11 @@ type texts struct {
 	scanIncomplete, confirmDest, copyStarted, jobLabel        string
 	updated, itemsLabel, resultLabel, problemLabel            string
 	queueFull, linkOnly                                       string
-	states                                                    map[string]string
+	// Home screen and the persistent keyboard.
+	kbCopy, kbJobs, kbSync, kbDest, kbAccount, kbSettings    string
+	kbPlaceholder, kbReady                                   string
+	welcomeTitle, welcomeHello, welcomeFeatures, welcomeTail string
+	states                                                   map[string]string
 }
 
 func langOf(s string) language {
@@ -99,6 +103,18 @@ var vietnamese = texts{
 	copyStarted: "Đã xếp hàng", jobLabel: "Job", updated: "Cập nhật", itemsLabel: "Mục",
 	resultLabel: "Kết quả", problemLabel: "Lỗi", queueFull: "Chưa xếp hàng",
 	linkOnly: "Chỉ nhận link Drive.",
+	kbCopy:   "📥 Copy link", kbJobs: "📋 Công việc", kbSync: "🔄 Đồng bộ", kbDest: "📁 Thư mục đích",
+	kbAccount: "👤 Tài khoản", kbSettings: "⚙️ Cài đặt",
+	kbPlaceholder: "📎 Dán link Google Drive vào đây…",
+	kbReady:       "⌨️ Menu nhanh đã bật ở phía dưới. Dán link Drive bất kỳ lúc nào để copy.",
+	welcomeTitle:  "🌟 <b>502Drive</b> — copy và đồng bộ Google Drive",
+	welcomeHello:  "👋 Xin chào <b>%s</b>!",
+	welcomeFeatures: "📥 <b>Copy</b> — dán link, Google copy ngay trong Drive, giữ nguyên cây thư mục\n" +
+		"🔄 <b>Đồng bộ</b> — theo lịch hoặc realtime, không mất thư mục đích\n" +
+		"📋 <b>Công việc</b> — theo dõi tiến trình, tạm dừng hoặc tiếp tục\n" +
+		"📁 <b>Thư mục đích</b> — chọn nơi lưu bản copy\n" +
+		"⚙️ <b>Cài đặt</b> — ngôn ngữ, thông báo, dán là copy",
+	welcomeTail: "Dán link Drive hoặc chọn một mục bên dưới 👇",
 	states: map[string]string{
 		state.JobQueued: "Đã xếp hàng", state.JobRunning: "Đang sao chép", state.JobPausing: "Đang dừng",
 		state.JobPaused: "Đã tạm dừng", state.JobCancelling: "Đang hủy", state.JobReconciling: "Đang xác minh",
@@ -146,6 +162,18 @@ var english = texts{
 	copyStarted: "Queued", jobLabel: "Job", updated: "Updated", itemsLabel: "Items",
 	resultLabel: "Result", problemLabel: "Problem", queueFull: "Not queued",
 	linkOnly: "Only Drive links are accepted.",
+	kbCopy:   "📥 Copy link", kbJobs: "📋 Jobs", kbSync: "🔄 Sync", kbDest: "📁 Destination",
+	kbAccount: "👤 Account", kbSettings: "⚙️ Settings",
+	kbPlaceholder: "📎 Paste a Google Drive link here…",
+	kbReady:       "⌨️ The quick menu is on below. Paste a Drive link any time to copy it.",
+	welcomeTitle:  "🌟 <b>502Drive</b> — copy and sync Google Drive",
+	welcomeHello:  "👋 Hello <b>%s</b>!",
+	welcomeFeatures: "📥 <b>Copy</b> — paste a link, Google copies inside Drive, folder tree preserved\n" +
+		"🔄 <b>Sync</b> — on a schedule or in realtime, your destination is never lost\n" +
+		"📋 <b>Jobs</b> — follow progress, pause or resume\n" +
+		"📁 <b>Destination</b> — choose where copies go\n" +
+		"⚙️ <b>Settings</b> — language, notifications, paste-to-copy",
+	welcomeTail: "Paste a Drive link or pick an option below 👇",
 	states: map[string]string{
 		state.JobQueued: "Queued", state.JobRunning: "Copying", state.JobPausing: "Stop requested",
 		state.JobPaused: "Paused", state.JobCancelling: "Cancel requested", state.JobReconciling: "Verifying",

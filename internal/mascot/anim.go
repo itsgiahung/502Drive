@@ -37,11 +37,18 @@ type Anim struct {
 	sx, sy, lift, shake, ear, droop spring
 	mood                            Mood
 	t                               float64
+	scale                           float64
+	props                           bool
 }
 
-func NewAnim() *Anim {
-	a := &Anim{mood: Idle}
-	a.sx.pos, a.sy.pos = S, S
+func NewAnim() *Anim { return newAnim(S, true) }
+
+// NewMini is the small cat for panels: smaller, no folders or flying files.
+func NewMini() *Anim { return newAnim(MiniScale, false) }
+
+func newAnim(scale float64, props bool) *Anim {
+	a := &Anim{mood: Idle, scale: scale, props: props}
+	a.sx.pos, a.sy.pos = scale, scale
 	return a
 }
 
@@ -52,17 +59,23 @@ func (a *Anim) Step(m Mood, dt float64) *Frame {
 	}
 	dt = math.Min(dt, .25)
 	a.t += dt
-	tp, f := target(string(m), a.t)
+	tp, f := target(string(m), a.t, a.scale)
 	p := pose{
 		sx: a.sx.step(tp.sx, dt), sy: a.sy.step(tp.sy, dt), lift: a.lift.step(tp.lift, dt),
 		shake: a.shake.step(tp.shake, dt), ear: a.ear.step(tp.ear, dt), droop: a.droop.step(tp.droop, dt),
 	}
-	return &Frame{scene(string(m), a.t, p, f)}
+	return &Frame{scene(string(m), a.t, p, f, a.props)}
 }
 
 // Static draws mood m at time t without spring smoothing (single prints,
 // tests).
 func Static(m Mood, t float64) *Frame {
-	p, f := target(string(m), t)
-	return &Frame{scene(string(m), t, p, f)}
+	p, f := target(string(m), t, S)
+	return &Frame{scene(string(m), t, p, f, true)}
+}
+
+// StaticMini is Static for the small cat.
+func StaticMini(m Mood, t float64) *Frame {
+	p, f := target(string(m), t, MiniScale)
+	return &Frame{scene(string(m), t, p, f, false)}
 }

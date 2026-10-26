@@ -20,6 +20,9 @@ var spinFramesASCII = []string{"|", "/", "-", "\\"}
 // the output is exactly that many lines (the body is windowed and padded), so
 // a shorter screen never leaves lines of the previous one behind.
 func (m Model) View() string {
+	if m.screen == screenHome {
+		return m.homeFrame()
+	}
 	body := m.body()
 	if m.height > 0 {
 		body = clipPad(body, m.bodyRows())
@@ -434,6 +437,8 @@ func (m Model) helpView() []string {
 func (m Model) footer() string {
 	keys := m.t(i18n.FooterKeys)
 	switch m.screen {
+	case screenHome:
+		keys = m.t(i18n.FooterHome)
 	case screenJob:
 		keys = m.t(i18n.FooterJob)
 	case screenCollection:

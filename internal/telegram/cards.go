@@ -20,6 +20,7 @@ import (
 // action buttons get a one-shot callback state row.
 type button struct {
 	text     string
+	style    string // Telegram button colour: primary (blue), success (green), danger (red)
 	nav      string
 	action   string
 	object   string
@@ -28,6 +29,12 @@ type button struct {
 }
 
 func nav(text, page string) button { return button{text: text, nav: page} }
+
+// styled colours a button; clients older than Feb 2026 show it plain.
+func styled(b button, style string) button {
+	b.style = style
+	return b
+}
 
 func act(text, action, object string, revision int, payload string) button {
 	return button{text: text, action: action, object: object, revision: revision, payload: payload}
@@ -66,7 +73,7 @@ func (t *Telegram) panel(ctx context.Context, p app.Principal, chatID int64, mes
 			default:
 				continue
 			}
-			keys = append(keys, models.InlineKeyboardButton{Text: b.text, CallbackData: data})
+			keys = append(keys, models.InlineKeyboardButton{Text: b.text, CallbackData: data, Style: b.style})
 		}
 		if len(keys) > 0 {
 			keyboard = append(keyboard, keys)
@@ -151,20 +158,83 @@ func (t *Telegram) showCard(ctx context.Context, p app.Principal, chatID int64, 
 func (t *Telegram) homePage(ctx context.Context, p app.Principal, chatID int64, messageID int, tx texts) error {
 	st, err := t.svc.Status(ctx)
 	if err != nil {
-		return t.showCard(ctx, p, chatID, messageID, fmt.Sprintf("%s: %s", tx.problemLabel, escape(app.Classify(err).Message)),
+		return t.showCard(ctx, p, chatID, messageID, fmt.Sprintf("⚠️ %s: %s", tx.problemLabel, escape(app.Classify(err).Message)),
 			[]button{nav(tx.back, "home")})
 	}
 	prefs, _ := t.svc.Preferences(ctx, p)
 	var b strings.Builder
-	fmt.Fprintf(&b, "<b>502Drive</b>\n")
-	fmt.Fprintf(&b, "%s: %s   %s: %s\n", tx.google, escape(googleState(st.Account.Status, tx)), tx.destLabel, escape(destName(ctx, t.svc)))
-	fmt.Fprintf(&b, "%s: %d   %s: %d   %s: %d\n", tx.running, st.Running, tx.queued, st.Queued, tx.needAction, st.Blocked)
-	fmt.Fprintf(&b, "%s: %s\n\n%s", tx.autoCopy, onOff(prefs.AutoCopy, tx), tx.pasteHint)
+	b.WriteString(tx.welcomeTitle + "\n\n")
+	if name, ok := t.names.Load(chatID); ok && name.(string) != "" {
+		fmt.Fprintf(&b, tx.welcomeHello+"\n\n", escape(short(name.(string), 40)))
+	}
+	b.WriteString("<blockquote>" + tx.welcomeFeatures + "</blockquote>\n\n")
+	fmt.Fprintf(&b, "☁️ %s: %s %s\n", tx.google, googleEmoji(st.Account.Status), escape(googleState(st.Account.Status, tx)))
+	dest := destName(ctx, t.svc)
+	if dest == "" {
+		dest = tx.noDestination
+	}
+	fmt.Fprintf(&b, "📂 %s: <b>%s</b>\n", tx.destLabel, escape(short(dest, 50)))
+	fmt.Fprintf(&b, "⏳ %s %d · 🕒 %s %d · ⚠️ %s %d\n", tx.running, st.Running, tx.queued, st.Queued, tx.needAction, st.Blocked)
+	fmt.Fprintf(&b, "🤖 %s: %s\n\n%s", tx.autoCopy, onOff(prefs.AutoCopy, tx), tx.welcomeTail)
 	return t.showCard(ctx, p, chatID, messageID, b.String(),
-		[]button{nav(tx.copy, "copy"), nav(tx.jobs, "jobs")},
-		[]button{nav(tx.library, "library")},
-		[]button{nav(tx.destination, "dest"), nav(tx.settings, "settings")},
-		[]button{nav(tx.account, "account")})
+		[]button{styled(nav(tx.kbCopy, "copy"), "primary")},
+		[]button{nav(tx.kbJobs, "jobs"), nav(tx.kbSync, "library")},
+		[]button{nav(tx.kbDest, "dest"), nav(tx.kbSettings, "settings")},
+		[]button{nav(tx.kbAccount, "account")})
+}
+
+func googleEmoji(status string) string {
+	switch status {
+	case "connected":
+		return "✅"
+	case "reconnect_required":
+		return "⚠️"
+	}
+	return "❌"
+}
+
+// replyKeyboard is the persistent two-column menu above the input field.
+func replyKeyboard(tx texts) *models.ReplyKeyboardMarkup {
+	key := func(s string) models.KeyboardButton { return models.KeyboardButton{Text: s} }
+	return &models.ReplyKeyboardMarkup{
+		Keyboard: [][]models.KeyboardButton{
+			{key(tx.kbCopy), key(tx.kbJobs)},
+			{key(tx.kbSync), key(tx.kbDest)},
+			{key(tx.kbAccount), key(tx.kbSettings)},
+		},
+		IsPersistent: true, ResizeKeyboard: true, InputFieldPlaceholder: tx.kbPlaceholder,
+	}
+}
+
+// keyboardPage maps a tap on the persistent keyboard (in either language) to a
+// menu page; "" means the text was not a keyboard label.
+func keyboardPage(text string) string {
+	for _, tx := range []texts{vietnamese, english} {
+		switch text {
+		case tx.kbCopy:
+			return "copy"
+		case tx.kbJobs:
+			return "jobs"
+		case tx.kbSync:
+			return "library"
+		case tx.kbDest:
+			return "dest"
+		case tx.kbAccount:
+			return "account"
+		case tx.kbSettings:
+			return "settings"
+		}
+	}
+	return ""
+}
+
+// sendKeyboard installs the persistent keyboard with a short, silent message.
+func (t *Telegram) sendKeyboard(ctx context.Context, chatID int64, tx texts) {
+	_, err := t.bot.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: tx.kbReady,
+		ReplyMarkup: replyKeyboard(tx), DisableNotification: true})
+	if err != nil {
+		t.log.Warn("telegram: cannot install the keyboard", "err", err)
+	}
 }
 
 func googleState(status string, tx texts) string {
@@ -453,8 +523,8 @@ func (t *Telegram) previewCard(ctx context.Context, p app.Principal, chatID int6
 	}
 	payload, _ := json.Marshal(planPayload{Source: refOf(view.Plan), Root: view.RootName})
 	return t.showCard(ctx, p, chatID, messageID, b.String(),
-		[]button{act(tx.copy, "copy", view.ID, view.Revision, string(payload)), act(tx.destination, "choose_dest", view.ID, view.Revision, string(payload))},
-		[]button{act(tx.cancel, "cancel_preview", view.ID, view.Revision, "")})
+		[]button{styled(act("✅ "+tx.copy, "copy", view.ID, view.Revision, string(payload)), "success"), act("📁 "+tx.destination, "choose_dest", view.ID, view.Revision, string(payload))},
+		[]button{styled(act("✖ "+tx.cancel, "cancel_preview", view.ID, view.Revision, ""), "danger")})
 }
 
 // syncTimezone is the zone used by chat presets; schedules never use the host
@@ -502,11 +572,11 @@ func (t *Telegram) jobButtons(tx texts, j state.Job) [][]button {
 	var rows [][]button
 	switch j.State {
 	case state.JobQueued, state.JobRunning, state.JobReconciling, state.JobPausing, state.JobCancelling:
-		rows = append(rows, []button{control(tx.pause, "pause"), control(tx.cancel, "job_cancel")})
+		rows = append(rows, []button{control(tx.pause, "pause"), styled(control(tx.cancel, "job_cancel"), "danger")})
 	case state.JobPaused:
-		rows = append(rows, []button{control(tx.resume, "resume"), control(tx.cancel, "job_cancel")})
+		rows = append(rows, []button{styled(control(tx.resume, "resume"), "success"), styled(control(tx.cancel, "job_cancel"), "danger")})
 	case state.JobBlocked, state.JobFailed, state.JobPartial:
-		rows = append(rows, []button{control(tx.retry, "retry")})
+		rows = append(rows, []button{styled(control(tx.retry, "retry"), "success")})
 	}
 	rows = append(rows, []button{act(tx.details, "job", j.ID, j.Revision, ""), nav(tx.jobs, "jobs")})
 	return rows

@@ -24,16 +24,23 @@ func (t *Telegram) onMessage(ctx context.Context, updateID int64, m *models.Mess
 	if err != nil || !ok {
 		return nil
 	}
+	t.names.Store(m.Chat.ID, m.From.FirstName)
 	text := strings.TrimSpace(m.Text)
 	if text == "" {
 		text = strings.TrimSpace(m.Caption)
+	}
+	if page := keyboardPage(text); page != "" {
+		return t.page(ctx, p, m.Chat.ID, 0, page)
 	}
 	if text == "" {
 		return t.page(ctx, p, m.Chat.ID, 0, "home")
 	}
 	cmd, rest := splitCommand(text)
 	switch cmd {
-	case "/start", "/menu", "/help", "/cancel":
+	case "/start", "/menu", "/help":
+		t.sendKeyboard(ctx, m.Chat.ID, t.text(ctx, p))
+		return t.page(ctx, p, m.Chat.ID, 0, "home")
+	case "/cancel":
 		return t.page(ctx, p, m.Chat.ID, 0, "home")
 	case "/jobs":
 		return t.page(ctx, p, m.Chat.ID, 0, "jobs")
@@ -162,6 +169,7 @@ func (t *Telegram) onCallback(ctx context.Context, cq *models.CallbackQuery) err
 		// A group message cannot be controlled from here; no data is echoed.
 		return t.answer(ctx, cq.ID, "")
 	}
+	t.names.Store(msg.Chat.ID, cq.From.FirstName)
 	p, ok, err := t.principal(ctx, cq.From.ID)
 	if err != nil {
 		return err

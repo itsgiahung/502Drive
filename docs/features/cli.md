@@ -176,3 +176,17 @@ plain. Tên Drive qua `Sanitize` (ESC/control/bidi). Lệnh nghiệp vụ in ti�
 - Trong terminal, nếu còn thiếu và không có cờ nào: hỏi lần lượt (Enter để bỏ qua; token
   ẩn khi gõ). `502drive up --quiet` (autostart) không hỏi nhưng vẫn đọc env/`.env`.
 - Test: [setup_env_test.go](../../internal/cli/setup_env_test.go).
+
+## Màn Home của TUI (kiểu Claude Code)
+
+- Khung viền: mèo nhỏ (≈9 dòng, `mascot.NewMini`) | lời chào, tài khoản Google, thư mục
+  đích mặc định, đếm job, Telegram | gợi ý bắt đầu. Dưới khung là "Hoạt động gần đây"
+  (job mới nhất) và **ô lệnh** ghim sát đáy.
+- Hai thư mục và các file bay chỉ hiện khi đang có job `running` (dải 4 dòng
+  `mascot.Strip`, kèm tốc độ/ETA), không còn chiếm chỗ lúc rảnh.
+- Ô lệnh luôn nhận chữ: dán link rồi Enter → hộp thoại copy. Gõ `/` để mở danh sách lệnh
+  (`/copy`, `/drive`, `/jobs`, `/library`, `/dest`, `/account`, `/login`, `/settings`,
+  `/refresh`, `/help`, `/quit`), ↑↓ chọn, Tab hoàn thành, Enter chạy; `/copy LINK` đi
+  thẳng vào bản xem trước. Khi ô trống, các phím `1`–`7`, `c`, `l`, `r`, `q`, `?` vẫn là
+  phím tắt; khi đang gõ, `q` chỉ là chữ q. Esc xóa ô trước khi làm gì khác.
+- Test: [home_test.go](../../internal/tui/home_test.go).

@@ -29,6 +29,11 @@ type fakeMessage struct {
 	Text        string
 	Buttons     []string
 	ButtonTexts []string
+	Styles      []string
+	// Persistent reply keyboard, when the message installs one.
+	Reply       []string
+	Persistent  bool
+	Placeholder string
 }
 
 type queued struct {
@@ -165,7 +170,13 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 				InlineKeyboard [][]struct {
 					Text         string `json:"text"`
 					CallbackData string `json:"callback_data"`
+					Style        string `json:"style"`
 				} `json:"inline_keyboard"`
+				Keyboard [][]struct {
+					Text string `json:"text"`
+				} `json:"keyboard"`
+				IsPersistent bool   `json:"is_persistent"`
+				Placeholder  string `json:"input_field_placeholder"`
 			}
 			if err := json.Unmarshal([]byte(markup), &kb); err != nil {
 				f.t.Errorf("bad reply_markup %q: %v", markup, err)
@@ -174,8 +185,15 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 				for _, b := range row {
 					m.Buttons = append(m.Buttons, b.CallbackData)
 					m.ButtonTexts = append(m.ButtonTexts, b.Text)
+					m.Styles = append(m.Styles, b.Style)
 				}
 			}
+			for _, row := range kb.Keyboard {
+				for _, b := range row {
+					m.Reply = append(m.Reply, b.Text)
+				}
+			}
+			m.Persistent, m.Placeholder = kb.IsPersistent, kb.Placeholder
 		}
 		f.mu.Lock()
 		f.nextID++
@@ -501,10 +519,10 @@ func TestMenuLanguageComesFromPreferences(t *testing.T) {
 	h.api.push(h.messageUpdate(1, 100, 100, "private", "/start"))
 	h.pull()
 	sent := h.lastSent()
-	if !strings.Contains(sent.Text, english.pasteHint) {
+	if !strings.Contains(sent.Text, english.welcomeTail) {
 		t.Fatalf("language preference ignored: %q", sent.Text)
 	}
-	if !strings.Contains(strings.Join(sent.ButtonTexts, "|"), english.library) {
+	if !strings.Contains(strings.Join(sent.ButtonTexts, "|"), english.kbSync) {
 		t.Fatalf("en menu labels missing: %v", sent.ButtonTexts)
 	}
 }
@@ -1064,5 +1082,59 @@ func TestJobPanelShowsABarAndAnAnimationFrameWhileRunning(t *testing.T) {
 	}
 	if progressBar(500, 100) != "▰▰▰▰▰▰▰▰▰▰▰▰▰▰ 100%" {
 		t.Fatalf("an overshooting count must clamp: %q", progressBar(500, 100))
+	}
+}
+
+func TestStartInstallsAPersistentKeyboardThenAColourfulWelcome(t *testing.T) {
+	h := newHarness(t, 100)
+	h.api.push(h.messageUpdate(1, 100, 100, "private", "/start"))
+	h.pull()
+	sent, _ := h.api.messages()
+	if len(sent) < 2 {
+		t.Fatalf("expected the keyboard message and the welcome card, got %d messages", len(sent))
+	}
+	kb, card := sent[len(sent)-2], sent[len(sent)-1]
+	if !kb.Persistent || len(kb.Reply) != 6 || kb.Placeholder == "" {
+		t.Fatalf("the quick menu must be a persistent 6-key keyboard with a placeholder: %+v", kb)
+	}
+	for _, want := range []string{vietnamese.kbCopy, vietnamese.kbJobs, vietnamese.kbSync, vietnamese.kbDest, vietnamese.kbAccount, vietnamese.kbSettings} {
+		found := false
+		for _, r := range kb.Reply {
+			found = found || r == want
+		}
+		if !found {
+			t.Fatalf("keyboard lacks %q: %v", want, kb.Reply)
+		}
+	}
+	if !strings.Contains(card.Text, "<blockquote>") || !strings.Contains(card.Text, "502Drive") {
+		t.Fatalf("the welcome card should use a quote block:\n%s", card.Text)
+	}
+	if len(card.Styles) == 0 || card.Styles[0] != "primary" {
+		t.Fatalf("the Copy button should be the highlighted one: styles=%v", card.Styles)
+	}
+}
+
+func TestKeyboardTapsOpenTheSamePagesAsTheButtons(t *testing.T) {
+	h := newHarness(t, 100)
+	for i, tap := range []struct{ label, want string }{
+		{vietnamese.kbJobs, vietnamese.jobsEmpty},
+		{english.kbJobs, vietnamese.jobsEmpty},
+		{vietnamese.kbCopy, vietnamese.copyHint},
+	} {
+		h.api.push(h.messageUpdate(int64(i+1), 100, 100, "private", tap.label))
+		h.pull()
+		if sent := h.lastSent(); !strings.Contains(sent.Text, tap.want) {
+			t.Fatalf("tap %q opened %q, want %q", tap.label, sent.Text, tap.want)
+		}
+	}
+}
+
+func TestKeyboardTapFromAStrangerIsIgnored(t *testing.T) {
+	h := newHarness(t, 100)
+	before, _ := h.api.messages()
+	h.api.push(h.messageUpdate(1, 999, 999, "private", vietnamese.kbJobs))
+	h.pull()
+	if after, _ := h.api.messages(); len(after) != len(before) {
+		t.Fatal("an unauthorised user got an answer")
 	}
 }

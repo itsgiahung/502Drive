@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"github.com/charmbracelet/bubbles/textinput"
 	"strings"
 	"time"
 
@@ -92,6 +93,8 @@ type Model struct {
 	selected map[string]bool
 	confirm  *confirmation
 	login    *loginState
+	cmd      *textinput.Model // the Home command prompt
+	cmdSel   int
 	drv      *explorer
 	cp       *copyFlow
 
@@ -127,8 +130,8 @@ func New(acts Actions, opt Options) Model {
 	now := opt.now()
 	m := Model{acts: acts, opt: opt, ctx: context.Background(), screen: screenHome, width: width, height: opt.Height,
 		lang: lang, fetching: true, selected: map[string]bool{}, rates: map[string]*rate{}, prevStates: map[string]string{},
-		started: now, lastInput: now, anim: mascot.NewAnim()}
-	m.frame = mascot.Static(mascot.Idle, .3)
+		started: now, lastInput: now, anim: mascot.NewMini(), cmd: newPrompt()}
+	m.frame = mascot.StaticMini(mascot.Idle, .3)
 	return m
 }
 
@@ -417,6 +420,11 @@ func (m Model) mood(now time.Time) mascot.Mood {
 func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.typing() {
 		return m.typingKey(msg)
+	}
+	if m.screen == screenHome && m.confirm == nil {
+		if next, cmd, handled := m.homeKey(msg); handled {
+			return next, cmd
+		}
 	}
 	if m.confirm != nil {
 		c := m.confirm

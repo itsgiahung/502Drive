@@ -9,6 +9,13 @@ import (
 )
 
 const (
+	// MiniCols and MiniRows are the text size of the small cat.
+	MiniCols = 20
+	MiniRows = 9
+	miniY0   = 8
+	// StripCols and StripRows are the text size of the file-transfer strip.
+	StripCols = 56
+	StripRows = 4
 	// Cols and Rows are the text size of a full scene (cat plus both folders).
 	Cols = W
 	Rows = H / 2
@@ -25,6 +32,8 @@ type Options struct {
 	Dark bool
 	// Crop draws only the cat, without the folders and most of the flight path.
 	Crop bool
+	// Mini crops tightly around the small cat (NewMini / StaticMini).
+	Mini bool
 }
 
 func (o Options) background() rgb {
@@ -67,14 +76,26 @@ func (p *painter) seq(c rgb, bg bool) string {
 // share one text row: the top pixel is the foreground of "▀", the bottom the
 // background.
 func (f *Frame) Lines(o Options) []string {
-	x0, x1 := 0, W
-	if o.Crop {
+	x0, x1, y0, y1 := 0, W, 0, H
+	switch {
+	case o.Mini:
+		x0, x1, y0, y1 = int(cx)-MiniCols/2, int(cx)+MiniCols/2, miniY0, miniY0+MiniRows*2
+	case o.Crop:
 		x0, x1 = cropX0, cropX0+CropCols
 	}
+	return f.lines(o, x0, x1, y0, y1)
+}
+
+// StripLines renders a Strip frame.
+func (f *Frame) StripLines(o Options) []string {
+	return f.lines(o, 0, StripCols, 0, StripRows*2)
+}
+
+func (f *Frame) lines(o Options, x0, x1, y0, y1 int) []string {
 	bgc := o.background()
 	pt := &painter{o: o, cache: map[uint32]string{}}
-	out := make([]string, 0, Rows)
-	for y := 0; y < H; y += 2 {
+	out := make([]string, 0, (y1-y0)/2)
+	for y := y0; y < y1; y += 2 {
 		var sb strings.Builder
 		var lastFG, lastBG string
 		for x := x0; x < x1; x++ {

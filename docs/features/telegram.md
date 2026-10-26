@@ -72,3 +72,17 @@ syncer trong daemon:
 - Ảnh/sticker mascot, nút "copy bản mới" riêng, dedupe UX khi paste cùng link
   đang có job, group chat (mặc định bỏ qua).
 - Notification desktop; digest; `/help` đầy đủ mọi lệnh (chỉ menu).
+
+## Menu (màu mè)
+
+- `/start`, `/menu`, `/help` cài **bàn phím cố định** (`is_persistent`, 2 cột, 6 phím có emoji:
+  Copy link, Công việc, Đồng bộ, Thư mục đích, Tài khoản, Cài đặt; ô nhập có gợi ý "Dán link
+  Google Drive vào đây…") bằng một tin nhắn im lặng, rồi gửi thẻ chào: tiêu đề, lời chào theo
+  tên, khối trích dẫn `<blockquote>` liệt kê tính năng, trạng thái Google/đích/job, và các nút
+  inline. Bấm phím cố định hoặc nút inline đều mở cùng một trang.
+- Nút inline có màu (`style`: `primary` xanh dương cho Copy, `success` xanh lá cho Xác nhận,
+  Tiếp tục, Thử lại, `danger` đỏ cho Hủy). Telegram bản trước 2026-02 hiển thị nút không màu.
+- Người lạ bấm phím cố định hoặc nhắn gì cũng không được trả lời (kiểm tra allowlist như cũ).
+- Test: `TestStartInstallsAPersistentKeyboardThenAColourfulWelcome`,
+  `TestKeyboardTapsOpenTheSamePagesAsTheButtons`, `TestKeyboardTapFromAStrangerIsIgnored` trong
+  [telegram_test.go](../../internal/telegram/telegram_test.go).

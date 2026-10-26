@@ -69,6 +69,8 @@ type Telegram struct {
 
 	state atomic.Value // string
 	proc  sync.Mutex
+	// names remembers each chat's first name for the welcome card (memory only).
+	names sync.Map // int64 -> string
 }
 
 func New(ctx context.Context, o Options) (*Telegram, error) {
