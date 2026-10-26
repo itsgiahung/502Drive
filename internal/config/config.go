@@ -1,0 +1,175 @@
+package config
+
+import (
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"runtime"
+)
+
+type Config struct {
+	Listen            string `json:"listen"`
+	DataDir           string `json:"data_dir"`
+	TokenFile         string `json:"token_file"`
+	OAuthClientFile   string `json:"oauth_client_file,omitempty"`
+	TelegramTokenFile string `json:"telegram_token_file,omitempty"`
+	TelegramOwnerID   int64  `json:"telegram_owner_id,omitempty"`
+	OAuthCallbackPort int    `json:"oauth_callback_port,omitempty"`
+	// CheckUpdates lets the tray ask GitHub once a day whether a newer release
+	// exists. Off by default: nothing contacts the network unasked.
+	CheckUpdates bool `json:"check_updates,omitempty"`
+}
+
+func DefaultPath() string {
+	p, e := os.UserConfigDir()
+	if e != nil {
+		return "config.json"
+	}
+	return filepath.Join(p, "502drive-next", "config.json")
+}
+func ValidateListen(v string) error {
+	host, port, e := net.SplitHostPort(v)
+	if e != nil || port == "" {
+		return errors.New("listen must be a loopback IP and port")
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return errors.New("only loopback listeners are supported")
+	}
+	return nil
+}
+func Load(path string) (Config, error) {
+	var c Config
+	f, e := os.Open(path)
+	if e != nil {
+		return c, errors.New("config unavailable; run setup with an explicit private directory")
+	}
+	defer f.Close()
+	d := json.NewDecoder(io.LimitReader(f, 65537))
+	d.DisallowUnknownFields()
+	if e = d.Decode(&c); e != nil {
+		return c, errors.New("invalid config")
+	}
+	if e = d.Decode(new(any)); e != io.EOF {
+		return c, errors.New("trailing config data")
+	}
+	if e = ValidateListen(c.Listen); e != nil {
+		return c, e
+	}
+	if c.DataDir == "" || c.TokenFile == "" {
+		return c, errors.New("data_dir and token_file are required")
+	}
+	base, e := filepath.Abs(filepath.Dir(path))
+	if e != nil {
+		return c, e
+	}
+	for _, v := range []*string{&c.DataDir, &c.TokenFile, &c.OAuthClientFile, &c.TelegramTokenFile} {
+		if *v != "" && !filepath.IsAbs(*v) {
+			*v = filepath.Join(base, *v)
+		}
+	}
+	return c, nil
+}
+func Setup(path string) (Config, error) {
+	var c Config
+	p, e := filepath.Abs(path)
+	if e != nil {
+		return c, e
+	}
+	dir := filepath.Dir(p)
+	if _, e = os.Lstat(p); !os.IsNotExist(e) {
+		return c, errors.New("config already exists or cannot be inspected")
+	}
+	if e = os.MkdirAll(dir, 0700); e != nil {
+		return c, e
+	}
+	i, e := os.Lstat(dir)
+	if e != nil || !i.IsDir() {
+		return c, errors.New("config parent must be a directory")
+	}
+	if runtime.GOOS != "windows" && i.Mode().Perm()&0077 != 0 {
+		return c, errors.New("config directory must be private (0700)")
+	}
+	c = Config{Listen: "127.0.0.1:5020", DataDir: filepath.Join(dir, "data-v2"), TokenFile: filepath.Join(dir, "api-token")}
+	raw := make([]byte, 32)
+	if _, e = rand.Read(raw); e != nil {
+		return c, e
+	}
+	if e = WriteExclusive(c.TokenFile, []byte(base64.RawURLEncoding.EncodeToString(raw)+"\n")); e != nil {
+		return c, e
+	}
+	b, e := json.MarshalIndent(c, "", "  ")
+	if e != nil {
+		return c, e
+	}
+	if e = WriteExclusive(p, append(b, '\n')); e != nil {
+		_ = os.Remove(c.TokenFile)
+		return c, e
+	}
+	return c, nil
+}
+func WriteExclusive(path string, b []byte) error {
+	f, e := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if e != nil {
+		return e
+	}
+	_, e = f.Write(b)
+	if e == nil {
+		e = f.Sync()
+	}
+	closeErr := f.Close()
+	return errors.Join(e, closeErr)
+}
+func ReadPrivate(path string) ([]byte, error) {
+	i, e := os.Lstat(path)
+	if e != nil || !i.Mode().IsRegular() {
+		return nil, errors.New("private file unavailable")
+	}
+	if runtime.GOOS != "windows" && i.Mode().Perm()&0077 != 0 {
+		return nil, fmt.Errorf("private file permissions must exclude group and other")
+	}
+	if i.Size() > 65536 {
+		return nil, errors.New("private file too large")
+	}
+	return os.ReadFile(path)
+}
+
+// Save rewrites an existing config atomically with private permissions.
+func Save(path string, c Config) error {
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), "config-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err = tmp.Chmod(0o600); err == nil {
+		_, err = tmp.Write(append(b, '\n'))
+	}
+	if err == nil {
+		err = tmp.Sync()
+	}
+	if e := tmp.Close(); err == nil {
+		err = e
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+// Validate checks values that Load does not.
+func (c Config) Validate() error {
+	if c.OAuthCallbackPort < 0 || c.OAuthCallbackPort > 65535 {
+		return errors.New("oauth_callback_port is out of range")
+	}
+	return ValidateListen(c.Listen)
+}
