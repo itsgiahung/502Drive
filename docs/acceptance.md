@@ -1,0 +1,115 @@
+# Acceptance matrix
+
+Cột **Trạng thái** chỉ ghi những gì đã chạy trong phiên 2026-10-26: `local`
+(test trong repo), `local (một phần)`, hoặc `chưa chạy`. Không mục nào được đánh
+pass nếu thiếu test tương ứng. Test live/fake được ghi rõ.
+
+## HTTP và state (`internal/httpapi`, `internal/app`, `internal/state`)
+
+| ID | Scenario | Trạng thái | Test |
+| --- | --- | --- | --- |
+| H1 | No/wrong bearer, forged actor, scope operator | local | [server_test.go](../internal/httpapi/server_test.go) `TestAuthAndInputLimits` |
+| H2 | Same key 2 request đồng thời, response lost, restart | local | `TestConcurrentSubmitSameKeyAdmitsOnce`, [store_test.go](../internal/state/store_test.go) |
+| H3 | Same key khác payload/principal | local | `TestConcurrentSubmitSameKeyAdmitsOnce` (mismatch) |
+| H4 | Hai key trên cùng plan đã consume | local | `TestEndToEndCopyConformsToOpenAPI` |
+| H5 | Admission race với cap | local (một phần) | [syncer_test.go](../internal/daemon/syncer_test.go) `TestQueueFullKeepsTheSlotDue` |
+| H6 | Expired/changed plan, stale action | local | `TestPlanRejectsDestinationInsideSourceAndBadInput`, store_test expired |
+| H7 | Kill trước/sau commit, trước claim | local (một phần) | [engine_test.go](../internal/engine/engine_test.go) crash windows |
+| H8 | Client cancel/timeout khi submit | chưa chạy | — |
+| H9 | Oversize/unknown field/cursor hỏng | local | `TestAuthAndInputLimits` |
+| H10 | Event pagination/reconnect | local (một phần) | `TestEndToEndCopyConformsToOpenAPI`; retention/410 chưa có |
+
+## Copy và recovery (`internal/engine`)
+
+| ID | Scenario | Trạng thái | Test |
+| --- | --- | --- | --- |
+| C1 | Nested + empty folder | local | `TestCopyPreservesTreeNamesAndEmptyFolders` |
+| C2 | Trùng tên, Unicode/control char | local | như trên + [tui_test.go](../internal/tui/tui_test.go) `TestInjectionIsSanitized`, [telegram_test.go](../internal/telegram/telegram_test.go) escape |
+| C3 | Binary/native file, single-file wrapper | local | `TestSingleFileCollectionPicksUpNewVersion`, `TestCopyPreservesTreeNamesAndEmptyFolders` |
+| C4 | Shortcut ngoài cây/root shortcut | local (một phần) | `TestPlanRejectsDestinationInsideSourceAndBadInput` (root); shortcut trong cây chưa có test riêng |
+| C5 | Resource key/Shared Drive | local (một phần) | [reference_test.go](../internal/drive/reference_test.go); Shared Drive live: chưa |
+| C6 | Source = destination/descendant | local | `TestPlanRejectsDestinationInsideSourceAndBadInput` |
+| C7 | Pagination + crash checkpoint | local | `TestCopyPreservesTreeNamesAndEmptyFolders` (`PageSize=2`) |
+| C8 | Timeout sau remote write | local | engine crash-window tests (`LoseResponse`) |
+| C9 | 429/5xx/auth | local | [client_test.go](../internal/drive/client_test.go) + engine retry |
+| C10 | Pause/cancel rồi restart | local | [store_test.go](../internal/state/store_test.go), engine pause/cancel |
+| C11 | Source đổi/mất giữa scan | local | `TestDeltaRunReusesRootAndAppliesChangesWithoutDeleting` |
+| C12 | Retry vs job mới | local | `TestRunNowCoalescesWithActiveRunAndRefusesWhileBlocked` |
+| — | 10 000 file/500 folder load | local | [load_test.go](../internal/engine/load_test.go) (không `-race`) |
+
+## CLI, TUI, tray, Telegram
+
+| ID | Scenario | Trạng thái | Test |
+| --- | --- | --- | --- |
+| L1 | Help/version/no subcommand | local | [cli_test.go](../internal/cli/cli_test.go) |
+| L2 | `--json` success/error, NDJSON events | local | cli_test |
+| L3 | Pipe/non-TTY/menu non-TTY | local | cli_test `TestMenuNeedsATerminal` |
+| L4 | 40/80/120 cột, TERM=dumb, Unicode | local | cli_test `TestMenuFitsNarrowTerminals`, [tui_test.go](../internal/tui/tui_test.go) `TestResizeWidths` |
+| L5 | Wait timeout/SIGINT/daemon down | local (một phần) | cli_test wait; SIGINT chưa |
+| L6 | Submit vs wait terminal | local | cli_test |
+| L7 | Completion + precedence flag/env/file | local | [tray_test.go](../internal/cli/tray_test.go) assets; completion chạy trong shell: chưa |
+| L8 | OSC/ESC/newline name, token | local | [render.go](../internal/cli/render.go) tests qua cli_test/tui/telegram |
+| L9 | Colour/NO_COLOR/plain/json/dumb | local | [render_test qua cli_test], [i18n_test.go](../internal/i18n/i18n_test.go) |
+| L10 | Mascot/motion/resize/terminal restore | local (một phần) | tui_test `TestProgramRendersAndRestoresTheTerminal` |
+| L11 | Stream realtime: hello/changed, gộp loạt ghi, kết thúc khi daemon dừng, cần token | local | [stream_test.go](../internal/httpapi/stream_test.go) |
+| L12 | Client stream tự nối lại, báo live/reconnecting, token sai không "live" | local | [client_stream_test.go](../internal/cli/client_stream_test.go) |
+| L13 | TUI: danh sách dài cắt cửa sổ đúng chiều cao, không sót dòng cũ, chữ rộng không tràn | local | [realtime_test.go](../internal/tui/realtime_test.go) |
+| L14 | TUI: chọn nhiều + hành động hàng loạt (bỏ qua mục không hợp lệ, một lỗi không dừng lô, hỏi trước khi hủy) | local | realtime_test `TestSpaceSelects…`, `TestBulk…`, `TestCancelAsksBeforeActing` |
+| L15 | TUI: tốc độ/ETA từ snapshot liên tiếp, mèo vui sau job xong, chỉ có mèo khi có màu | local | realtime_test `TestSpeedAndETA…`, `TestFinishedJob…`, `TestHomeShowsTheCat…` |
+| L16 | Mèo đối xứng, mọi mood vẽ được, spring không nổ khi tạm dừng lâu | local | [mascot_test.go](../internal/mascot/mascot_test.go) |
+| L17 | `502drive up`/lệnh trần: bật daemon tách khỏi terminal, idempotent, `POST /v1/shutdown` dừng sạch | local (chạy tay trên máy build, không có test tự động cho spawn) | smoke trong [verification](verification.md) |
+| L18 | `logs`, `autostart enable/disable/status`, `update` | local | [extras_test.go](../internal/cli/extras_test.go), [update_test.go](../internal/update/update_test.go) |
+| L19 | Thông báo desktop khi job xong: chỉ job đã thấy, escape markup, không qua shell | local | [tray_test.go](../internal/tray/tray_test.go) `TestJobTransitions…`, `TestNotifyArgv…`; `notify-send` thật: chưa |
+| T1 | Home/preview/job vi/en (mobile) | local (một phần) | [telegram_test.go](../internal/telegram/telegram_test.go); mobile: chưa |
+| T2 | Operator/group/forged ID | local | `TestGroupChatIsIgnored`, `TestCallbackFromAnotherPrincipalDoesNothing` |
+| T3 | Double/stale/expired callback | local | `TestDoubleCallbackCreatesOneJob`, `TestExpiredCallbackDoesNothing` |
+| T4 | Auto-copy on/dest đổi | local | `TestPasteAutoCopyCreatesOneJob`, `TestAutoCopyFallsBackToPreviewWhenRevisionMoved` |
+| T5 | Crash trước/sau inbox commit | local | `TestCrashAfterInboxCommitDoesNotDuplicate` |
+| T6 | 429/not-modified/deleted panel | local | `TestProgressRateLimitDoesNotSpam`, `TestDeletedPanelIsReplacedOnce` |
+| T7 | Send success, DB persist lost | chưa chạy | duplicate message chấp nhận, không duplicate copy (logic) |
+| T8 | Bot outage/block/invalid token | local (một phần) | `TestPollingStateAndRejectedToken`, `TestFinalNotificationSurvivesABlockedBot` |
+| T9 | `/cancel` + job đang chạy | local (một phần) | menu `/cancel` về Home; job không bị cancel |
+| T10 | Tên HTML/Markdown độc hại | local | `TestDriveNamesAreEscaped` |
+| T11/T12 | Mobile vi/en end-to-end; quota/stale/offline | chưa chạy | cần bot thật + thiết bị thật |
+| — | Thông báo job không tạo từ chat | local | [notifier_test.go](../internal/telegram/notifier_test.go) |
+
+## Automation và sync
+
+| ID | Scenario | Trạng thái | Test |
+| --- | --- | --- | --- |
+| S1 | Copy xong → bật sync | local | [app/sync_test.go](../internal/app/sync_test.go) `TestSyncWaitsForTheBaselineThenActivates` |
+| S2 | Daily/weekly/interval + zone + preview | local | [schedule_test.go](../internal/schedule/schedule_test.go), [sync_test.go](../internal/cli/sync_test.go) dry-run |
+| S3 | DST gap/fold, clock jumps | local | `TestDSTGapIsSkippedAndFoldRunsOnce`, [syncer_test.go](../internal/daemon/syncer_test.go) |
+| S4 | Offline 100 tick/queue full | local | `TestScheduledRunCatchesUpExactlyOnceAfterDowntime`, `TestQueueFullKeepsTheSlotDue` |
+| S5 | Run now + tick + realtime burst | local | app sync coalesce, syncer burst test |
+| S6 | Pause/stop restart, callback cũ | local | app `TestPauseResumeStopSurviveRestart`, [sync_test.go](../internal/httpapi/sync_test.go) |
+| S7 | Attach realtime sau copy | local (một phần) | `TestRealtimeCapturesTheCursorBeforeWritingTheSubscription`; replay: chưa |
+| S8 | Feed token hết hạn | local | `TestPollerReconcilesAnExpiredCursor` |
+| S9 | Filter/type/policy giống nhau | local (một phần) | delta tests; filter loại: chưa có |
+| S10 | versioned vs replace_copy | local | [sync_test.go](../internal/engine/sync_test.go) `TestReplaceCopyRetiresOldVersionOnlyAfterNewOne` |
+| S11 | No-change/recurring failure | local | notifier no-change + one-failure tests |
+| S12 | Library scope/buttons | local (một phần) | HTTP pagination + telegram library |
+
+## Vận hành, release, login
+
+| ID | Scenario | Trạng thái | Test |
+| --- | --- | --- | --- |
+| O1 | Daemon thứ hai cùng data dir | local | store_test `TestExclusiveLockAndExpiredPlan` |
+| O2 | Cold backup/restore | local | [maintenance_test.go](../internal/maintenance/maintenance_test.go) roundtrip |
+| O3 | Thiếu key/checksum sai/schema mới | local | maintenance tests |
+| O4 | Rollback sau remote write | chưa chạy | quy trình ở [migration](migration.md) |
+| O5 | Linux/Windows cài đặt | local (một phần) | cross-build; rpm `rpm -i --test`; cài thật: chưa |
+| O6 | Docker auth/persistence | chưa chạy | — |
+| O7 | Go-only package | local | Rust đã gỡ; `go build ./cmd/502drive` |
+| O8 | Tải 10k/100k | local (một phần) | load_test (10k); 100k chưa |
+| O9 | Stall/disk full/DB busy/soak | chưa chạy | — |
+| O10 | Cleanup dry-run/apply + symlink | local | maintenance cleanup tests |
+| O11 | Tag/SHA/checksum publish | chưa chạy | CI viết xong, chưa chạy GitHub |
+| O12 | Rollback sau remote write | chưa chạy | — |
+| I1–I4 | OAuth callback/session/revoke | local (một phần) | [auth_test.go](../internal/drive/auth_test.go), [auth_more_test.go](../internal/drive/auth_more_test.go); live: chưa |
+
+## Cách chạy
+
+`gofmt -l cmd internal && go vet ./... && go test -race ./...` cho toàn bộ; load
+probe chạy riêng không `-race`:
+`go test -run TestLoadTenThousandFiles -timeout 15m ./internal/engine`.

@@ -1,47 +1,37 @@
-# Contributing to 502Drive
+# Contributing
 
-Thanks for helping make 502Drive safer and easier to run.
+502Drive is a single Go module: `cmd/` holds the entry points, `internal/` the code.
+Read [AGENTS.md](AGENTS.md) for the invariants and [docs/README.md](docs/README.md)
+for the map before changing behaviour.
 
-## Ground Rules
-
-- Keep 502Drive local-first and Google Drive focused.
-- Keep contributions compatible with `GPL-3.0-only`.
-- Do not add quota bypasses, service-account rotation, scraping, torrent/leech scope, or download-disabled bypasses.
-- Prefer small, reviewable changes.
-- Keep Telegram UX usable without memorizing long commands.
-- User-facing Telegram text must support both Vietnamese and English.
-- Never commit secrets, tokens, DB files, logs, reports, or `master.key`.
-
-## Before Opening A PR
-
-Run:
+## Setup
 
 ```bash
-cargo fmt --check
-cargo test
-cargo build --release
+go build ./cmd/502drive
+gofmt -l cmd internal && go vet ./... && go test -race ./...
+# or: make check   (docs: make docs, full local release build: make release-local)
 ```
 
-For Telegram UX changes, also check:
+Go 1.27 is required. The SQLite driver is pure Go, so `CGO_ENABLED=0` builds work
+(the tray needs a desktop session at runtime, not CGO on Linux/Windows).
 
-- `/menu` still opens the control center.
-- Navigation uses buttons and edits existing bot messages where possible.
-- Destructive actions have confirmation or a clear recovery path.
-- New user-facing text is covered by `telegram.language = "vi"` and `"en"`.
+## Rules of the road
 
-## Good First Areas
+- Adapters (HTTP, CLI, Telegram, TUI, tray) call `internal/app` or the HTTP API.
+  They never write SQL and never contain a second copy engine.
+- A change to HTTP behaviour updates [docs/contracts/openapi.json](docs/contracts/openapi.json)
+  and the conformance tests in `internal/httpapi`.
+- A change to a remote-write path needs a failure test with the fake provider
+  (`internal/drive/drivetest`): lost response, timeout, crash between write and record.
+- Use synthetic fixtures. Never commit credentials, tokens, databases, reports,
+  resource keys or `master.key`.
+- Keep `gofmt` clean, one statement per line, comments only where the reason is
+  not obvious.
+- User-visible text is Vietnamese and English; do not hard-code one language in a
+  new adapter surface.
 
-- Documentation fixes.
-- Setup troubleshooting.
-- Full i18n catalog work.
-- GitHub Actions and release packaging.
-- Windows setup verification.
+## Pull requests
 
-## Out Of Scope
-
-- Hosted SaaS.
-- Public webhook requirement.
-- Service-account rotation.
-- Torrent/direct-link leeching.
-- Quota bypass.
-- Permission cloning or ownership transfer in v1.
+Describe what changed, which checks you ran (`go vet`, `go test -race`, any manual
+smoke) and what you could not verify (live Google Drive, real Telegram, real OS
+desktop). Do not claim live behaviour from fake-provider tests.

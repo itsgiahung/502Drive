@@ -1,274 +1,169 @@
 <div align="center">
 
+<img src="docs/assets/mascot.gif" alt="The 502Drive cat carrying files between two folders" width="480">
+
 # 502Drive
 
-**Local-first Google Drive clone & realtime one-way sync engine — controlled from Telegram or a native desktop GUI.**
+**Paste a Google Drive link. Get a server-side copy in your own Drive. Keep it in sync.**
 
-[![CI](https://github.com/GiaHung07/502Drive/actions/workflows/ci.yml/badge.svg)](https://github.com/GiaHung07/502Drive/actions/workflows/ci.yml)
-[![Release](https://github.com/GiaHung07/502Drive/actions/workflows/release.yml/badge.svg)](https://github.com/GiaHung07/502Drive/actions/workflows/release.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/GiaHung07/502Drive?logo=github&style=flat-square)](https://github.com/GiaHung07/502Drive/releases)
-[![Rust](https://img.shields.io/badge/rust-2024%20edition-orange.svg?style=flat-square&logo=rust)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20Docker-brightgreen.svg?style=flat-square)](https://github.com/GiaHung07/502Drive/releases)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)
+![Platforms](https://img.shields.io/badge/platforms-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS%20(CLI)-lightgrey)
+![Status](https://img.shields.io/badge/status-tested%20with%20a%20fake%20Drive%2C%20not%20yet%20live--accepted-orange)
 
-[Đọc bản tiếng Việt (Vietnamese README)](README.vi.md)
-
-<img src="docs/assets/screenshot-dashboard-dark.png" alt="502Drive desktop dashboard (dark theme)" width="900">
+English · [Tiếng Việt](README.vi.md)
 
 </div>
 
----
+One Go binary: a background daemon, a command line with a live terminal UI, a
+system-tray launcher and an optional Telegram bot. Type `502drive` and everything
+starts.
 
-## What is 502Drive?
+## Why
 
-502Drive is a **local-first Google Drive clone** plus a **realtime one-way sync engine**, written in Rust. You drive it from a **Telegram bot** (cloud-to-cloud cloning, job control, watch management) and from a **Tauri v2 desktop GUI** (React 19) on Linux.
-
-Everything — the database, the encryption key, the logs — lives on your own machine. File data never passes through 502Drive: copies are executed **server-side inside Google's cloud** via the Drive API.
-
-> **One binary, three names.** The repo builds a single `src/main.rs` into two identically-behaving binaries:
-> - **`502drive`** — the main daemon/CLI (canonical name).
-> - **`gdclone-bot`** — an alias of the same binary (kept for historical/config-path reasons; the config directory is `~/.config/gdclone-bot/`).
-> - **`502drive-gui`** — the Tauri desktop app, a separate binary.
->
-> Docs may use either `502drive` or `gdclone-bot` — they are the same program.
-
-## Why 502Drive?
-
-- **Server-side copy = fast & low bandwidth.** Clones use `files.copy` inside Google's infrastructure — no download/re-upload relay, finishes in seconds, uses almost none of your server's bandwidth.
-- **Local-first.** Your tokens, state and reports stay in a local SQLite database on your hardware — not on someone else's server.
-- **BYOK (Bring Your Own Keys).** Use your own Google Cloud OAuth Client ID/Secret (like rclone), or the 1-tap preset in the GUI setup wizard.
-- **Telegram control + desktop GUI.** Manage clones, jobs and realtime watches from chat; monitor everything from the native desktop dashboard.
-
-## Feature status
-
-| Capability | Status |
-| :--- | :--- |
-| Cloud-to-cloud clone (`files.copy`, folders & Shared Drives) | ✅ Working |
-| Realtime one-way watch (source → destination, Drive Changes API) | ✅ Working |
-| Telegram bot control (jobs, watches, destinations, permissions) | ✅ Working |
-| Desktop GUI dashboard (Tauri v2 / React 19, Linux) | ✅ Working |
-| Doctor / preflight checks | ✅ Working |
-| Docker headless daemon | ✅ Working |
-| Windows builds + Task Scheduler install | 🟡 Community verification welcome |
-| Two-way sync | 🚧 In progress / roadmap |
-| Drive push webhooks (VPS, no polling) | 🚧 In progress / roadmap |
-| Multi-account UI | 🚧 In progress / roadmap |
-| GUI folder browser | 🚧 In progress / roadmap |
+- **Server-side copy.** Google copies the files inside Drive (`files.copy`). Your
+  machine never downloads or re-uploads a byte, so a 200 GB folder costs no
+  bandwidth and no waiting for a local upload.
+- **Faithful tree.** Names, folder structure, empty folders, duplicate names,
+  shortcuts and Google-native files are preserved. The result link comes back
+  when the copy is done.
+- **Stays in sync.** Every copy becomes a *collection* with an optional schedule
+  (interval, daily, weekly, with a timezone) or realtime sync from the Drive change
+  feed. Run now, pause, stop and resume without losing the destination or the
+  mapping. Deleting at the source never deletes your copy.
+- **Safe after crashes.** Each remote write is recorded first. After a crash or a
+  lost response the job *reconciles* instead of writing twice, and reports
+  `blocked` when it cannot be sure, never a false "succeeded".
+- **Pleasant to use.** Live progress with speed and time left, multi-select bulk
+  actions, a tray icon that shows state, desktop notifications, Vietnamese and
+  English, and a small animated cat. Scripts get stable JSON and exit codes.
 
 ## Quick start
 
-> Requires a Telegram bot token (from [@BotFather](https://t.me/BotFather)), your Telegram user ID, and Google OAuth credentials — see [docs/oauth-setup.md](docs/oauth-setup.md).
+```bash
+502drive          # (or just: 502) first run: creates the private config, starts the daemon and tray, opens the TUI
+```
 
-### 1. Docker Compose (VPS / NAS / homelab)
+Then connect Google once. You need your own OAuth *Desktop* client
+([step by step](docs/oauth-setup.md)):
 
 ```bash
-git clone https://github.com/GiaHung07/502Drive.git && cd 502Drive
-mkdir -p config data
-cp config.sample.toml config/config.toml
-# Edit config/config.toml: bot_token, owner_telegram_id, google_oauth client_id/secret
-docker compose up -d
-docker compose logs -f
+502drive setup --oauth-client client_secret.json   # the file must be chmod 600
+502drive account login                              # opens the browser, waits for approval
+502drive destinations add 'https://drive.google.com/drive/folders/FOLDER_ID'
+502drive copy 'https://drive.google.com/drive/folders/SOURCE_ID' --wait
 ```
 
-Full guide: [docs/install-docker.md](docs/install-docker.md).
+The daemon and the tray keep running when you close the terminal. Only **Quit in
+the tray** stops them (running jobs resume on the next start).
 
-### 2. Linux install script + systemd user service
+## Install
+
+One line (verifies the SHA-256 checksum before installing; needs a published release):
 
 ```bash
-# Download and extract a release bundle (x86_64 / aarch64)
-tar -xzf 502drive-v*-linux-x86_64.tar.gz && cd 502drive-v*-linux-x86_64
-# Install the binary, tray assets and the systemd user service
-bash packaging/install.sh
-systemctl --user enable --now gdclone-bot.service
+curl -fsSL https://raw.githubusercontent.com/GiaHung07/502Drive/main/scripts/install.sh | sh        # Linux, macOS
+irm https://raw.githubusercontent.com/GiaHung07/502Drive/main/scripts/install.ps1 | iex            # Windows (PowerShell)
 ```
 
-### 3. Build from source
+Both install `502drive` and the short alias **`502`**, so after installing you can
+just type `502`.
+
+| Platform | How |
+| --- | --- |
+| Linux (Fedora/RHEL, Debian/Ubuntu) | `.rpm` / `.deb` from the release page (installs `502drive` and `502`). [Guide](docs/install-linux.md) |
+| Windows 10/11 | `.zip`, or the installer (unsigned: SmartScreen will warn). [Guide](docs/install-windows.md) |
+| Docker | [Guide](docs/install-docker.md) |
+| From source | `go install github.com/GiaHung07/502Drive/cmd/502drive@latest` (Go 1.27), or `make build` |
+
+Start with the system: `502drive autostart enable` (XDG autostart on Linux, the
+Run key on Windows). Check for a new release with `502drive update` (it never
+installs anything).
+
+## Everyday use
+
+| I want to… | Command |
+| --- | --- |
+| Open everything | `502drive` |
+| Copy a link and wait | `502drive copy LINK --wait` |
+| Preview without writing | `502drive inspect LINK` |
+| See jobs / pause / resume / cancel | `502drive jobs list`, `jobs pause ID`, … |
+| Keep a copy in sync | `502drive sync enable COLLECTION --daily 22:00` · `sync run` · `sync pause` · `sync stop` |
+| Check health | `502drive doctor` |
+| Read the daemon log | `502drive logs -f` |
+| Start/stop in the background | `502drive up` (the tray's Quit stops it) |
+| Script it | add `--json`, use the documented [exit codes](docs/features/cli.md) |
+
+### In the TUI
+
+`1`–`6` switch screens, `↑↓` move, `enter` opens. **Space** selects rows, **a**
+selects all; **p** pause, **u** resume, **c** cancel (asks first), **t** retry,
+**n** run now, **x** stop sync apply to the selection. `?` shows help, `q` leaves
+the TUI (the daemon keeps running). The cat reacts: it carries files while
+copying, hops when a job finishes, turns amber when you need to act and sleeps
+when idle. `--no-motion` makes it still; `NO_COLOR` or `--plain` removes it.
+
+### Telegram (optional)
 
 ```bash
-git clone https://github.com/GiaHung07/502Drive.git && cd 502Drive
-cargo build --release --bin 502drive
-./target/release/502drive --help
+502drive setup --telegram-token-file bot-token --telegram-owner-id 123456789
 ```
 
-Requires Rust 1.85+ (2024 edition).
+The bot is private-chat only, allow-listed, and uses the same service and
+permissions as the HTTP API. Details: [Telegram](docs/features/telegram.md).
 
-### Windows
+## Privacy and security
 
-Windows builds ship with a Task Scheduler logon-task installer (`502drive service-install`). See [docs/install-windows.md](docs/install-windows.md). Windows is not yet fully verified — community testing and reports are welcome.
+- The API listens on **loopback only** with a bearer token stored in a private
+  file; use SSH forwarding for remote access. The OAuth token is encrypted at rest.
+- 502Drive talks to Google (Drive API) and, only if you configure it, Telegram.
+  The update check contacts GitHub **only** when you run `502drive update` or opt
+  in for the tray. No telemetry.
+- It never changes sharing, never makes links public and never bypasses quota.
+- Read [PRIVACY.md](PRIVACY.md), [SECURITY.md](SECURITY.md) and the
+  [threat model](docs/threat-model.md).
 
-## How sync works
+## How it fits together
 
-Sync is **one-way: source → destination**, driven by the Google Drive **Changes API** (`changes.list`, polled at account scope). The destination is a mirror target — edits made in the destination are never copied back.
-
-```mermaid
-graph LR
-    TG[Telegram / Desktop GUI] --> Engine
-    Engine -->|changes.list cursor| API[Drive API v3]
-    Engine -->|files.copy server-side| API
-    API --> Src[(Source folder)] -.->|copied in Google cloud| Dst[(Destination)]
-    Engine --> DB[(SQLite WAL state)]
+```
+ CLI / TUI ─┐
+ Tray ──────┼── HTTP /v1 (+ SSE stream) ──▶ daemon: state (SQLite) · engine · scheduler ──▶ Google Drive
+ Telegram ──┘                                            ▲ one service, one writer
 ```
 
-- **Adaptive polling**: 10s / 60s / 300s (active / warm / cold). While a watched source is actively changing, edits typically appear in the destination within seconds to tens of seconds; idle watches back off automatically.
-- **Deletion policy** — default `preserve_destination`: if a source file is deleted, trashed, or becomes inaccessible, the destination copy is **kept**.
-- **Move-out** — `detach`: a file moved out of the source folder is detached from the watch mapping (move-back reuses the existing mapping).
-- **Content-update policies** (change via `/watch_policy`): `versioned_copy` (default — new copy alongside the old), `replace_copy` (overwrite in place), `manual_confirmation` (ask before applying).
-
-Full semantics: [docs/sync-semantics.md](docs/sync-semantics.md).
-
-**Engine integrity:** state lives in SQLite (WAL mode) with a transactional change cursor, idempotency keys, and crash recovery — an interrupted run resumes without duplicating work. All copies are server-side (`files.copy`), so file contents never pass through the app.
-
-## Configuration
-
-Config file: `~/.config/gdclone-bot/config.toml` (native/desktop) or `/config/config.toml` (Docker). Every value can be overridden with environment variables named `GDCLONE__SECTION__KEY` (double underscore). Full reference: [config.sample.toml](config.sample.toml).
-
-```toml
-[telegram]
-bot_token = "123456789:ABC..."        # from @BotFather
-owner_telegram_id = 987654321          # your Telegram user ID (/whoami)
-language = "vi"                        # "vi" | "en"
-
-[google_oauth]
-client_id = "YOUR_ID.apps.googleusercontent.com"   # BYOK: your own OAuth client
-client_secret = "YOUR_SECRET"
-redirect_port_start = 51000            # loopback OAuth range 51000-51100
-redirect_port_end = 51100
-
-[engine]
-max_active_jobs = 2
-initial_write_concurrency = 5
-
-[watch]
-enabled = false                        # realtime watch is opt-in by default
-default_content_update_policy = "versioned_copy"
-default_deletion_policy = "preserve_destination"
-default_move_out_policy = "detach"
-
-[notifications]
-job_completed = true                   # notify when a clone job succeeds
-job_failed = true                      # notify when a clone job fails
-watch_errors = true                    # notify on watch errors/degraded states
-watch_activity = false                 # notify on each synced batch
-```
-
-Main environment overrides (all follow the `GDCLONE__SECTION__KEY` pattern):
-
-| Variable | Overrides |
-| :--- | :--- |
-| `GDCLONE__TELEGRAM__BOT_TOKEN` | Telegram bot token |
-| `GDCLONE__TELEGRAM__OWNER_TELEGRAM_ID` | Owner Telegram user ID |
-| `GDCLONE__TELEGRAM__LANGUAGE` | UI language (`vi` / `en`) |
-| `GDCLONE__GOOGLE_OAUTH__CLIENT_ID` | Google OAuth Client ID |
-| `GDCLONE__GOOGLE_OAUTH__CLIENT_SECRET` | Google OAuth Client Secret |
-| `GDCLONE__GOOGLE_OAUTH__SCOPE` | OAuth scope |
-| `GDCLONE__ENGINE__MAX_ACTIVE_JOBS` | Max concurrent jobs |
-| `GDCLONE__ENGINE__INITIAL_WRITE_CONCURRENCY` | Copy concurrency |
-| `GDCLONE__ENGINE__MAX_RETRY_ATTEMPTS` | Retry budget per item |
-| `GDCLONE__NOTIFICATIONS__JOB_COMPLETED` | Toggle job completed alerts |
-| `GDCLONE__NOTIFICATIONS__JOB_FAILED` | Toggle job failed alerts |
-| `GDCLONE__NOTIFICATIONS__WATCH_ERRORS` | Toggle watch error alerts |
-| `GDCLONE__NOTIFICATIONS__WATCH_ACTIVITY` | Toggle watch sync activity alerts |
-| `GDCLONE__STORAGE__DB_PATH` | SQLite database path |
-| `GDCLONE__STORAGE__LOG_DIR` / `GDCLONE__STORAGE__REPORT_DIR` | Log / report directories |
-
-## Telegram commands
-
-Start with `/start`, then `/connect` to link your Google account. You can also simply **paste any Google Drive folder/file link** into the chat to view an interactive inspect card with one-tap actions (`[Clone now]`, `[Realtime watch]`, `[Change destination]`).
-
-| Command | Description |
-| :--- | :--- |
-| `/connect` | Instructions for signing in to Google on the machine running the bot |
-| `/account` | Google account status |
-| `/clone <url_or_id>` | Inspect and clone a Drive file/folder (server-side copy) |
-| `/clone_here <url_or_id>` | Clone directly into the default destination |
-| `/sync <source> [destination]` | Create a realtime one-way watch (auto-uses default destination) |
-| `/watches` · `/watch_status <id>` | List watches · inspect backlog, cursor and policies |
-| `/watch_pause <id>` · `/watch_resume <id>` | Pause/resume applying changes |
-| `/watch_policy <id> <policy>` | Change update policy (`versioned_copy` \| `replace_copy` \| `manual_confirmation`) |
-| `/watch_filter <id> [glob]` | View or add exclusion globs for a watch |
-| `/unwatch <id>` | Stop a watch and delete its subscription |
-| `/set_destination <url_or_id>` · `/destination` · `/clear_destination` | Manage the default destination |
-| `/jobs` · `/status [job_id]` | List jobs · inspect one job |
-| `/pause` · `/resume` · `/cancel` · `/retry` | Job control (per job id) |
-| `/last_report` | Get JSON/CSV report of the latest job |
-| `/grant <user_id>` · `/revoke <user_id>` | Owner manages the operator allowlist |
-| `/whoami` | Your Telegram ID and authorization level |
-
-When a watch configured with `manual_confirmation` detects a modified file, the bot sends an interactive conflict card with `[New version]`, `[Replace old]`, and `[Skip]` resolution buttons.
-
-The complete list is available in the bot via `/help`.
-
-## Desktop GUI (Linux)
-
-502Drive ships with a Tauri v2 desktop app (`502drive-gui`, React 19) for Linux.
-
-- **Dashboard** — stats plus account / bot / destination cards and recent jobs.
-- **Jobs** — search and filters, pause / resume / cancel.
-- **Settings** — engine concurrency, dark/light theme, language (vi/en), and bot configuration via a **4-step setup wizard** (including a 1-tap preset for Google OAuth credentials).
-- **Dev tools** — doctor diagnostics and logs.
-- **Keyboard-first** — `⌘K` opens the command palette.
-
-<div align="center">
-<!-- Light-theme screenshot omitted intentionally; the app ships dark-first -->
-</div>
-
-## Security & privacy
-
-- **No system keyring** — the Google refresh token is encrypted with **AES-256-GCM**; the key is stored in a local `master.key` file with `0600` permissions.
-- **OAuth** — installed-app loopback flow with PKCE on ports 51000–51100; no public redirect endpoints.
-- **Telegram authorization** — owner/operator allowlist; **every incoming message is checked** before any command runs.
-- **No public attack surface** — Telegram long polling + loopback OAuth means no open inbound ports.
-- File contents never transit 502Drive (server-side copies only).
-
-Details: [PRIVACY.md](PRIVACY.md) · [docs/threat-model.md](docs/threat-model.md) · [SECURITY.md](SECURITY.md)
-
-## FAQ
-
-**Does deleting a file in the source delete it in the destination?**
-No. The default deletion policy is `preserve_destination` — destination files survive source deletions, trash events and permission loss. Move-outs detach the mapping instead of deleting anything.
-
-**How fast is realtime sync?**
-Polling adapts to activity: 10s while a source is actively changing, backing off to 60s and 300s when idle. In practice, changes are applied within seconds to tens of seconds while the watch is active.
-
-**Does it use my server's bandwidth?**
-Almost none. Cloning uses Google's server-side `files.copy`; file data moves inside Google's cloud, not through your machine.
-
-**Where is my data?**
-On your machine: a local SQLite database, encrypted tokens, and `master.key`. Nothing is stored on any third-party server besides Telegram's message transport.
-
-**Why do I need my own Google OAuth Client ID/Secret (BYOK)?**
-Google caps OAuth apps in testing at 100 users. 502Drive follows the rclone model: bring your own Client ID/Secret (see [docs/oauth-setup.md](docs/oauth-setup.md)), or use the 1-tap preset in the GUI setup wizard.
-
-**Is Windows supported?**
-Windows builds and the Task Scheduler logon-task install (`service-install`) ship today, but full verification is still pending — community testing is welcome. Linux and Docker are the primary targets.
+One daemon owns the database, the workers and the token; every interface is a
+client of the same service. Read the [architecture](docs/architecture.md), the
+[HTTP contract](docs/control-contracts.md) and the [OpenAPI file](docs/contracts/openapi.json).
 
 ## Documentation
 
-| Document | Contents |
-| :--- | :--- |
-| [docs/install-docker.md](docs/install-docker.md) | Docker Compose deployment |
-| [docs/install-windows.md](docs/install-windows.md) | Windows install & Task Scheduler |
-| [docs/oauth-setup.md](docs/oauth-setup.md) | BYOK Google Cloud OAuth setup |
-| [docs/sync-semantics.md](docs/sync-semantics.md) | One-way watch semantics & policies |
-| [docs/architecture.md](docs/architecture.md) | System architecture |
-| [docs/architecture.md](docs/architecture.md) | Architecture ADRs, recovery model & integrity |
-| [docs/threat-model.md](docs/threat-model.md) | Threat model |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | Common issues |
-| [docs/install-linux.md](docs/install-linux.md) | Linux install & systemd user service |
+Start at the [documentation map](docs/README.md). What is verified, and what is
+not, is written down in [verification](docs/verification.md) and
+[acceptance](docs/acceptance.md).
 
-## Roadmap
+## Develop
 
-- Two-way sync
-- Drive push webhooks (event-driven watches on a VPS)
-- Multi-account UI
-- GUI folder browser
+```bash
+make check            # gofmt, go vet, go test -race
+make docs             # links, OpenAPI JSON, whitespace
+make release-local    # full local release build and verification, publishes nothing
+```
 
-## Contributing
+See [CONTRIBUTING](CONTRIBUTING.md). CI is optional: every check runs locally.
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). For security issues, please follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
+## Limits worth knowing
 
-## License
+- "Identical copy" means names, tree, content and type within what Google allows.
+  IDs, owners, sharing and revision history are not preserved.
+- Not yet accepted against live Google Drive; the tray and TUI are tested without
+  a real desktop. See [verification](docs/verification.md).
+- The tray needs Linux (StatusNotifier/AppIndicator) or Windows; macOS has the CLI
+  and daemon only. Desktop notifications work on Linux (`notify-send`).
 
-Licensed under the **GNU GPL-3.0** — see [LICENSE](LICENSE). Third-party notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+## Disclaimer
 
-**Privacy:** 502Drive is local-first — your tokens, database and reports stay on your hardware. See [PRIVACY.md](PRIVACY.md) for what is (and is not) transmitted.
+502Drive is an independent project, not affiliated with or endorsed by Google.
+"Google Drive" is a trademark of Google LLC.
+
+Licensed under GPL-3.0-only, see [LICENSE](LICENSE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

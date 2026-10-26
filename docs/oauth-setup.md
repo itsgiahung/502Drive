@@ -1,90 +1,70 @@
-# Google OAuth Setup (BYOK)
+# Google OAuth setup
 
-502Drive uses **BYOK — Bring Your Own Keys**: you create your own Google Cloud OAuth client and grant the bot access to *your own* Drive, the same model as rclone. Nothing in this setup shares credentials with the 502Drive project (there are no project servers; see [PRIVACY.md](../PRIVACY.md)).
+Source: [internal/drive/auth.go](../internal/drive/auth.go),
+[internal/config/config.go](../internal/config/config.go),
+[internal/cli/commands.go](../internal/cli/commands.go) (`account login`). Test:
+[auth_test.go](../internal/drive/auth_test.go),
+[auth_more_test.go](../internal/drive/auth_more_test.go),
+[setup_test.go](../internal/cli/setup_test.go).
 
-Time required: about 10 minutes. Applies to all platforms ([Linux](install-linux.md), [Windows](install-windows.md), [Docker](install-docker.md)).
+## Chuẩn bị
 
-## 1. Create a Google Cloud project
+1. Google Cloud Console → tạo OAuth client **Desktop app**; tải JSON.
+2. Đặt file ở chỗ private (0600), ví dụ `~/.config/502drive-next/client_secret.json`.
+3. `502drive setup --oauth-client ~/.config/502drive-next/client_secret.json`.
 
-1. Go to <https://console.cloud.google.com/> and sign in.
-2. Click the project dropdown → **New Project** (any name, e.g. `502drive-personal`).
+Client JSON được **giữ nguyên tại chỗ** và chỉ đọc khi `serve` khởi động; không
+copy secret vào config/DB/response.
 
-## 2. Enable the Drive API
-
-1. Open **APIs & Services → Library**.
-2. Search for **Google Drive API** and click **Enable**.
-
-## 3. Configure the OAuth consent screen
-
-1. Go to **APIs & Services → OAuth consent screen**.
-2. Choose **External** as the user type (even for personal use) and click **Create**.
-3. Fill in the required fields: app name, your email as user support email, and developer contact email. No scopes need to be added manually here; the Drive scope is requested at login.
-4. Under **Audience/Publishing status**, click **Publish App**. Do not submit the app for Google verification — you do not need it for personal use (see the BYOK section below).
-
-> Skipping "Publish App" is the most common setup error: the login then fails with `Error 403: access_denied` because Google only allows registered test users. See [troubleshooting.md](troubleshooting.md).
-
-## 4. Create an OAuth Desktop client
-
-1. Go to **APIs & Services → Credentials → Create credentials → OAuth client ID**.
-2. Application type: **Desktop app** (this matters — the daemon uses a loopback redirect, not a web redirect).
-3. Click **Create** and copy the **Client ID** (`....apps.googleusercontent.com`) and **Client secret**.
-
-No redirect URIs need to be configured; desktop clients use `http://localhost:51000-51100` loopback redirects out of the box.
-
-## 5. Put credentials in the config
-
-Desktop (`~/.config/gdclone-bot/config.toml`) or Docker (`/config/config.toml`):
-
-```toml
-[google_oauth]
-client_id = "YOUR_CLIENT_ID.apps.googleusercontent.com"
-client_secret = "YOUR_CLIENT_SECRET"
-redirect_port_start = 51000
-redirect_port_end = 51100
-scope = "https://www.googleapis.com/auth/drive"
-```
-
-Alternatively set `GDCLONE__GOOGLE_OAUTH__CLIENT_ID` and `GDCLONE__GOOGLE_OAUTH__CLIENT_SECRET` environment variables (full table in [install-docker.md](install-docker.md)).
-
-## 6. Log in
+## Đăng nhập
 
 ```bash
-502drive auth login
+502drive serve                      # terminal/daemon khác
+502drive account login              # in URL, chờ callback loopback
 ```
 
-What happens:
+- Luồng PKCE loopback; URL chứa `redirect_uri=http://127.0.0.1:<port>/oauth/callback`.
+- Code chỉ dùng một lần; callback sai/không khớp state không consume session hợp lệ;
+  session TTL 10 phút.
+- Token lưu mã hoá AES-GCM trong `secrets/google-token.enc` bằng
+  `secrets/master.key` (0600). Không log token/code/verifier.
+- Sau login, kiểm `502drive doctor --online` (account/destination/Drive).
 
-1. The daemon picks a free port in the 51000–51100 range and binds it to `127.0.0.1` only (loopback PKCE — no public ports).
-2. It opens your default browser at the Google authorization URL. On a headless machine it prints the URL instead — copy it into any browser (see [install-docker.md](install-docker.md) §4 for the headless options).
-3. Sign in with the Google account that owns the Drive you want to sync/clone, approve the warning ("Google hasn't verified this app" → **Continue**), and grant the Drive scope.
-4. Google redirects to `http://localhost:<port>`; the daemon exchanges the code (PKCE), validates the credentials, and stores the **AES-256-GCM-encrypted** refresh token in the local SQLite DB. The encryption key is a local `master.key` file (created with `0600` permissions) in the config directory.
+### Daemon ở máy khác / không mở được browser
 
-`telegram /connect` does not complete OAuth — it only points you to this CLI flow.
+`account login` in đúng cổng lấy từ `redirect_uri` của session, không đoán:
 
-## 7. Verify
-
-```bash
-502drive doctor
+```text
+Daemon on another machine? Run this on your machine first:
+ssh -L 50200:127.0.0.1:50200 YOU@DAEMON_HOST
 ```
 
-Expected output includes `google_account: OK - connected`, `google_token_refresh: OK`, and `drive.about: <your email>`. Then start the daemon (`502drive run` / your service) and finish Telegram setup — see [README](../README.md#configuration-configtoml).
+`50200` lấy từ URL phiên (nếu bạn cấu hình `oauth_callback_port`). Nếu không
+forward được cổng đó, đặt `oauth_callback_port` cố định trong config rồi login lại.
+Callback phải đến **cùng** host/port với `redirect_uri`.
 
-Revoking access later: `502drive auth revoke` (or remove the app under [Google account → Security → Third-party access](https://myaccount.google.com/permissions)).
+## Docker
 
----
+- Daemon trong container bind loopback trong container; publish/forward cổng
+  callback ra host khi login: `docker run -p 127.0.0.1:50200:50200 …` (xem
+  [install-docker](install-docker.md)).
+- Mount config, token file và data dir; không đưa secret vào image layer.
 
-## Why self-provided credentials (BYOK)?
+## Revoke / reconnect
 
-Google's OAuth rules for unverified apps that use sensitive scopes (Drive is one) impose a **100-user cap on authorization** and a seven-day token lifetime for apps in "Testing" status. If 502Drive shipped its own client ID:
+- `502drive account revoke`: xoá token cục bộ + gọi Google revoke; trạng thái
+  `revoking`/`revoked`; job đang chạy sẽ `blocked`/cần reconnect.
+- `reconnect_required` (refresh token hỏng/quyền bị thu hồi): chạy lại
+  `account login`; không tự đổi account.
+- Operator không bao giờ thấy token/client secret; chỉ owner cấu hình.
 
-- every user would count against that shared cap;
-- a verified public app would require Google to audit the project and its broad `drive` scope — impractical for a personal, open-source tool;
-- the project would have to hold a client secret that pairs with a publicly distributed binary (secrets in public repos are extracted within hours).
+## Lỗi thường gặp
 
-By providing your own client ID/secret:
+| Triệu chứng | Nguyên nhân thường gặp |
+| --- | --- |
+| `oauth_not_configured` | Chưa `setup --oauth-client` hoặc file không đọc được |
+| Login xong nhưng account `disconnected` | Callback không tới đúng port/namespace, hoặc file token không ghi được |
+| `account_reconnect_required` | Refresh token hết hiệu lực, quyền bị thu hồi, client đổi |
+| Docker login treo | Chưa publish/forward cổng callback |
 
-- the "app" is yours, the only authorized user is you, and the 100-user cap is irrelevant;
-- your refresh token is only ever exchanged with Google directly from your machine — no third party (including this project) is in the token path;
-- you can revoke everything from the Google Cloud console or your Google account page at any time.
-
-This mirrors the rclone model: the tool ships code, you ship credentials.
+Chưa hỗ trợ: login qua Telegram, nhiều account Google, service account.

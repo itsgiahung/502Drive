@@ -1,82 +1,55 @@
-# Windows Installation
+# Cài trên Windows
 
-> **Status: community verification pending.** The daemon itself is cross-platform Rust and the watch/sync behavior is identical to Linux, but the Windows packaging steps below have not been verified end-to-end by CI or maintainers. If something does not match, please [open an issue](https://github.com/GiaHung07/502Drive/issues).
+Artifact: `502drive_<ver>_windows_amd64.zip` (`502drive.exe` console +
+`502drive-tray.exe` GUI) và `502drive-setup.exe` (Inno Setup) kèm `.sha256`.
+**Installer chưa ký code** — SmartScreen sẽ cảnh báo "unknown publisher"; hãy
+kiểm SHA256 trước khi chạy. Chưa acceptance trên Windows 10/11 trong phiên này.
 
-For Linux see [install-linux.md](install-linux.md), for Docker see [install-docker.md](install-docker.md), for Google OAuth see [oauth-setup.md](oauth-setup.md).
+## Cài
 
-## 1. Prerequisites
+- **Installer:** chạy `502drive-setup.exe`; chọn "Start 502Drive in the
+  notification area when I sign in" nếu muốn autostart (mặc định tắt). Shortcut
+  Start Menu: tray + menu. Gỡ cài **không** xóa config/token/data người dùng.
+- **Một dòng (PowerShell):** `irm https://raw.githubusercontent.com/GiaHung07/502Drive/main/scripts/install.ps1 | iex`
+  — kiểm checksum, cài vào `%LOCALAPPDATA%\Programs\502Drive`, thêm vào PATH, tạo
+  alias `502`.
+- **Installer** cũng có tùy chọn thêm vào PATH (mặc định bật) và cài `502.cmd`. Chưa
+  chạy ISCC thật nên phần này chưa được kiểm chứng.
+- **Zip:** giải nén, chạy `502drive.exe setup` trong terminal (config/token file
+  private), sau đó `502drive.exe serve` hoặc `502drive-tray.exe`.
 
-- Rust 1.85+ (2024 edition) via [rustup](https://rustup.rs) — `rustup default stable`.
-- Git (optional, or download a source zip / prebuilt `502drive-v*-windows-x86_64.zip` from [Releases](https://github.com/GiaHung07/502Drive/releases)).
-- No OpenSSL or MSVC system libraries beyond the default VS Build Tools toolchain that rustup sets up.
+Xác minh: `Get-FileHash .\502drive-setup.exe -Algorithm SHA256` so với file
+`.sha256` trong release.
 
-## 2. Build
+## Cấu hình
 
-```powershell
-git clone https://github.com/GiaHung07/502Drive.git
-cd 502Drive
-cargo build --release --bin 502drive
-.\target\release\502drive.exe --help
-```
+- `502drive setup` tạo config JSON (`%AppData%\502drive-next\config.json`) và
+  API token 0600-tương đương (ACL user). Data dir mặc định cạnh config
+  (`data-v2\state-v2.db`, `secrets\`).
+- `502drive setup --oauth-client client_secret.json`,
+  `--telegram-token-file bot-token --telegram-owner-id N`.
+- `502drive account login` mở browser trên máy này; nếu daemon ở máy khác, dùng
+  `ssh -L <port>:127.0.0.1:<port>` như hướng dẫn CLI in ra.
 
-## 3. Configure
+## Chạy nền
 
-The default config location on Windows is:
+- Cách 1: chạy `502drive-tray.exe`; mục **Start daemon** của tray spawn
+  `502drive.exe serve` ẩn console.
+- Cách 2: `502drive.exe serve` trong một terminal (đóng terminal = dừng daemon),
+  hoặc tạo Task Scheduler "At log on" trỏ tới `502drive.exe serve`.
+- **Chưa hỗ trợ**: Windows service (`sc create`/`nssm`) và auto-update. Tray và
+  daemon là hai process riêng; đóng tray không dừng daemon.
 
-```
-%APPDATA%\gdclone-bot\config\config.toml
-```
+## Tray
 
-Copy `config.sample.toml` there (or next to the exe and pass `--config .\config.toml`), then set `telegram.bot_token`, `telegram.owner_telegram_id`, `google_oauth.client_id`, and `google_oauth.client_secret`. Keep `watch.enabled = false` unless you want change polling (see [sync-semantics.md](sync-semantics.md)).
+- Icon 5 trạng thái; menu: Open TUI (mở `wt.exe`/`cmd` chạy `502drive menu`),
+  Copy link trong clipboard (`Get-Clipboard`), Jobs & thư viện, mở folder kết quả
+  gần nhất, Start/Stop daemon, Quit.
+- `Stop daemon` dùng `taskkill /IM 502drive.exe /F` (chỉ daemon console, không
+  phải tray).
 
-State (SQLite DB, logs, reports) lives under `%APPDATA%\gdclone-bot\data\` by default; `502drive doctor` prints the exact paths it uses.
+## Gỡ
 
-## 4. First authentication
-
-```powershell
-.\target\release\502drive.exe auth login
-.\target\release\502drive.exe doctor
-```
-
-`auth login` opens your browser and receives the OAuth redirect on loopback ports 51000–51100. Details in [oauth-setup.md](oauth-setup.md).
-
-## 5. Run at logon (Task Scheduler)
-
-The supported background mechanism on Windows is a **Task Scheduler logon task under the same user that ran OAuth** — not a LocalSystem service. Service-account contexts break credential/secret access (see [architecture.md](architecture.md), ADR 0006).
-
-```powershell
-.\target\release\502drive.exe service-install
-schtasks /Run /TN 502Drive      # start it now without re-logging on
-```
-
-<!-- TODO(maintainers): older docs referenced the task name `gdclone-bot`; src/platform/windows.rs registers the task as `502Drive`. Verify on a Windows host which name the shipped 0.2.x binaries actually use. -->
-
-Remove the task:
-
-```powershell
-.\target\release\502drive.exe service-uninstall
-```
-
-### Portable alternative: `windows-task.ps1`
-
-`packaging/windows-task.ps1` (shipped in release bundles) creates the same kind of logon task without needing the exe's built-in command; no admin rights are required:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\windows-task.ps1                       # install (auto-detects 502drive.exe + config.toml next to the script)
-powershell -ExecutionPolicy Bypass -File .\windows-task.ps1 -BinaryPath "C:\Tools\502Drive\502drive.exe" -ConfigPath "C:\Tools\502Drive\config.toml"
-powershell -ExecutionPolicy Bypass -File .\windows-task.ps1 -Uninstall            # remove
-```
-
-The release bundle also contains simple helpers in `packaging\windows\`: `Start-502Drive.bat`, `Stop-502Drive.bat`, `Register-Startup.bat`, `Unregister-Startup.bat`, and `Doctor.bat`.
-
-## 6. Run in foreground
-
-```powershell
-.\target\release\502drive.exe run
-```
-
-## 7. Windows-specific notes
-
-- Keep `auth login` and the scheduled task under the **same Windows user**. Do not run the bot as LocalSystem.
-- Source deletes preserve the destination copy and destination deletes by the user are respected — the same one-way semantics as everywhere else ([sync-semantics.md](sync-semantics.md)).
-- If the scheduled task starts but the bot cannot reach Google or Telegram, check `%APPDATA%\gdclone-bot\data\logs\` for the JSON log file.
+- Installer: Settings → Apps → 502Drive → Uninstall (chỉ xóa thư mục cài + shortcut).
+- Zip: xóa thư mục giải nén. Muốn xóa dữ liệu: xóa tay config/data dir (không có
+  lệnh purge).

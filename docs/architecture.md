@@ -1,39 +1,89 @@
-# Architecture Notes and ADRs
+# Kiến trúc
 
-Related docs: [sync-semantics.md](sync-semantics.md), [threat-model.md](threat-model.md), [troubleshooting.md](troubleshooting.md).
+Go 1.27, một module (`github.com/GiaHung07/502Drive`), một binary chính
+`502drive` và một wrapper GUI `502drive-tray` cho Windows. Rust/Tauri/React đã
+gỡ 2026-10-26 (archive ngoài git); không còn runtime thứ hai.
 
-## ADR 0001: OAuth Is Local CLI First
+## Bố cục source
 
-Telegram `/connect` cannot safely complete a desktop loopback OAuth flow when the user opens the URL on a phone. `502drive auth login` owns the loopback listener, PKCE verifier, browser open/printed URL, token exchange, and credential validation. Telegram `/account` reports state and points users to the CLI. See [oauth-setup.md](oauth-setup.md).
+| Đường dẫn | Trách nhiệm |
+| --- | --- |
+| [cmd/502drive/main.go](../cmd/502drive/main.go) | Entry: signal context → `cli.Execute` |
+| [cmd/502drive-tray/main.go](../cmd/502drive-tray/main.go) | Entry GUI (`-H=windowsgui` khi release) |
+| [internal/app](../internal/app) | Application service: plan/inspect, admit, job action, sync, prefs, doctor |
+| [internal/httpapi](../internal/httpapi) | Router, auth bearer, DTO, lỗi, conformance OpenAPI |
+| [internal/cli](../internal/cli) | Commands, HTTP client + stream, menu dòng + TUI, launcher (`up`/bare), tray, logs, autostart |
+| [internal/tui](../internal/tui) | Bubble Tea model: realtime, chọn nhiều, cửa sổ danh sách, tốc độ/ETA |
+| [internal/mascot](../internal/mascot) | Chú mèo pixel (nửa ô `▀▄`), mood + spring animation; chỉ sinh text |
+| [internal/update](../internal/update) | Kiểm tra release mới (chỉ đọc, không cài) |
+| [internal/tray](../internal/tray) | State machine, icon, clipboard/terminal/daemon argv, systray |
+| [internal/telegram](../internal/telegram) | Inbox bền vững, menu/callback, outbox, notifier |
+| [internal/engine](../internal/engine) | Worker copy/delta, intent, claim, finalize |
+| [internal/state](../internal/state) | SQLite, migration, transaction, idempotency, outbox |
+| [internal/schedule](../internal/schedule) | Schedule spec → slot, DST, preview |
+| [internal/drive](../internal/drive) | Provider Drive v3, OAuth PKCE, parse link, drivetest fake |
+| [internal/daemon](../internal/daemon) | Wiring store+engine+HTTP+syncer+Telegram, lifecycle |
+| [internal/maintenance](../internal/maintenance) | Backup/restore/cleanup offline |
+| [internal/config](../internal/config) | Config JSON private, token files |
+| [internal/i18n](../internal/i18n) | Bảng chuỗi vi/en cho TUI/menu/tray |
 
-## ADR 0002: SQLite Access Through an Actor
+## Luồng chạy
 
-SQLite calls are blocking. Application code uses `tokio-rusqlite`, which serializes work onto a dedicated connection thread and keeps Tokio workers free. The DB is opened with foreign keys, WAL, normal synchronous mode, and a busy timeout.
+```mermaid
+flowchart LR
+  CLI[CLI / TUI / tray] --> HTTP[HTTP v1]
+  TG[Telegram] --> APP
+  HTTP --> APP[application service]
+  APP --> DB[(SQLite WAL)]
+  DB --> ENG[engine workers]
+  ENG --> DRIVE[Drive v3]
+  ENG --> DB
+  SYNC[syncer 5s] --> DB
+  SYNC --> DRIVE
+  DAEMON[daemon.Run] --> HTTP
+  DAEMON --> ENG
+  DAEMON --> SYNC
+  DAEMON --> TG
+```
 
-## ADR 0003: Idempotency Before Drive Writes
+Một process `502drive serve` giữ `instance.lock` cho data dir, mở SQLite
+(`state-v2.db`, WAL, `MaxOpenConns=1`), chạy engine (mặc định 2 job × 4 worker),
+syncer 5s và (nếu cấu hình) bot Telegram. CLI nghiệp vụ **không** mở DB, chỉ HTTP
+([client.go](../internal/cli/client.go)); maintenance là ngoại lệ offline có
+kiểm tra lock ([maintenance.go](../internal/maintenance/maintenance.go)).
 
-Every Drive write is preceded by a durable `operation_intents` row. Destination objects created by this application carry private `appProperties` with `gdclone_source_id`, `gdclone_scope_id`, `gdclone_copy_key`, and `gdclone_generation`. Recovery reconciles intents before retrying writes.
+## Bất biến
 
-## ADR 0004: Shortcut Policy Defaults to Preserve
+- Admission (plan → job + collection + seed root + event + idempotency) commit
+  trong một transaction trước khi trả `202` ([jobs.go](../internal/state/jobs.go)).
+- Mỗi remote write có intent bền vững; unknown outcome → reconcile/blocked,
+  không gửi lặp mù ([run.go](../internal/engine/run.go)).
+- Job/plan/collection/sync revision bảo vệ điều khiển; callback Telegram
+  one-shot + TTL 15 phút ([state/telegram.go](../internal/state/telegram.go)).
+- `HTTP request context` chỉ sống đến response; job dùng context của daemon.
+- One writer: mọi ghi đi qua store của daemon; adapter không SQL.
+- Không log token/secret/resource key; tên Drive chỉ để hiển thị, identity là ID.
 
-Shortcut resolution can pull data outside the selected tree and can introduce cycles. The default policy is `preserve`; `remap_internal` and `resolve` require explicit user selection and separate safeguards.
+## Đa nền tảng
 
-## ADR 0005: Watch Uses Raw Change Event Log
+- Linux/Windows/macOS đều build `CGO_ENABLED=0`; tray dùng `fyne.io/systray`
+  (thuần Go trên Linux D-Bus/Windows; macOS không hỗ trợ tray).
+- `time/tzdata` được nhúng trong daemon để zone IANA hoạt động trong image tối giản.
+- Windows release build thêm `.syso` icon (go-winres) trong hook GoReleaser.
 
-Watch subscriptions are long-lived objects separate from finite jobs. A single poller per Google account and corpus writes raw `change_events` durably before advancing a cursor. Each watch consumes those events independently.
+## Không có trong kiến trúc này
 
-## ADR 0006: Windows Startup Defaults to Task Scheduler
+- Không SQLite/HTTP phụ, không engine thứ hai, không webview, không sidecar.
+- Không migration legacy: data dir Go riêng, `application_id=502002`.
+  Chi tiết nâng cấp: [migration](migration.md).
 
-The default Windows startup mechanism is a logon task under the same user that ran OAuth. Windows Service support is advanced because service account context must match the credential/secret backend. See [install-windows.md](install-windows.md).
+## Tín hiệu thay đổi và vòng đời
 
-## Recovery Model
-
-Drive writes are effectively-once, not exactly-once. Recovery examines `operation_intents`, destination IDs, and private `appProperties` before retrying an operation: an intent in `executing` state whose destination object already exists (matched via `appProperties` idempotency keys) is marked `applied` instead of re-executed, so a crash mid-write never produces a duplicate copy.
-
-On startup the daemon (`src/engine/recovery.rs`):
-
-1. runs `recover_on_startup` — reconciles pending `operation_intents` against the destination before any new work;
-2. spawns a resume worker that re-queues jobs left in `running`/`recovering` state by the previous process;
-3. resets watches stuck in `initializing` when the process died mid-baseline.
-
-Cursor advancement for watch is committed in the same SQLite transaction as the raw change events, so a crash between fetching a Drive changes page and durably storing it replays the page rather than skipping it. Failed watch events do not advance a watch's consumed sequence and are retried on the next dispatch cycle. The full trigger → classification → policy behavior is in [sync-semantics.md](sync-semantics.md).
+- `state.Store` đếm mọi lần ghi thành công (kể cả transaction) qua một bọc mỏng
+  quanh `database/sql` ([changes.go](../internal/state/changes.go)). `GET /v1/stream`
+  đánh thức theo bộ đếm này; client chỉ nhận "có thay đổi" và tự đọc lại, nên không
+  có replay hay trạng thái phía server cho từng client.
+- Daemon chạy tách khỏi terminal (`502drive up` / lệnh trần). Chỉ `POST /v1/shutdown`
+  (nút Quit của tray) dừng nó; đóng tab, thoát TUI hay Ctrl-C ở client không ảnh
+  hưởng. Dừng đi theo thứ tự cũ: ngừng nhận request, engine về điểm an toàn, đóng
+  state; job đang chạy tiếp tục ở lần mở sau.

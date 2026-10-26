@@ -1,52 +1,50 @@
 # Privacy Policy — 502Drive
 
-**Last updated:** September 2026
+**Last updated:** 2026-10-26. Tài liệu này mô tả runtime Go hiện tại; đối chiếu
+[HTTP contract](docs/control-contracts.md), [identity](docs/features/identity-control.md)
+và [threat model](docs/threat-model.md).
 
-## 1. Overview
-502Drive ("the App") is an open-source Google Drive clone/sync desktop application (a local daemon with Telegram bot control and a desktop GUI). This Privacy Policy describes how 502Drive handles your data.
+## 1. Tóm tắt
 
-## 2. Data the App stores, and where
+502Drive là daemon cục bộ: bạn chạy `502drive serve` trên máy của mình, dữ liệu
+nằm trong data dir bạn chọn. Không có dịch vụ hosted, không analytics/telemetry,
+không có web frontend tải font/asset từ bên thứ ba trong code hiện tại.
 
-502Drive stores the following data **locally on your device only**:
+## 2. Dữ liệu lưu trên máy bạn
 
-- **Google OAuth Tokens**: Access and refresh tokens required to authorize Google Drive API calls. The refresh token is encrypted using AES-256-GCM and stored in a local SQLite database (`~/.local/share/gdclone-bot/state.db` on Linux, `%APPDATA%\gdclone-bot\data\` on Windows). The encryption key is a locally generated `master.key` file (32 random bytes, permissions `0600` on Unix) in the config directory — it is **not** stored in an OS keyring.
-- **Telegram Bot Token & Owner ID**: Used to receive commands from your own private Telegram bot. Stored in `~/.config/gdclone-bot/config.toml` (or the equivalent per-platform config path / `GDCLONE__` environment variables).
-- **Job History & File Metadata**: Metadata (file names, IDs, sizes) of files processed during copy/sync operations. Stored locally in the same SQLite database.
+| Dữ liệu | Vị trí | Ghi chú |
+| --- | --- | --- |
+| Config JSON | `config.json` (mặc định `~/.config/502drive-next/config.json`; Windows `%AppData%`) | Đường dẫn listen/data/token; **không** chứa secret |
+| API bearer token | `token_file`, ví dụ `api-token` (0600) | Client CLI/tray đọc file này |
+| Google OAuth client JSON | đường dẫn bạn chỉ định khi `setup --oauth-client` | Giữ tại chỗ, không copy vào DB |
+| Google token | `data/secrets/google-token.enc` | AES-256-GCM; key `data/secrets/master.key` (0600, không lưu keyring) |
+| Telegram bot token | file bạn chỉ định (`--telegram-token-file`) | Chỉ daemon đọc |
+| Job/metadata | `data/state-v2.db` (SQLite, 0600) | Tên/ID/size/kết quả job, mapping, events, idempotency, subscription, inbox/outbox Telegram |
+| Backup | thư mục bạn tạo bằng `502drive backup PATH` | Chứa cả key + token mã hoá ⇒ bảo vệ như secret |
 
-**Data flow, stated explicitly:** OAuth tokens and Drive file metadata live only in the local SQLite database; **file contents never transit the App at all** — copies are performed server-side by Google Drive API operations directly between your source and destination folders. The App talks only to Google's API endpoints and Telegram's API endpoint (outbound connections; it listens only on loopback during OAuth login). It operates no servers.
+Không lưu mật khẩu Google, không lưu nội dung file Drive.
 
-## 3. Data We Do NOT Collect
-- We **do not** collect, transmit, or store any of your data on remote servers.
-- We **do not** have access to your Google account credentials (passwords).
-- We **do not** sell, share, or transmit your personal information to any third party.
-- We **do not** track usage analytics or telemetry.
+## 3. Dữ liệu đi đâu
 
-## 4. Google Drive API Usage
-502Drive uses the Google Drive API (`https://www.googleapis.com/auth/drive`) solely to:
-- List, copy, and sync files between folders in your Google Drive on your behalf.
-- Refresh access tokens automatically when expired.
+- **Google Drive API:** request metadata và thao tác copy server-side; OAuth
+  consent qua browser của bạn. Token chỉ dùng để gọi Drive.
+- **Telegram (nếu bạn cấu hình bot):** lệnh, nút bấm, tên/ID file hiển thị trong
+  menu/card, thông báo job. Không gửi token/resource key.
+- **Máy bạn:** CLI/TUI/tray nói chuyện với daemon qua loopback HTTP.
+- Không gửi dữ liệu tới dịch vụ của dự án; không có telemetry ngầm. Log daemon
+  redact token/secret; tên file có thể xuất hiện trong log tuỳ mức log bạn cấu hình.
 
-All Google Drive API calls are made **directly from your machine** to Google's servers. No data passes through 502Drive's servers (there are none). Because the App is BYOK ("bring your own keys"), you create and control the Google Cloud OAuth client yourself — see [docs/oauth-setup.md](docs/oauth-setup.md).
+## 4. Lưu giữ và xoá
 
-## 5. Data Retention
-All locally stored data (tokens, job history, file metadata) remains on your device. You can delete all data at any time by:
-- Running `502drive auth revoke` to delete Google tokens.
-- Deleting the data directory manually (`~/.local/share/gdclone-bot/` on Linux, `%APPDATA%\gdclone-bot\data\` on Windows) together with `master.key` in the config directory.
-- Uninstalling the application.
+- Job/event/idempotency/mapping được giữ mặc định (phục vụ replay/đối chiếu);
+  chưa có auto-prune. `502drive cleanup` chỉ xoá file tạm.
+- Xoá dữ liệu: dừng daemon rồi xoá data dir (và backup liên quan). Xoá
+  `master.key` làm token đã mã hoá không đọc được.
+- Thu hồi quyền Google: `502drive account revoke` (xoá cục bộ + gọi Google revoke)
+  hoặc tại <https://myaccount.google.com/permissions>.
 
-## 6. Security
-- OAuth refresh tokens are encrypted at rest using AES-256-GCM with a per-device master key stored as a **local `master.key` file** (`0600` permissions on Unix) in the config directory. The App does not use an OS keyring.
-- SQLite data files are created with `0600` permissions and parent directories with `0700` on Unix.
-- The App never requests or stores your Google account password.
-- See [SECURITY.md](SECURITY.md) for vulnerability reporting and [docs/threat-model.md](docs/threat-model.md) for the full control list.
+## 5. Trẻ em và liên hệ
 
-## 7. Third-Party Services
-- **Google Drive API**: Governed by [Google's Privacy Policy](https://policies.google.com/privacy).
-- **Telegram Bot API**: Governed by [Telegram's Privacy Policy](https://telegram.org/privacy). Used only to receive commands from your own private bot.
-
-## 8. Changes to This Policy
-We may update this Privacy Policy as the application evolves. Changes will be committed to this repository and the "Last updated" date will reflect the latest revision.
-
-## 9. Contact
-For questions about this Privacy Policy, please open an issue on our GitHub repository:
-https://github.com/GiaHung07/502Drive/issues
+Sản phẩm tự host, không thu thập dữ liệu người dùng qua Internet. Câu hỏi riêng
+tư: mở issue trên repository (không kèm secret) hoặc dùng kênh bảo mật ở
+[SECURITY.md](SECURITY.md).

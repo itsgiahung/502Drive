@@ -1,31 +1,147 @@
 # Third Party Notices
 
-This file is for third-party material included in the 502Drive source tree or
-release artifacts.
+502Drive là phần mềm GPL-3.0 (xem [LICENSE](LICENSE)). File này liệt kê
+các module Go mà binary phụ thuộc, sinh từ `go list -m all` và license đọc
+từ file LICENSE trong module cache. Module không tải sẵn hoặc không nhận
+dạng được license ghi **chưa xác định** (không đoán).
 
-## Included Source, Text, And Assets
+Sinh lại bằng: `python3 scripts/third-party-notices.py > THIRD_PARTY_NOTICES.md`
+(sau `go mod download all`).
 
-None.
+| Module | Version | License |
+| --- | --- | --- |
+| `cel.dev/expr` | v0.25.2 | Apache-2.0 |
+| `cloud.google.com/go` | v0.112.2 | Apache-2.0 |
+| `cloud.google.com/go/auth` | v0.24.1-0.20261001053825-dbc26066f70a | Apache-2.0 |
+| `cloud.google.com/go/auth/oauth2adapt` | v0.3.0 | Apache-2.0 |
+| `cloud.google.com/go/compute/metadata` | v0.10.0 | Apache-2.0 |
+| `cloud.google.com/go/longrunning` | v0.5.6 | Apache-2.0 |
+| `cloud.google.com/go/translate` | v1.10.3 | Apache-2.0 |
+| `fyne.io/systray` | v1.12.2 | Apache-2.0 |
+| `github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp` | v1.34.0 | Apache-2.0 |
+| `github.com/MakeNowJust/heredoc` | v1.0.0 | MIT |
+| `github.com/atotto/clipboard` | v0.1.4 | BSD-3-Clause |
+| `github.com/aymanbagabas/go-osc52/v2` | v2.0.1 | MIT |
+| `github.com/aymanbagabas/go-udiff` | v0.3.1 | BSD-3-Clause |
+| `github.com/bits-and-blooms/bitset` | v1.22.0 | BSD-3-Clause |
+| `github.com/catppuccin/go` | v0.3.0 | MIT |
+| `github.com/cespare/xxhash/v2` | v2.3.0 | MIT |
+| `github.com/charmbracelet/bubbles` | v0.21.1-0.20250623103423-23b8fd6302d7 | MIT |
+| `github.com/charmbracelet/bubbletea` | v1.3.6 | MIT |
+| `github.com/charmbracelet/colorprofile` | v0.2.3-0.20250311203215-f60798e515dc | MIT |
+| `github.com/charmbracelet/harmonica` | v0.2.0 | MIT |
+| `github.com/charmbracelet/huh` | v1.0.0 | MIT |
+| `github.com/charmbracelet/lipgloss` | v1.1.0 | MIT |
+| `github.com/charmbracelet/x/ansi` | v0.9.3 | MIT |
+| `github.com/charmbracelet/x/cellbuf` | v0.0.13 | MIT |
+| `github.com/charmbracelet/x/conpty` | v0.1.0 | MIT |
+| `github.com/charmbracelet/x/errors` | v0.0.0-20240508181413-e8d8b6e2de86 | MIT |
+| `github.com/charmbracelet/x/exp/golden` | v0.0.0-20241011142426-46044092ad91 | MIT |
+| `github.com/charmbracelet/x/exp/strings` | v0.0.0-20240722160745-212f7b056ed0 | MIT |
+| `github.com/charmbracelet/x/term` | v0.2.1 | MIT |
+| `github.com/charmbracelet/x/termios` | v0.1.1 | MIT |
+| `github.com/charmbracelet/x/xpty` | v0.1.2 | MIT |
+| `github.com/cncf/xds/go` | v0.0.0-20260202195803-dba9d589def2 | Apache-2.0 |
+| `github.com/cpuguy83/go-md2man/v2` | v2.0.6 | MIT |
+| `github.com/creack/pty` | v1.1.24 | MIT |
+| `github.com/davecgh/go-spew` | v1.1.2-0.20180830191138-d8f796af33cc | ISC |
+| `github.com/dustin/go-humanize` | v1.1.0 | MIT |
+| `github.com/envoyproxy/go-control-plane` | v0.14.0 | Apache-2.0 |
+| `github.com/envoyproxy/go-control-plane/envoy` | v1.37.0 | Apache-2.0 |
+| `github.com/envoyproxy/go-control-plane/ratelimit` | v0.1.0 | Apache-2.0 |
+| `github.com/envoyproxy/protoc-gen-validate` | v1.3.3 | Apache-2.0 |
+| `github.com/erikgeiser/coninput` | v0.0.0-20211004153227-1c3628e74d0f | MIT |
+| `github.com/felixge/httpsnoop` | v1.1.0 | MIT |
+| `github.com/go-jose/go-jose/v4` | v4.1.4 | Apache-2.0 |
+| `github.com/go-logr/logr` | v1.4.4 | Apache-2.0 |
+| `github.com/go-logr/stdr` | v1.2.2 | Apache-2.0 |
+| `github.com/go-telegram/bot` | v1.27.0 | MIT |
+| `github.com/godbus/dbus/v5` | v5.1.0 | BSD-2-Clause |
+| `github.com/gofrs/flock` | v0.13.1 | BSD-3-Clause |
+| `github.com/golang/glog` | v1.2.5 | Apache-2.0 |
+| `github.com/golang/groupcache` | v0.0.0-20210331224755-41bb18bfe9da | Apache-2.0 |
+| `github.com/golang/protobuf` | v1.5.4 | BSD-3-Clause |
+| `github.com/google/go-cmp` | v0.7.0 | BSD-3-Clause |
+| `github.com/google/go-pkcs11` | v0.3.0 | Apache-2.0 |
+| `github.com/google/pprof` | v0.0.0-20261016150608-1facf8f91b50 | Apache-2.0 |
+| `github.com/google/s2a-go` | v0.1.11 | Apache-2.0 |
+| `github.com/google/uuid` | v1.6.0 | BSD-3-Clause |
+| `github.com/googleapis/enterprise-certificate-proxy` | v0.3.23 | Apache-2.0 |
+| `github.com/googleapis/gax-go/v2` | v2.26.2 | BSD-3-Clause |
+| `github.com/hashicorp/golang-lru/v2` | v2.0.7 | MPL-2.0 |
+| `github.com/inconshreveable/mousetrap` | v1.1.0 | Apache-2.0 |
+| `github.com/kr/pretty` | v0.3.1 | MIT |
+| `github.com/kr/text` | v0.2.0 | MIT |
+| `github.com/kylelemons/godebug` | v1.1.0 | Apache-2.0 |
+| `github.com/lucasb-eyer/go-colorful` | v1.2.0 | MIT |
+| `github.com/mattn/go-isatty` | v0.0.24 | MIT |
+| `github.com/mattn/go-localereader` | v0.0.1 | chưa xác định |
+| `github.com/mattn/go-runewidth` | v0.0.16 | MIT |
+| `github.com/mitchellh/hashstructure/v2` | v2.0.2 | MIT |
+| `github.com/muesli/ansi` | v0.0.0-20230316100256-276c6243b2f6 | MIT |
+| `github.com/muesli/cancelreader` | v0.2.2 | MIT |
+| `github.com/muesli/termenv` | v0.16.0 | MIT |
+| `github.com/ncruces/go-strftime` | v1.1.0 | MIT |
+| `github.com/planetscale/vtprotobuf` | v0.6.1-0.20240319094008-0393e58bdf10 | BSD-3-Clause |
+| `github.com/pmezard/go-difflib` | v1.0.1-0.20181226105442-5d4384ee4fb2 | BSD-2-Clause |
+| `github.com/remyoudompheng/bigfft` | v0.0.0-20230129092748-24d4a6f8daec | BSD-3-Clause |
+| `github.com/rivo/uniseg` | v0.4.7 | MIT |
+| `github.com/rogpeppe/go-internal` | v1.14.1 | BSD-3-Clause |
+| `github.com/russross/blackfriday/v2` | v2.1.0 | BSD-2-Clause |
+| `github.com/sahilm/fuzzy` | v0.1.1 | MIT |
+| `github.com/spf13/cobra` | v1.10.2 | Apache-2.0 |
+| `github.com/spf13/pflag` | v1.0.9 | BSD-3-Clause |
+| `github.com/spiffe/go-spiffe/v2` | v2.8.1 | Apache-2.0 |
+| `github.com/stretchr/testify` | v1.12.1 | MIT |
+| `github.com/xo/terminfo` | v0.0.0-20220910002029-abceb7e1c41e | MIT |
+| `go.opencensus.io` | v0.24.0 | Apache-2.0 |
+| `go.opentelemetry.io/auto/sdk` | v1.2.1 | Apache-2.0 |
+| `go.opentelemetry.io/contrib/detectors/gcp` | v1.44.0 | Apache-2.0 |
+| `go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc` | v0.67.0 | Apache-2.0 |
+| `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp` | v0.69.0 | Apache-2.0 |
+| `go.opentelemetry.io/otel` | v1.45.0 | Apache-2.0 |
+| `go.opentelemetry.io/otel/metric` | v1.45.0 | Apache-2.0 |
+| `go.opentelemetry.io/otel/sdk` | v1.45.0 | Apache-2.0 |
+| `go.opentelemetry.io/otel/sdk/metric` | v1.45.0 | Apache-2.0 |
+| `go.opentelemetry.io/otel/trace` | v1.45.0 | Apache-2.0 |
+| `go.yaml.in/yaml/v3` | v3.0.5 | Apache-2.0 |
+| `golang.org/x/crypto` | v0.58.0 | BSD-3-Clause |
+| `golang.org/x/exp` | v0.0.0-20231006140011-7918f672742d | BSD-3-Clause |
+| `golang.org/x/mod` | v0.42.0 | BSD-3-Clause |
+| `golang.org/x/net` | v0.61.0 | BSD-3-Clause |
+| `golang.org/x/oauth2` | v0.37.0 | BSD-3-Clause |
+| `golang.org/x/sync` | v0.24.0 | BSD-3-Clause |
+| `golang.org/x/sys` | v0.49.0 | BSD-3-Clause |
+| `golang.org/x/term` | v0.47.0 | BSD-3-Clause |
+| `golang.org/x/text` | v0.43.0 | BSD-3-Clause |
+| `golang.org/x/time` | v0.16.0 | BSD-3-Clause |
+| `golang.org/x/tools` | v0.52.0 | BSD-3-Clause |
+| `gonum.org/v1/gonum` | v0.17.0 | BSD-3-Clause |
+| `google.golang.org/api` | v0.308.0 | BSD-3-Clause |
+| `google.golang.org/appengine` | v1.6.8 | Apache-2.0 |
+| `google.golang.org/genproto` | v0.0.0-20260715232425-e75dac1f907d | Apache-2.0 |
+| `google.golang.org/genproto/googleapis/api` | v0.0.0-20260715232425-e75dac1f907d | Apache-2.0 |
+| `google.golang.org/genproto/googleapis/bytestream` | v0.0.0-20261019180522-ce908d29299b | Apache-2.0 |
+| `google.golang.org/genproto/googleapis/rpc` | v0.0.0-20261019180522-ce908d29299b | Apache-2.0 |
+| `google.golang.org/grpc` | v1.84.0 | Apache-2.0 |
+| `google.golang.org/protobuf` | v1.36.12 | BSD-3-Clause |
+| `gopkg.in/check.v1` | v1.0.0-20201130134442-10cb98267c6c | BSD-2-Clause |
+| `gopkg.in/yaml.v3` | v3.0.1 | Apache-2.0 |
+| `modernc.org/cc/v4` | v4.30.3 | BSD-3-Clause |
+| `modernc.org/ccgo/v4` | v4.37.0 | BSD-3-Clause |
+| `modernc.org/fileutil` | v1.4.0 | BSD-3-Clause |
+| `modernc.org/gc/v2` | v2.6.5 | BSD-3-Clause |
+| `modernc.org/gc/v3` | v3.2.0 | BSD-3-Clause |
+| `modernc.org/goabi0` | v0.2.0 | BSD-3-Clause |
+| `modernc.org/libc` | v1.79.0 | BSD-3-Clause |
+| `modernc.org/mathutil` | v1.7.1 | BSD-3-Clause |
+| `modernc.org/memory` | v1.12.1 | BSD-3-Clause |
+| `modernc.org/opt` | v0.2.0 | BSD-3-Clause |
+| `modernc.org/sortutil` | v1.2.1 | BSD-3-Clause |
+| `modernc.org/sqlite` | v1.61.0 | BSD-3-Clause |
+| `modernc.org/strutil` | v1.2.1 | BSD-3-Clause |
+| `modernc.org/token` | v1.1.0 | BSD-3-Clause |
 
-502Drive does not vendor, copy, adapt, or substantially translate source code,
-README text, UI copy, or assets from the reference repositories reviewed during
-design.
-
-Clean-room reference notes are tracked separately in
-`docs/reference-analysis.md`. Those repositories are not third-party material
-included in this project.
-
-## Rust Dependencies
-
-Rust crate dependencies are declared in `Cargo.toml` and resolved in
-`Cargo.lock`.
-
-Before publishing binary artifacts, generate a dependency license report from
-the locked dependency graph and add any required dependency notices here.
-
-## Future Third-Party Material
-
-If future work copies, adapts, vendors, or substantially translates third-party
-material, add the source URL, commit SHA, path, license, copied/adapted material,
-and local modifications before the change is considered complete.
-
+Ghi chú: danh sách gồm cả dependency chỉ dùng cho test/build tool (ví dụ
+go-winres chạy trong hook release, không nằm trong binary). Binary release
+chỉ chứa các package được import bởi `cmd/502drive` và `cmd/502drive-tray`.
