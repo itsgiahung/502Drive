@@ -113,7 +113,8 @@ type Model struct {
 	frame  *mascot.Frame
 	animOn bool
 	spin   int
-	spinOn bool
+	sc     *spinCtl
+	cache  *folderCache
 	quits  bool
 }
 
@@ -130,7 +131,7 @@ func New(acts Actions, opt Options) Model {
 	now := opt.now()
 	m := Model{acts: acts, opt: opt, ctx: context.Background(), screen: screenHome, width: width, height: opt.Height,
 		lang: lang, fetching: true, selected: map[string]bool{}, rates: map[string]*rate{}, prevStates: map[string]string{},
-		started: now, lastInput: now, anim: mascot.NewMini(), cmd: newPrompt()}
+		started: now, lastInput: now, anim: mascot.NewMini(), cmd: newPrompt(), sc: &spinCtl{}, cache: newFolderCache()}
 	m.frame = mascot.StaticMini(mascot.Idle, .3)
 	return m
 }
@@ -267,10 +268,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onAnim(time.Time(msg))
 	case spinTickMsg:
 		m.spin++
-		if m.busy() && !m.opt.NoMotion {
+		if (m.busy() || m.loading()) && !m.opt.NoMotion {
 			return m, spinTick()
 		}
-		m.spinOn = false
+		m.sc.on = false
 		return m, nil
 	case actionMsg:
 		if msg.err != nil {
@@ -333,7 +334,6 @@ func (m Model) onSnapshot(msg snapshotMsg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, tea.Tick(fetchDelay, func(time.Time) tea.Msg { return fetchNowMsg{} }))
 	}
 	if cmd := m.startSpinner(); cmd != nil {
-		m.spinOn = true
 		cmds = append(cmds, cmd)
 	}
 	return m, tea.Batch(cmds...)
@@ -358,9 +358,10 @@ func (m Model) onWatch(msg watchMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) startSpinner() tea.Cmd {
-	if m.spinOn || !m.busy() || m.opt.NoMotion {
+	if m.sc.on || !(m.busy() || m.loading()) || m.opt.NoMotion {
 		return nil
 	}
+	m.sc.on = true
 	return spinTick()
 }
 
@@ -456,6 +457,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.back()
 	case tea.KeySpace:
+		if m.screen == screenSettings {
+			return m.cycleLanguage()
+		}
 		return m.toggle(), nil
 	}
 	switch msg.String() {
@@ -540,6 +544,8 @@ func (m Model) back() (tea.Model, tea.Cmd) {
 
 func (m Model) enter() (tea.Model, tea.Cmd) {
 	switch m.screen {
+	case screenSettings:
+		return m.cycleLanguage()
 	case screenDrive:
 		return m.driveKey("enter")
 	case screenJobs:
@@ -621,14 +627,9 @@ func (m Model) screenKey(key string) (tea.Model, tea.Cmd) {
 			}
 		}
 	case screenSettings:
-		if key == "l" && m.acts.SetLanguage != nil {
-			lang := "en"
-			if m.snap.Prefs.Language == "en" {
-				lang = "vi"
-			}
-			return m, m.act(func(ctx context.Context) error {
-				return m.acts.SetLanguage(ctx, lang)
-			})
+		switch key {
+		case "l", "left", "right", "h", "tab":
+			return m.cycleLanguage()
 		}
 	}
 	return m, nil
@@ -800,4 +801,46 @@ func plural(n int, one, many string) string {
 		return fmt.Sprintf("%d %s", n, one)
 	}
 	return fmt.Sprintf("%d %s", n, many)
+}
+
+// spinCtl is shared by every copy of the model: it says whether a spinner tick
+// is already scheduled, so a burst of loads starts exactly one tick chain.
+type spinCtl struct{ on bool }
+
+// loading reports work the user is waiting for (a folder or a preview).
+func (m Model) loading() bool {
+	return (m.drv != nil && m.drv.loading) || (m.cp != nil && (m.cp.planning || m.cp.submitting))
+}
+
+// cycleLanguage switches vi <-> en at once: the screen changes immediately and
+// the preference is saved in the background (a failed save is reported and the
+// next refresh shows the truth).
+func (m Model) cycleLanguage() (tea.Model, tea.Cmd) {
+	if m.acts.SetLanguage == nil {
+		return m, nil
+	}
+	next := "en"
+	if m.effectiveLanguage() == "en" {
+		next = "vi"
+	}
+	m.snap.Prefs.Language = next
+	if m.opt.Language == "" {
+		m.lang = next
+	} else {
+		m.opt.Language = next
+		m.lang = next
+	}
+	return m, m.act(func(ctx context.Context) error { return m.acts.SetLanguage(ctx, next) })
+}
+
+// effectiveLanguage is what the screens use: the --language override when set,
+// else the saved preference, else the default.
+func (m Model) effectiveLanguage() string {
+	switch {
+	case m.opt.Language != "":
+		return m.opt.Language
+	case m.snap.Prefs.Language != "":
+		return m.snap.Prefs.Language
+	}
+	return m.lang
 }

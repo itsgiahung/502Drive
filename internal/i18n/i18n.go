@@ -124,6 +124,8 @@ const (
 	MetaWrite       Key = "meta_write"
 	Yes             Key = "yes"
 	No              Key = "no"
+	SyncOption      Key = "sync_option"
+	SettingsKeys2   Key = "settings_keys2"
 	PanelStart      Key = "panel_start"
 	PanelTip1       Key = "panel_tip1"
 	PanelTip2       Key = "panel_tip2"
@@ -269,7 +271,7 @@ var VI = map[Key]string{
 	FooterDrive:     "↑↓ chọn · enter/→ mở · ←/⌫ lên · i thông tin · n thư mục mới · c copy · d đặt làm đích · esc quay lại",
 	FooterPick:      "↑↓ chọn · enter/→ mở · ←/⌫ lên · y chọn thư mục đang mở làm đích · n thư mục mới · esc huỷ",
 	FooterCopySrc:   "enter kiểm tra · ctrl+v dán · esc huỷ",
-	FooterCopyPlan:  "enter bắt đầu copy · 1/2/3 cách đặt tên · d chọn thư mục đích · esc huỷ",
+	FooterCopyPlan:  "enter bắt đầu copy · 1/2/3 tên · d nơi lưu · s đồng bộ · esc hủy",
 	DriveEmpty:      "Thư mục trống.",
 	Loading:         "Đang tải…",
 	MoreBelow:       "… còn nữa, cuộn xuống để tải thêm",
@@ -301,6 +303,8 @@ var VI = map[Key]string{
 	MetaWrite:       "Thêm file vào được",
 	Yes:             "có",
 	No:              "không",
+	SyncOption:      `Đồng bộ sau khi copy`,
+	SettingsKeys2:   `←/→ hoặc Enter đổi ngay · esc quay lại`,
 	PanelStart:      `Bắt đầu`,
 	PanelTip1:       `Dán link Drive vào ô dưới, nhấn Enter để copy`,
 	PanelTip2:       `Gõ / xem lệnh · nhấn 1–7 để chuyển màn`,
@@ -404,7 +408,7 @@ var EN = map[Key]string{
 	FooterDrive:     "↑↓ move · enter/→ open · ←/⌫ up · i info · n new folder · c copy · d make destination · esc back",
 	FooterPick:      "↑↓ move · enter/→ open · ←/⌫ up · y use this open folder · n new folder · esc cancel",
 	FooterCopySrc:   "enter check · ctrl+v paste · esc cancel",
-	FooterCopyPlan:  "enter start copy · 1/2/3 naming · d choose destination · esc cancel",
+	FooterCopyPlan:  "enter start copy · 1/2/3 name · d where · s sync · esc cancel",
 	DriveEmpty:      "This folder is empty.",
 	Loading:         "Loading…",
 	MoreBelow:       "… more below, scroll down to load",
@@ -436,6 +440,8 @@ var EN = map[Key]string{
 	MetaWrite:       "Can add files",
 	Yes:             "yes",
 	No:              "no",
+	SyncOption:      `Keep in sync after copy`,
+	SettingsKeys2:   `←/→ or Enter changes it at once · esc back`,
 	PanelStart:      `Get started`,
 	PanelTip1:       `Paste a Drive link below, press Enter to copy`,
 	PanelTip2:       `Type / for commands · 1–7 switch screens`,

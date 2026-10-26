@@ -167,7 +167,7 @@ type Actions struct {
 	Browse         func(ctx context.Context, folderID, pageToken string) (FolderPage, error)
 	Mkdir          func(ctx context.Context, parentID, name string) (DriveItem, error)
 	Inspect        func(ctx context.Context, source, destinationID, rootName string) (Plan, error)
-	Submit         func(ctx context.Context, plan Plan) (string, error)
+	Submit         func(ctx context.Context, plan Plan) (jobID, collectionID string, err error)
 	AddDestination func(ctx context.Context, folderID string) (Destination, error)
 	// Watch opens the realtime stream; it reconnects by itself and closes its
 	// channel when ctx ends. Nil means the model polls.

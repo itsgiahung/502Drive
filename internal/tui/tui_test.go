@@ -287,7 +287,7 @@ func TestAccountDoctorAndSettingsLanguage(t *testing.T) {
 	m, _ = update(t, m, key("6"))
 	m, cmd = update(t, m, key("l"))
 	m = run(t, m, cmd)
-	if got := fake.recorded(); got[len(got)-1] != "lang:en" {
+	if got := fake.recorded(); got[len(got)-1] != "lang:vi" { // the model starts in English (override), so the switch goes to vi
 		t.Fatalf("calls = %v", got)
 	}
 }

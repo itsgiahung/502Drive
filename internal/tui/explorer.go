@@ -66,15 +66,47 @@ func (m Model) openDrive(pick bool) (Model, tea.Cmd) {
 	return m, m.loadFolder("root", "", false)
 }
 
+// folderCache keeps recently seen folders so opening one again is instant: the
+// cached page is shown at once and a fresh one replaces it when it arrives.
+type folderCache struct {
+	pages map[string]cachedFolder
+}
+
+type cachedFolder struct {
+	page FolderPage
+	at   time.Time
+}
+
+const folderCacheTTL = 90 * time.Second
+
+func newFolderCache() *folderCache { return &folderCache{pages: map[string]cachedFolder{}} }
+
 func (m Model) loadFolder(id, token string, more bool) tea.Cmd {
-	m.drv.req++
-	m.drv.loading = true
-	m.drv.err = ""
-	req, acts, ctx := m.drv.req, m.acts, m.ctx
-	return func() tea.Msg {
+	d := m.drv
+	d.req++
+	d.err = ""
+	if c, ok := m.cache.pages[id]; ok && !more && m.opt.now().Sub(c.at) < folderCacheTTL {
+		d.page, d.loaded = c.page, true
+		m.placeCursor(d)
+	}
+	d.loading = true
+	req, acts, ctx := d.req, m.acts, m.ctx
+	fetch := func() tea.Msg {
 		page, err := acts.Browse(ctx, id, token)
 		return browseMsg{req: req, page: page, more: more, err: err}
 	}
+	return tea.Batch(fetch, m.startSpinner())
+}
+
+// placeCursor puts the cursor on the focus item (or the top) of the shown page.
+func (m *Model) placeCursor(d *explorer) {
+	m.cursor, m.top = 0, 0
+	for i, it := range d.page.Items {
+		if d.focus != "" && it.ID == d.focus {
+			m.cursor = i
+		}
+	}
+	m.fixTop()
 }
 
 func (m Model) onBrowse(msg browseMsg) (tea.Model, tea.Cmd) {
@@ -92,15 +124,20 @@ func (m Model) onBrowse(msg browseMsg) (tea.Model, tea.Cmd) {
 		d.page.Next = msg.page.Next
 		return m, nil
 	}
-	d.page, d.loaded = msg.page, true
-	m.cursor, m.top = 0, 0
-	for i, it := range d.page.Items {
-		if d.focus != "" && it.ID == d.focus {
-			m.cursor = i
+	// A refresh of the folder already on screen keeps the cursor on the same item.
+	keep := ""
+	if d.loaded && d.page.Folder.ID == msg.page.Folder.ID && d.focus == "" {
+		if it, ok := m.driveItem(); ok {
+			keep = it.ID
 		}
 	}
+	m.cache.pages[msg.page.Folder.ID] = cachedFolder{page: msg.page, at: m.opt.now()}
+	d.page, d.loaded = msg.page, true
+	if keep != "" {
+		d.focus = keep
+	}
+	m.placeCursor(d)
 	d.focus = ""
-	m.fixTop()
 	return m, nil
 }
 
@@ -261,10 +298,14 @@ func (m Model) driveView() []string {
 	if d.pick {
 		lines[0] = m.warn(m.t(i18n.PickHint))
 	}
-	lines = append(lines, m.breadcrumb())
+	crumb := m.breadcrumb()
+	if d.loading && d.loaded && !m.opt.NoMotion {
+		crumb += " " + m.accent(m.spinChar())
+	}
+	lines = append(lines, crumb)
 	switch {
 	case d.loading && !d.loaded:
-		return append(lines, "", m.dim(m.t(i18n.Loading)))
+		return append(lines, "", m.accent(m.spinChar())+" "+m.dim(m.t(i18n.Loading)))
 	case d.err != "" && !d.loaded:
 		return append(lines, "", m.bad(d.err))
 	case len(d.page.Items) == 0:

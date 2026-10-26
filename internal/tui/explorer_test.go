@@ -65,9 +65,9 @@ func (d *driveFake) acts() Actions {
 		return Plan{ID: "plan_1", Revision: 1, SourceID: source, SourceName: "Big Folder", SourceKind: "folder",
 			DestinationID: firstNonEmpty(dest, "dst_1"), RootName: root, Files: 10, Folders: 2, Complete: true}, nil
 	}
-	a.Submit = func(_ context.Context, p Plan) (string, error) {
+	a.Submit = func(_ context.Context, p Plan) (string, string, error) {
 		d.log("submit:%s", p.ID)
-		return "job_new", nil
+		return "job_new", "col_new", nil
 	}
 	a.AddDestination = func(_ context.Context, folder string) (Destination, error) {
 		d.log("adddest:%s", folder)
@@ -313,4 +313,125 @@ func TestLongFoldersAreWindowedAndLoadMorePages(t *testing.T) {
 	if !loaded {
 		t.Fatal("reaching the last row with a next page should load more")
 	}
+}
+
+func TestCopySyncOptionEnablesTheChosenSchedule(t *testing.T) {
+	d := newDriveFake()
+	var preset, collection string
+	acts := d.acts()
+	acts.SyncPreset = func(_ context.Context, col, p string) error { collection, preset = col, p; return nil }
+	m := New(acts, Options{Width: 100, Height: 30, Language: "en", Now: func() time.Time { return time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC) }})
+	m = run(t, m, m.fetch())
+	m, _ = update(t, m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	m, _ = update(t, m, key("c"))
+	m = typeText(t, m, "SRC1")
+	m, cmd := update(t, m, key("enter"))
+	m = run(t, m, cmd)
+	m, _ = update(t, m, key("s")) // hourly
+	m, _ = update(t, m, key("s")) // daily
+	if v := m.View(); !strings.Contains(v, "● Daily at 22:00") {
+		t.Fatalf("the chosen schedule should be marked:\n%s", v)
+	}
+	m, cmd = update(t, m, key("enter"))
+	m = run(t, m, cmd)
+	if preset != presetDaily || collection != "col_new" {
+		t.Fatalf("sync preset = %q on %q, want daily on col_new", preset, collection)
+	}
+	if m.screen != screenJobs {
+		t.Fatalf("screen = %v", m.screen)
+	}
+}
+
+func TestNoSyncByDefaultAndASyncFailureDoesNotHideTheCopy(t *testing.T) {
+	d := newDriveFake()
+	called := false
+	acts := d.acts()
+	acts.SyncPreset = func(context.Context, string, string) error { called = true; return errors.New("sync is not available") }
+	m := New(acts, Options{Width: 100, Height: 30, Language: "en"})
+	m = run(t, m, m.fetch())
+	m, _ = update(t, m, key("c"))
+	m = typeText(t, m, "SRC1")
+	m, cmd := update(t, m, key("enter"))
+	m = run(t, m, cmd)
+	m, cmd = update(t, m, key("enter"))
+	m = run(t, m, cmd)
+	if called {
+		t.Fatal("sync must be off unless the user turned it on")
+	}
+	m, _ = update(t, m, key("1"))
+	m = homeModelFromJobs(t, d)
+	_ = m
+}
+
+func homeModelFromJobs(t *testing.T, d *driveFake) Model {
+	t.Helper()
+	acts := d.acts()
+	acts.SyncPreset = func(context.Context, string, string) error { return errors.New("sync is not available") }
+	m := New(acts, Options{Width: 100, Height: 30, Language: "en"})
+	m = run(t, m, m.fetch())
+	m, _ = update(t, m, key("c"))
+	m = typeText(t, m, "SRC1")
+	m, cmd := update(t, m, key("enter"))
+	m = run(t, m, cmd)
+	m, _ = update(t, m, key("s"))
+	m, cmd = update(t, m, key("enter"))
+	m = run(t, m, cmd)
+	if !strings.Contains(m.status, "job_new") || !strings.Contains(m.status, "sync is not available") {
+		t.Fatalf("the copy must be reported together with the schedule problem: %q", m.status)
+	}
+	return m
+}
+
+func TestSettingsChangeLanguageAtOnce(t *testing.T) {
+	d := newDriveFake()
+	m := driveModel(t, d, 100, 30)
+	m, _ = update(t, m, key("6"))
+	if v := m.View(); !strings.Contains(v, "● English") {
+		t.Fatalf("English is the starting language:\n%s", v)
+	}
+	m, cmd := update(t, m, key("enter"))
+	if !strings.Contains(m.View(), "● Tiếng Việt") || m.lang == "en" && m.opt.Language == "" {
+		t.Fatalf("pressing Enter must switch the screen without waiting for the server:\n%s", m.View())
+	}
+	m = run(t, m, cmd)
+	if got := strings.Join(d.calls, " "); got != "" && strings.Contains(got, "lang:") {
+		t.Fatalf("unexpected calls %v", d.calls)
+	}
+	if calls := d.fakeActions.recorded(); len(calls) == 0 || calls[len(calls)-1] != "lang:vi" {
+		t.Fatalf("the preference was not saved: %v", calls)
+	}
+}
+
+func TestOpeningAFolderTwiceIsInstantAndKeepsTheCursor(t *testing.T) {
+	d := newDriveFake()
+	m := driveModel(t, d, 100, 30)
+	m, cmd := update(t, m, key("7"))
+	m = run(t, m, cmd)
+	m, cmd = update(t, m, key("down"))
+	if cmd != nil {
+		_ = cmd
+	}
+	m, cmd = update(t, m, key("r")) // refresh: the page stays visible while loading
+	if !m.drv.loaded || len(m.drv.page.Items) == 0 {
+		t.Fatal("a refresh must keep showing the folder")
+	}
+	if !m.loading() {
+		t.Fatal("a refresh in flight is 'loading' so the spinner runs")
+	}
+	m = run(t, m, cmd)
+	if it, _ := m.driveItem(); it.ID != "f1" {
+		t.Fatalf("the cursor must stay on the same item after a refresh, got %q", it.ID)
+	}
+	// Visit Projects, go back, enter it again: the second visit shows at once.
+	m, _ = update(t, m, key("up"))
+	m, cmd = update(t, m, key("enter"))
+	m = run(t, m, cmd)
+	m, cmd = pressKey(t, m, tea.KeyMsg{Type: tea.KeyLeft})
+	m = run(t, m, cmd)
+	m, _ = update(t, m, key("up"))
+	m, cmd = update(t, m, key("enter"))
+	if !m.drv.loaded || m.drv.page.Folder.ID != "p1" {
+		t.Fatalf("a cached folder should appear at once, got %q", m.drv.page.Folder.ID)
+	}
+	_ = cmd
 }

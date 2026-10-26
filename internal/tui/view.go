@@ -418,10 +418,17 @@ func (m Model) accountView() []string {
 }
 
 func (m Model) settingsView() []string {
+	cur := m.effectiveLanguage()
+	pick := func(label string, on bool) string {
+		if on {
+			return m.good("● " + label)
+		}
+		return m.dim("○ " + label)
+	}
 	return []string{"", m.bold(m.t(i18n.Settings)), "",
-		m.kv(m.t(i18n.Language), Sanitize(orDash(m.snap.Prefs.Language))),
-		m.kv(m.t(i18n.Timezone), Sanitize(orDash(m.snap.Prefs.Timezone))),
-		"", m.dim(m.t(i18n.SettingsKeys))}
+		m.accent("> ") + m.kv(m.t(i18n.Language), pick("Tiếng Việt", cur != "en")+"   "+pick("English", cur == "en")),
+		"  " + m.kv(m.t(i18n.Timezone), Sanitize(orDash(m.snap.Prefs.Timezone))),
+		"", m.dim(m.t(i18n.SettingsKeys2))}
 }
 
 func (m Model) helpView() []string {

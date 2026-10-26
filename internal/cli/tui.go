@@ -130,16 +130,16 @@ func (a *App) tuiInspect(ctx context.Context, source, destinationID, rootName st
 		Complete: plan.Preview.Complete, Warnings: plan.Warnings}, nil
 }
 
-func (a *App) tuiSubmit(ctx context.Context, plan tui.Plan) (string, error) {
+func (a *App) tuiSubmit(ctx context.Context, plan tui.Plan) (string, string, error) {
 	r, err := a.call(ctx, "POST", "/v1/jobs", nil, map[string]any{"plan_id": plan.ID, "expected_revision": plan.Revision}, NewKey())
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	var job jobView
 	if err = r.Decode(&job); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return job.ID, nil
+	return job.ID, job.CollectionID, nil
 }
 
 // tuiAddDestination reuses the destination that already points at the folder,

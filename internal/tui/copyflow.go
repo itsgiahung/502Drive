@@ -31,8 +31,12 @@ type copyFlow struct {
 	custom   string
 	plan     *Plan
 	planning bool
-	req      int
-	err      string
+	// submitting is set while the job is being created.
+	submitting bool
+	// sync is the schedule enabled right after the copy: off, hourly, daily, realtime.
+	sync int
+	req  int
+	err  string
 }
 
 type planMsg struct {
@@ -42,9 +46,13 @@ type planMsg struct {
 }
 
 type submitMsg struct {
-	jobID string
-	err   error
+	jobID   string
+	syncErr error
+	err     error
 }
+
+// sync choices, in the order the s key cycles through them.
+var syncPresets = []string{"", presetHourly, presetDaily, presetRealtime}
 
 // startCopy opens the dialog. An empty source asks for a link first.
 func (m Model) startCopy(source string, from screen) (Model, tea.Cmd) {
@@ -113,13 +121,16 @@ func (m Model) onSubmit(msg submitMsg) (tea.Model, tea.Cmd) {
 	if m.cp == nil {
 		return m, nil
 	}
-	m.cp.planning = false
+	m.cp.planning, m.cp.submitting = false, false
 	if msg.err != nil {
 		m.cp.err = Sanitize(msg.err.Error())
 		return m, nil
 	}
 	m.cp = nil
 	m.status = i18n.Tf(m.lang, i18n.CopyStarted, Sanitize(msg.jobID))
+	if msg.syncErr != nil {
+		m.status += " ⚠ " + Sanitize(msg.syncErr.Error())
+	}
 	next, cmd := m.goTo(screenJobs)
 	return next.(Model), tea.Batch(cmd, next.(Model).refetch())
 }
@@ -135,12 +146,17 @@ func (m Model) copyKey(key string) (tea.Model, tea.Cmd) {
 		if c.plan == nil || c.planning || m.acts.Submit == nil {
 			return m, nil
 		}
-		plan, acts, ctx := *c.plan, m.acts, m.ctx
-		c.planning, c.err = true, ""
-		return m, func() tea.Msg {
-			id, err := acts.Submit(ctx, plan)
-			return submitMsg{jobID: id, err: err}
-		}
+		plan, acts, ctx, preset := *c.plan, m.acts, m.ctx, syncPresets[c.sync]
+		c.planning, c.submitting, c.err = true, true, ""
+		return m, tea.Batch(func() tea.Msg {
+			id, collection, err := acts.Submit(ctx, plan)
+			res := submitMsg{jobID: id, err: err}
+			if err == nil && preset != "" && collection != "" && acts.SyncPreset != nil {
+				// A schedule that cannot be set must not hide that the copy started.
+				res.syncErr = acts.SyncPreset(ctx, collection, preset)
+			}
+			return res
+		}, m.startSpinner())
 	case "1":
 		return m.setNameMode(nameKeep)
 	case "2":
@@ -154,6 +170,8 @@ func (m Model) copyKey(key string) (tea.Model, tea.Cmd) {
 	case "d":
 		next, cmd := m.openDrive(true)
 		return next, cmd
+	case "s":
+		c.sync = (c.sync + 1) % len(syncPresets)
 	}
 	return m, nil
 }
@@ -223,7 +241,7 @@ func (m Model) copyView() []string {
 		return lines
 	}
 	if c.plan == nil {
-		return append(lines, "", m.dim(m.t(i18n.CopyChecking)))
+		return append(lines, "", m.accent(m.spinChar())+" "+m.dim(m.t(i18n.CopyChecking)))
 	}
 	p := c.plan
 	count := i18n.Tf(m.lang, i18n.PreviewCount, p.Files, p.Folders, partial(m, p))
@@ -231,13 +249,14 @@ func (m Model) copyView() []string {
 		m.kv(m.t(i18n.CopyFrom), Sanitize(p.SourceName)+"  "+m.dim("("+Sanitize(p.SourceKind)+" · "+count+")")),
 		m.kv(m.t(i18n.CopyTo), Sanitize(m.destinationName(p))),
 		m.kv(m.t(i18n.CopyOutName), m.accent(Sanitize(p.RootName))),
+		m.kv(m.t(i18n.SyncOption), m.syncChoice()),
 		"", m.nameOptions())
 	for _, w := range p.Warnings {
 		lines = append(lines, m.warn("! "+Sanitize(w)))
 	}
 	switch {
 	case c.planning:
-		lines = append(lines, "", m.dim(m.t(i18n.CopyChecking)))
+		lines = append(lines, "", m.accent(m.spinChar())+" "+m.dim(m.t(i18n.CopyChecking)))
 	case c.err != "":
 		lines = append(lines, "", m.bad(c.err))
 	}
@@ -296,4 +315,18 @@ func (m Model) copyScreenKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.leaveCopy()
 	}
 	return m.copyKey(msg.String())
+}
+
+// syncChoice shows the four schedules with the chosen one marked.
+func (m Model) syncChoice() string {
+	labels := []string{m.t(i18n.SyncOff), m.t(i18n.PresetHourly), m.t(i18n.PresetDaily), m.t(i18n.PresetReal)}
+	parts := make([]string, len(labels))
+	for i, l := range labels {
+		if i == m.cp.sync {
+			parts[i] = m.good("● " + l)
+		} else {
+			parts[i] = m.dim("○ " + l)
+		}
+	}
+	return strings.Join(parts, "  ")
 }
