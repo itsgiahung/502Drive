@@ -34,7 +34,9 @@ type Service struct {
 	Wake     func()
 	Version  string
 	BotState func() string
-	Now      func() time.Time
+	// Lifecycle reports the power/network state; nil means "running, online".
+	Lifecycle func() Lifecycle
+	Now       func() time.Time
 }
 
 func (s *Service) now() time.Time {

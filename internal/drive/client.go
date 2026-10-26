@@ -19,7 +19,18 @@ import (
 const fileFields = "id,name,mimeType,parents,size,md5Checksum,version,resourceKey,driveId,trashed,shortcutDetails(targetId,targetMimeType,targetResourceKey),capabilities(canCopy,canAddChildren),appProperties,createdTime,modifiedTime,owners(displayName,emailAddress),webViewLink"
 
 // Client is the Google Drive v3 implementation of Provider.
-type Client struct{ svc *gdrive.Service }
+type Client struct {
+	svc *gdrive.Service
+	hc  *http.Client
+}
+
+// CloseIdleConnections drops pooled connections. After a sleep or a network
+// change the pool holds dead sockets; the next request dials fresh ones.
+func (c *Client) CloseIdleConnections() {
+	if c != nil && c.hc != nil {
+		c.hc.CloseIdleConnections()
+	}
+}
 
 // NewClient builds a Client from a refreshing token source. endpoint may be
 // empty (production) or point at a test server.
@@ -33,7 +44,7 @@ func NewClient(ctx context.Context, ts oauth2.TokenSource, endpoint string) (*Cl
 	if err != nil {
 		return nil, err
 	}
-	return &Client{svc: svc}, nil
+	return &Client{svc: svc, hc: hc}, nil
 }
 
 func keyHeader(h http.Header, id, key string) {

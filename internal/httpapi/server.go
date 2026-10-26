@@ -44,6 +44,19 @@ type Server struct {
 	Done <-chan struct{}
 	// Stop asks the daemon to shut down (POST /v1/shutdown); nil disables it.
 	Stop func()
+	// Sleeping reports the short checkpoint window before the machine sleeps.
+	// New work is refused there instead of being admitted and immediately
+	// frozen; nil means "never sleeping".
+	Sleeping func() bool
+}
+
+// refuseSleeping refuses new work while the daemon checkpoints for sleep. The
+// window is at most a couple of seconds; clients retry.
+func (s *Server) refuseSleeping() error {
+	if s.Sleeping != nil && s.Sleeping() {
+		return app.Fail(http.StatusServiceUnavailable, "suspending", "The machine is about to sleep; retry in a moment.")
+	}
+	return nil
 }
 
 // refuseMaintenance is the single gate for work admission in maintenance mode.
@@ -278,12 +291,16 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request, p app.Principal)
 		return 0, nil, err
 	}
 	return 200, map[string]any{"version": st.Version, "schema_version": st.SchemaVersion, "ready": st.Ready, "account": accountDTO(st.Account),
-		"bot_state": st.BotState, "running_jobs": st.Running, "queued_jobs": st.Queued, "blocked_jobs": st.Blocked}, nil
+		"bot_state": st.BotState, "running_jobs": st.Running, "queued_jobs": st.Queued, "blocked_jobs": st.Blocked,
+		"lifecycle": st.Lifecycle}, nil
 }
 
 // ---- plans & jobs ----
 
 func (s *Server) createPlan(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
+	if err := s.refuseSleeping(); err != nil {
+		return 0, nil, err
+	}
 	var req app.PlanRequest
 	if err := decode(r, &req); err != nil {
 		return 0, nil, err
@@ -309,6 +326,9 @@ type jobInput struct {
 
 func (s *Server) createJob(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
 	if err := s.refuseMaintenance(); err != nil {
+		return 0, nil, err
+	}
+	if err := s.refuseSleeping(); err != nil {
 		return 0, nil, err
 	}
 	var in jobInput

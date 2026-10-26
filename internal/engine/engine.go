@@ -14,6 +14,13 @@ import (
 	"github.com/itsgiahung/502Drive/internal/state"
 )
 
+// NetworkGate tells the engine whether remote work is allowed now. *power.Gate
+// implements it; engine only needs these two methods.
+type NetworkGate interface {
+	Online() bool
+	Wait(ctx context.Context) bool
+}
+
 // Engine claims queued jobs and drives them to a truthful final state.
 type Engine struct {
 	Store *state.Store
@@ -30,6 +37,13 @@ type Engine struct {
 	Settle      time.Duration // wait between reconcile queries (default 2s)
 	Poll        time.Duration // idle scan interval (default 1s)
 	Now         func() time.Time
+	// Network gates remote work while the machine is asleep or offline. When
+	// nil every call is allowed (tests, maintenance).
+	Network NetworkGate
+	// OnUnreachable is called when a call provably never left the machine
+	// (drive.KindUnreachable). The daemon closes the network gate and starts a
+	// connectivity probe; the engine only reports.
+	OnUnreachable func(err error)
 	// AfterRun is called when a job reaches a final state, for sync bookkeeping.
 	AfterRun func(jobID string)
 

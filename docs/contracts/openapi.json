@@ -2678,6 +2678,9 @@
           "blocked_jobs": {
             "type": "integer",
             "minimum": 0
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/Lifecycle"
           }
         },
         "required": [
@@ -2688,7 +2691,8 @@
           "bot_state",
           "running_jobs",
           "queued_jobs",
-          "blocked_jobs"
+          "blocked_jobs",
+          "lifecycle"
         ]
       },
       "LiveResponse": {
@@ -3698,6 +3702,40 @@
             "maxLength": 255
           }
         }
+      },
+      "Lifecycle": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "suspending",
+              "sleeping",
+              "resuming",
+              "reconnect_required"
+            ]
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "since": {
+            "type": "string"
+          },
+          "last_gap_seconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reconnect_required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "state",
+          "online",
+          "reconnect_required"
+        ]
       }
     },
     "responses": {

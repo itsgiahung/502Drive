@@ -28,6 +28,9 @@ type Config struct {
 	// CheckUpdates lets the tray ask GitHub once a day whether a newer release
 	// exists. Off by default: nothing contacts the network unasked.
 	CheckUpdates bool `json:"check_updates,omitempty"`
+	// KeepAwakeWhileCopying holds a block inhibitor while jobs run. Off by
+	// default on purpose: keeping a laptop awake costs battery and heat.
+	KeepAwakeWhileCopying bool `json:"keep_awake_while_copying,omitempty"`
 }
 
 func DefaultPath() string {

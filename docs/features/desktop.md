@@ -7,6 +7,25 @@ Source: [internal/tray](../../internal/tray), [internal/tui](../../internal/tui)
 [tray/tray_test.go](../../internal/tray/tray_test.go),
 [tui/tui_test.go](../../internal/tui/tui_test.go), [cli/tray_test.go](../../internal/cli/tray_test.go).
 
+## Máy ngủ, mất mạng
+
+Daemon theo dõi vòng đời máy: `running → suspending → sleeping → resuming →
+running`, cộng `reconnect_required` khi token Google hỏng. Trước khi ngủ nó dừng
+nhận việc mới (503 `suspending` cho plan/job), checkpoint WAL (≤2s), ghi
+`heartbeat`; sau khi thức nó kiểm DB, đóng idle connection, probe mạng có backoff
+rồi mới mở lại hàng đợi. Phát hiện ngủ **không phụ thuộc OS**: lệch đồng hồ
+tường/đơn điệu > 30s (logind/Power API là lớp phụ, chỉ thêm độ chính xác).
+
+- Lỗi mạng không làm item `failed` và **không** tiêu attempt; job chờ thay vì
+  báo hỏng. Ghi có kết quả không rõ vẫn reconcile bằng intent trước khi gửi lại.
+- `GET /v1/status` có `lifecycle {state, online, since, last_gap_seconds,
+  reconnect_required}` để tray/TUI/CLI hiển thị "đang kết nối lại…".
+- `keep_awake_while_copying: true` (mặc định **tắt**) giữ máy thức khi có job —
+  tốn pin/nhiệt; Linux dùng inhibitor `sleep:idle` kiểu block, Windows
+  `SetThreadExecutionState`.
+- Thiết kế/giới hạn: [design/t1-power-lifecycle.md](../design/t1-power-lifecycle.md);
+  kiểm tay: [runbooks](../runbooks.md#kiểm-tra-laptop-thật).
+
 ## Tray
 
 `502drive tray` là một process riêng, không cửa sổ chính, chỉ gọi HTTP API.

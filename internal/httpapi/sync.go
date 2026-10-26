@@ -21,6 +21,9 @@ func (s *Server) configureSync(w http.ResponseWriter, r *http.Request, p app.Pri
 	if err := s.refuseMaintenance(); err != nil {
 		return 0, nil, err
 	}
+	if err := s.refuseSleeping(); err != nil {
+		return 0, nil, err
+	}
 	var in app.SyncRequest
 	if err := decode(r, &in); err != nil {
 		return 0, nil, err
@@ -55,6 +58,9 @@ func (s *Server) syncAction(action string) handler {
 // the request was coalesced) plus its Location.
 func (s *Server) runNow(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
 	if err := s.refuseMaintenance(); err != nil {
+		return 0, nil, err
+	}
+	if err := s.refuseSleeping(); err != nil {
 		return 0, nil, err
 	}
 	var in actionInput

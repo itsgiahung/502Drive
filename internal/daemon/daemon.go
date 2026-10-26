@@ -27,6 +27,7 @@ import (
 	"github.com/itsgiahung/502Drive/internal/drive"
 	"github.com/itsgiahung/502Drive/internal/engine"
 	"github.com/itsgiahung/502Drive/internal/httpapi"
+	"github.com/itsgiahung/502Drive/internal/power"
 	"github.com/itsgiahung/502Drive/internal/state"
 	"github.com/itsgiahung/502Drive/internal/telegram"
 )
@@ -127,6 +128,54 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 
 	eng := &engine.Engine{Store: store, Provider: provider, Log: log}
 	svc.Wake = eng.Wake
+
+	// Power/network lifecycle: OS events where available, clock gaps always.
+	// The engine only sees a gate; the OS specifics stay in internal/power.
+	src, srcErr := power.NewSource(log)
+	if srcErr != nil {
+		log.Info("power: no OS power notifications; using the clock-gap detector", "err", srcErr)
+	}
+	monitor := power.NewMonitor(src, power.MonitorOptions{})
+	lifeCtx, stopLife := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopLife()
+	var keeper power.WakeKeeper
+	if cfg.KeepAwakeWhileCopying {
+		keeper = power.NewWakeKeeper(&power.WakeOptions{Log: log, Reason: "502Drive is copying"})
+	}
+	life := newLifecycle(lifecycleOptions{
+		Store: store,
+		Log:   log,
+		Probe: func(ctx context.Context) error {
+			p, err := provider(ctx)
+			if err != nil {
+				return err
+			}
+			_, err = p.Account(ctx)
+			return err
+		},
+		ResetConnections: func() {
+			clientMu.Lock()
+			if client != nil {
+				client.CloseIdleConnections()
+			}
+			clientMu.Unlock()
+		},
+		Wake:      eng.Wake,
+		Keeper:    keeper,
+		KeepAwake: func() bool { return cfg.KeepAwakeWhileCopying },
+		RunningJobs: func(ctx context.Context) int {
+			counts, err := store.CountJobs(ctx)
+			if err != nil {
+				return 0
+			}
+			return counts[state.JobRunning] + counts[state.JobPausing] + counts[state.JobCancelling] + counts[state.JobReconciling]
+		},
+	})
+	eng.Network = life.gateRef()
+	eng.OnUnreachable = func(err error) { life.noteUnreachable(lifeCtx, err) }
+	svc.Lifecycle = life.view
+	// Decide the startup state before the engine may claim anything.
+	life.start(lifeCtx)
 	// Sync bookkeeping runs after every finished run: the store records the
 	// result on the subscription and may hand back a coalesced follow-up run.
 	bookkeep := context.WithoutCancel(ctx)
@@ -151,7 +200,8 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 	}
 	var workerUp atomic.Bool
 	srv := &httpapi.Server{Svc: svc, TokenHash: httpapi.HashToken(string(rawToken)), Log: log, OAuthPort: cfg.OAuthCallbackPort,
-		RevokeEndpoint: o.RevokeEndpoint, WorkerReady: workerUp.Load, Maintenance: o.Maintenance, Done: ctx.Done(), Stop: stop}
+		RevokeEndpoint: o.RevokeEndpoint, WorkerReady: workerUp.Load, Maintenance: o.Maintenance, Done: ctx.Done(), Stop: stop,
+		Sleeping: life.suspending}
 
 	// The Telegram adapter runs in the same daemon and calls the same service
 	// as the HTTP API. A bot failure never makes the daemon unready.
@@ -226,6 +276,11 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 			syncer.run(syncCtx)
 		}()
 	}
+	lifeDone := make(chan struct{})
+	go func() {
+		defer close(lifeDone)
+		life.Run(lifeCtx, monitor.Run(lifeCtx))
+	}()
 	botCtx, stopBot := context.WithCancel(context.WithoutCancel(ctx))
 	telegramDone := make(chan struct{})
 	if tg != nil {
@@ -254,6 +309,8 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 	_ = hs.Shutdown(shutCtx)
 	stopEngine()
 	<-engDone
+	stopLife()
+	<-lifeDone
 	stopSync()
 	<-syncDone
 	stopBot()

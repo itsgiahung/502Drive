@@ -109,3 +109,48 @@ artifact nằm ở trang run, job Publish bị bỏ qua). Đăng bản thật ch
 - `cleanup` chỉ dọn file tạm `*.tmp` cũ hơn ngưỡng trong data dir.
 - Log: để systemd journal/container runtime xoay vòng; app không tự xóa log.
 - Backup: owner tự quản lý, giữ ít nhất bản đã restore-test.
+
+## Kiểm tra laptop thật
+
+Mọi kịch bản dưới đây **chưa chạy trên OS thật** trong phiên 2026-10-27 (xem
+cột "OS thật" ở [acceptance](acceptance.md#vòng-đời-laptop-t1-ngủmạng-chống-trùng)).
+Chạy tay và ghi log trước khi đánh dấu "chạy".
+
+Chuẩn bị:
+
+```bash
+# daemon ở foreground để đọc log trực tiếp
+502drive serve            # hoặc: journalctl --user -u 502drive -f
+# terminal khác: theo dõi trạng thái
+watch -n2 '502drive --json status | python3 -m json.tool | grep -A6 lifecycle'
+```
+
+Checklist (đánh dấu khi có log):
+
+1. **Gập máy 1 phút** giữa lúc đang copy một thư mục vài chục file.
+   Kỳ vọng log: `power: sleeping` → (mở máy) `power: resuming` → `power: online`;
+   `lifecycle.state` đi `running → sleeping → resuming → running`; job kết thúc
+   `succeeded`, **không** có hai bản của cùng một file ở đích (`ls` thư mục đích).
+2. **Gập máy 1 giờ** (hoặc chỉnh đồng hồ nhảy) với lịch sync hằng ngày đã quá giờ.
+   Kỳ vọng: đúng **một** run catch-up cho mỗi collection trong log syncer.
+3. **Rút Wi-Fi / tắt VPN** khi đang copy: log `power: network unreachable; waiting
+   for connectivity`; job vẫn `running` (không `failed`), item không tăng attempt
+   (`502drive jobs get ID --json` → `counts.failed` không tăng). Bật mạng lại →
+   job tiếp tục.
+4. **Bật VPN** khi đang rảnh: log `power: network changed; resetting idle connections`;
+   lệnh `502drive status` vẫn thành công ngay.
+5. **Copy dở rồi gập máy**, mở lại: không có lỗi "unknown_remote_outcome" nếu máy
+   chỉ ngủ; nếu có (mạng chết đúng lúc ghi) thì item `blocked` kèm lý do và
+   `retry` xác nhận lại trước khi gửi.
+6. **Restart máy** khi daemon đang chạy: sau khi bật lại, log có
+   `power: resuming, gap=…` (gap ≥ thời gian tắt máy) và engine `ActiveJobs`
+   đưa item `executing` về `reconciling` trước khi ghi tiếp.
+7. **Linux**: kiểm tra delay lock không bị giữ:
+   `systemd-inhibit --list | grep 502Drive` chỉ thấy inhibitor `block` khi
+   `keep_awake_while_copying: true` và đang có job; sau khi sleep, lệnh trả về ngay.
+8. **Windows**: `powercfg /requests` không có 502Drive khi tắt keep-awake; sau khi
+   resume từ hibernate, tray hiện trạng thái mới trong ≤ 10s.
+
+Ghi lại: OS + phiên bản, thời điểm, đoạn log `power:` + `lifecycle`, kết quả
+`jobs get`, ảnh/`ls` đích nếu có nghi ngờ trùng. Không dùng dữ liệu thật để thử
+"xóa/ghi đè"; chỉ copy trong thư mục test.

@@ -117,6 +117,23 @@ func (r *run) settle(ctx context.Context) {
 	r.finalize()
 }
 
+// waitNetwork blocks while the machine is offline. It distinguishes "sleeping"
+// from "failed": no attempt is consumed and no item is failed.
+func (r *run) waitNetwork(ctx context.Context) bool {
+	if r.e.Network == nil || r.e.Network.Online() {
+		return true
+	}
+	r.log("waiting for the network")
+	return r.e.Network.Wait(ctx)
+}
+
+// noteUnreachable tells the host that a call never left the machine.
+func (r *run) noteUnreachable(err error) {
+	if r.e.OnUnreachable != nil {
+		r.e.OnUnreachable(err)
+	}
+}
+
 func (r *run) isReconnect() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.reconnect }
 func (r *run) setReconnect()     { r.mu.Lock(); r.reconnect = true; r.mu.Unlock() }
 
@@ -247,6 +264,9 @@ func toItem(f drive.File) state.Item {
 func (r *run) listPage(ctx context.Context, folder state.Item) ([]drive.File, string, error) {
 	var lastErr error
 	for attempt := 0; attempt < maxTransientAttempts; attempt++ {
+		if !r.waitNetwork(ctx) {
+			return nil, "", ctx.Err()
+		}
 		if err := r.e.acquire(ctx); err != nil {
 			return nil, "", err
 		}
@@ -257,7 +277,22 @@ func (r *run) listPage(ctx context.Context, folder state.Item) ([]drive.File, st
 		}
 		lastErr = err
 		switch drive.KindOf(err) {
-		case drive.KindThrottled, drive.KindUnavailable, drive.KindUnreachable:
+		case drive.KindUnreachable:
+			// No page was read. When the host has a network gate, wait for it
+			// and re-read the same page without spending the retry budget; a
+			// host without a gate still gets the normal backoff (never a spin).
+			r.noteUnreachable(err)
+			if r.e.Network != nil && !r.e.Network.Online() {
+				if !r.waitNetwork(ctx) {
+					return nil, "", ctx.Err()
+				}
+				attempt--
+				continue
+			}
+			if !r.e.sleep(ctx, max(r.e.backoff(attempt), drive.RetryAfterOf(err))) {
+				return nil, "", ctx.Err()
+			}
+		case drive.KindThrottled, drive.KindUnavailable:
 			d := max(r.e.backoff(attempt), drive.RetryAfterOf(err))
 			if !r.e.sleep(ctx, d) {
 				return nil, "", ctx.Err()
@@ -304,6 +339,11 @@ func (r *run) copyAll(ctx context.Context) {
 func (r *run) worker(ctx context.Context) {
 	for {
 		if ctx.Err() != nil || r.control() != "run" || r.isReconnect() {
+			return
+		}
+		// Offline: stop claiming work. In-flight writes are never cancelled:
+		// they either finish or reconcile.
+		if !r.waitNetwork(ctx) {
 			return
 		}
 		it, err := r.e.Store.ClaimItem(r.db, r.id, r.e.Now().UnixMilli())
@@ -365,12 +405,17 @@ func (r *run) process(ctx context.Context, it state.Item) {
 		return
 	}
 	switch k := drive.KindOf(err); {
+	case k == drive.KindUnreachable:
+		// The request never reached Google: the item did not fail, the machine
+		// was offline. Give the attempt back and let the gate stop new claims.
+		r.noteUnreachable(err)
+		r.e.Store.ReleaseItemNoPenalty(r.db, it, "waiting_for_network")
 	case drive.NotExecuted(err):
 		switch k {
 		case drive.KindAuth:
 			r.setReconnect()
 			r.e.Store.ReleaseItem(r.db, it, "account_reconnect_required", 1)
-		case drive.KindThrottled, drive.KindUnreachable, drive.KindQuota:
+		case drive.KindThrottled, drive.KindQuota:
 			if it.Attempts >= maxTransientAttempts {
 				r.e.Store.ReleaseItem(r.db, it, "retry_exhausted", 0)
 				return
@@ -423,9 +468,19 @@ func (r *run) reconcile(ctx context.Context, it state.Item) {
 		found, err := r.p.FindByIntent(ctx, it.DestParentID, it.IntentKey)
 		r.e.release()
 		if err != nil {
-			if drive.KindOf(err) == drive.KindAuth {
+			switch drive.KindOf(err) {
+			case drive.KindAuth:
 				r.setReconnect()
 				return
+			case drive.KindUnreachable:
+				// Offline: never conclude "unknown outcome" from a request that
+				// never left the machine. Wait, then look again.
+				r.noteUnreachable(err)
+				if !r.waitNetwork(ctx) {
+					return
+				}
+				try--
+				continue
 			}
 			if !r.e.sleep(ctx, r.e.backoff(try)) {
 				return

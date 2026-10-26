@@ -65,6 +65,17 @@ func (s *Service) SetDefaultDestination(ctx context.Context, p Principal, key, i
 	return s.Store.SetDefaultDestination(ctx, p.ID, key, id, expected)
 }
 
+// Lifecycle is the daemon's power/network state, reported by /v1/status.
+// It exists so the tray, the TUI and the CLI all show the same truth without
+// guessing from failed requests.
+type Lifecycle struct {
+	State             string `json:"state"`
+	Online            bool   `json:"online"`
+	Since             string `json:"since,omitempty"`
+	LastGapSeconds    int    `json:"last_gap_seconds,omitempty"`
+	ReconnectRequired bool   `json:"reconnect_required"`
+}
+
 type Status struct {
 	Version       string
 	SchemaVersion int
@@ -74,6 +85,7 @@ type Status struct {
 	Running       int
 	Queued        int
 	Blocked       int
+	Lifecycle     Lifecycle
 }
 
 func (s *Service) Status(ctx context.Context) (Status, error) {
@@ -93,9 +105,13 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 	if s.BotState != nil {
 		bot = s.BotState()
 	}
+	life := Lifecycle{State: "running", Online: true}
+	if s.Lifecycle != nil {
+		life = s.Lifecycle()
+	}
 	return Status{Version: s.Version, SchemaVersion: v, Ready: s.Store.Check(ctx) == nil, Account: acc, BotState: bot,
 		Running: counts[state.JobRunning] + counts[state.JobPausing] + counts[state.JobCancelling] + counts[state.JobReconciling],
-		Queued:  counts[state.JobQueued], Blocked: counts[state.JobBlocked]}, nil
+		Queued:  counts[state.JobQueued], Blocked: counts[state.JobBlocked], Lifecycle: life}, nil
 }
 
 func (s *Service) Preferences(ctx context.Context, p Principal) (state.Preferences, error) {
