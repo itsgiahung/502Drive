@@ -124,6 +124,14 @@ const (
 	MetaWrite       Key = "meta_write"
 	Yes             Key = "yes"
 	No              Key = "no"
+	TabHome         Key = "tab_home"
+	TabJobs         Key = "tab_jobs"
+	TabLibrary      Key = "tab_library"
+	TabDest         Key = "tab_dest"
+	TabAccount      Key = "tab_account"
+	TabSettings     Key = "tab_settings"
+	TabDrive        Key = "tab_drive"
+	TabHint         Key = "tab_hint"
 	SyncOption      Key = "sync_option"
 	SettingsKeys2   Key = "settings_keys2"
 	PanelStart      Key = "panel_start"
@@ -172,6 +180,8 @@ const (
 	OpenResult      Key = "open_result"
 	StartDaemon     Key = "start_daemon"
 	StopDaemon      Key = "stop_daemon"
+	StopApp         Key = "stop_app"
+	StopAppConfirm  Key = "stop_app_confirm"
 	Quit            Key = "quit"
 	StateIdle       Key = "state_idle"
 	StateBusy       Key = "state_busy"
@@ -303,6 +313,14 @@ var VI = map[Key]string{
 	MetaWrite:       "Thêm file vào được",
 	Yes:             "có",
 	No:              "không",
+	TabHome:         `Trang chủ`,
+	TabJobs:         `Công việc`,
+	TabLibrary:      `Thư viện`,
+	TabDest:         `Đích`,
+	TabAccount:      `Tài khoản`,
+	TabSettings:     `Cài đặt`,
+	TabDrive:        `Drive`,
+	TabHint:         `Tab/←→ chuyển màn`,
 	SyncOption:      `Đồng bộ sau khi copy`,
 	SettingsKeys2:   `←/→ hoặc Enter đổi ngay · esc quay lại`,
 	PanelStart:      `Bắt đầu`,
@@ -334,8 +352,10 @@ var VI = map[Key]string{
 	PresetReal: "Realtime (theo dõi thay đổi)", SyncOff: "chưa bật", PickPreset: "Chọn lịch đồng bộ",
 	OpenTUI: "Mở menu TUI", PasteLink: "Copy link trong clipboard", JobsLibrary: "Công việc & thư viện",
 	OpenResult: "Mở thư mục kết quả gần nhất", StartDaemon: "Bật daemon", StopDaemon: "Dừng daemon",
-	Quit:      "Thoát (dừng 502Drive nền)",
-	StateIdle: "rảnh", StateBusy: "đang sao chép", StateNeeds: "cần xử lý", StateError: "lỗi", StateOffline: "ngoại tuyến",
+	StopApp:        "Dừng 502Drive…",
+	StopAppConfirm: "Dừng 502Drive (%d việc đang chạy)? Bấm lần nữa để xác nhận.",
+	Quit:           "Thoát khay",
+	StateIdle:      "rảnh", StateBusy: "đang sao chép", StateNeeds: "cần xử lý", StateError: "lỗi", StateOffline: "ngoại tuyến",
 	StateQueued: "đang chờ", StateRunning: "đang chạy", StateDone: "xong", StatePartial: "xong một phần",
 	StateFailed: "thất bại", StatePaused: "tạm dừng",
 	StatusLine:  "Google: %s · %d đang chạy · %d đang chờ · %d cần xử lý",
@@ -440,6 +460,14 @@ var EN = map[Key]string{
 	MetaWrite:       "Can add files",
 	Yes:             "yes",
 	No:              "no",
+	TabHome:         `Home`,
+	TabJobs:         `Jobs`,
+	TabLibrary:      `Library`,
+	TabDest:         `Folders`,
+	TabAccount:      `Account`,
+	TabSettings:     `Settings`,
+	TabDrive:        `Drive`,
+	TabHint:         `Tab/←→ switch`,
 	SyncOption:      `Keep in sync after copy`,
 	SettingsKeys2:   `←/→ or Enter changes it at once · esc back`,
 	PanelStart:      `Get started`,
@@ -471,8 +499,10 @@ var EN = map[Key]string{
 	PresetReal: "Realtime (change polling)", SyncOff: "off", PickPreset: "Pick a sync schedule",
 	OpenTUI: "Open TUI", PasteLink: "Copy link in clipboard", JobsLibrary: "Jobs & library",
 	OpenResult: "Open latest result folder", StartDaemon: "Start daemon", StopDaemon: "Stop daemon",
-	Quit:      "Quit (stops 502Drive in the background)",
-	StateIdle: "idle", StateBusy: "copying", StateNeeds: "needs action", StateError: "error", StateOffline: "offline",
+	StopApp:        "Stop 502Drive…",
+	StopAppConfirm: "Stop 502Drive (%d job(s) running)? Click again to confirm.",
+	Quit:           "Quit tray",
+	StateIdle:      "idle", StateBusy: "copying", StateNeeds: "needs action", StateError: "error", StateOffline: "offline",
 	StateQueued: "queued", StateRunning: "running", StateDone: "done", StatePartial: "partly done",
 	StateFailed: "failed", StatePaused: "paused",
 	StatusLine:  "Google: %s · %d running · %d queued · %d blocked",

@@ -98,6 +98,9 @@ func (m Model) homeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 			m.cmdSel = 0
 			return m, nil, true
 		}
+		return m, nil, false // no command list open: Tab switches tabs
+	case tea.KeyShiftTab:
+		return m, nil, false
 	}
 	if empty && isHomeShortcut(msg.String()) {
 		return m, nil, false
@@ -185,7 +188,7 @@ const (
 // something copies, and the command prompt pinned above the footer.
 func (m Model) homeFrame() string {
 	pw := min(m.width, panelMax)
-	top := m.homePanel(pw)
+	top := append([]string{m.tabBar()}, m.homePanel(pw)...)
 	top = append(top, m.busyBlock(pw)...)
 	bottom := m.promptBlock(pw)
 	room := 6
@@ -426,3 +429,48 @@ func (m Model) promptBlock(pw int) []string {
 }
 
 var _ = time.Second
+
+// jobsBanner is the cat at work: shown on the Jobs tab while something copies,
+// with the transfer strip and the totals beside it. It needs colour and room.
+func (m Model) jobsBanner() []string {
+	if !m.hasRunning() || !m.opt.Color || m.opt.ASCII || m.width < 60 || (m.height != 0 && m.height < 28) {
+		return nil
+	}
+	o := mascot.Options{Profile: m.opt.Profile, Dark: m.opt.Dark, Mini: true}
+	var cat []string
+	if m.opt.NoMotion {
+		cat = mascot.StaticMini(mascot.Busy, .4).Lines(o)
+	} else {
+		cat = m.frame.Lines(o)
+	}
+	right := []string{m.accent(m.workLine()), ""}
+	if m.width >= mascot.MiniCols+4+mascot.StripCols+2 {
+		t := float64(m.opt.now().UnixMilli()%100000) / 1000
+		if m.opt.NoMotion {
+			t = .4
+		}
+		right = append(right, mascot.Strip(t).StripLines(mascot.Options{Profile: m.opt.Profile, Dark: m.opt.Dark})...)
+	}
+	rows := max(len(cat), len(right))
+	out := make([]string, 0, rows+1)
+	for r := 0; r < rows; r++ {
+		l, rt := "", ""
+		if r < len(cat) {
+			l = cat[r]
+		}
+		if r < len(right) {
+			rt = right[r]
+		}
+		out = append(out, " "+padCell(l, mascot.MiniCols)+"  "+rt)
+	}
+	return append(out, "")
+}
+
+func (m Model) hasRunning() bool {
+	for _, j := range m.snap.Jobs {
+		if j.State == "running" {
+			return true
+		}
+	}
+	return false
+}

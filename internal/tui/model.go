@@ -284,6 +284,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = m.bulkStatus(msg)
 		m.selected = map[string]bool{}
 		return m, m.refetch()
+	case tea.MouseMsg:
+		return m.onMouse(msg)
 	case tea.KeyMsg:
 		m.lastInput = m.opt.now()
 		return m.key(msg)
@@ -336,6 +338,12 @@ func (m Model) onSnapshot(msg snapshotMsg) (tea.Model, tea.Cmd) {
 	if cmd := m.startSpinner(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
+	// A job that starts while the Jobs tab is open brings the cat to life.
+	var kick tea.Cmd
+	m, kick = m.startAnim()
+	if kick != nil {
+		cmds = append(cmds, kick)
+	}
 	return m, tea.Batch(cmds...)
 }
 
@@ -379,7 +387,10 @@ func (m Model) busy() bool {
 
 // animating reports whether the mascot should move right now.
 func (m Model) animating() bool {
-	return !m.opt.NoMotion && m.opt.Color && !m.opt.ASCII && m.screen == screenHome
+	if m.opt.NoMotion || !m.opt.Color || m.opt.ASCII {
+		return false
+	}
+	return m.screen == screenHome || (m.screen == screenJobs && m.hasRunning())
 }
 
 func (m Model) onAnim(now time.Time) (tea.Model, tea.Cmd) {
@@ -440,6 +451,18 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.copyScreenKey(msg)
 	}
 	switch msg.Type {
+	case tea.KeyTab:
+		return m.moveTab(1)
+	case tea.KeyShiftTab:
+		return m.moveTab(-1)
+	case tea.KeyRight:
+		if m.arrowsSwitchTabs() {
+			return m.moveTab(1)
+		}
+	case tea.KeyLeft:
+		if m.arrowsSwitchTabs() {
+			return m.moveTab(-1)
+		}
 	case tea.KeyCtrlC:
 		m.quits = true
 		return m, tea.Quit
@@ -468,6 +491,10 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "?":
 		return m.goTo(screenHelp)
+	case "]":
+		return m.moveTab(1)
+	case "[":
+		return m.moveTab(-1)
 	case "1":
 		return m.goTo(screenHome)
 	case "2":
@@ -706,7 +733,9 @@ func (m *Model) clampCursor() {
 // block above the rows takes.
 func (m Model) listShape() (per, title int) {
 	switch m.screen {
-	case screenJobs, screenLibrary:
+	case screenJobs:
+		return 2, 2 + len(m.jobsBanner())
+	case screenLibrary:
 		return 2, 2
 	case screenDestination:
 		return 1, 2

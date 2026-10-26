@@ -1,0 +1,133 @@
+package tui
+
+import (
+	"strings"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+)
+
+func tabModel(t *testing.T, w, h int) Model {
+	t.Helper()
+	d := newDriveFake()
+	return driveModel(t, d, w, h)
+}
+
+func TestManyKeysSwitchTheSameTabs(t *testing.T) {
+	m := tabModel(t, 100, 30)
+	steps := []struct {
+		msg  tea.Msg
+		want screen
+	}{
+		{tea.KeyMsg{Type: tea.KeyTab}, screenJobs},
+		{tea.KeyMsg{Type: tea.KeyRight}, screenLibrary},
+		{key("]"), screenDestination},
+		{tea.KeyMsg{Type: tea.KeyShiftTab}, screenLibrary},
+		{tea.KeyMsg{Type: tea.KeyLeft}, screenJobs},
+		{key("["), screenHome},
+		{key("5"), screenAccount},
+	}
+	m, _ = update(t, m, key("1"))
+	for i, s := range steps {
+		m, _ = update(t, m, s.msg)
+		if m.screen != s.want {
+			t.Fatalf("step %d: screen = %v, want %v", i, m.screen, s.want)
+		}
+	}
+}
+
+func TestTabWrapsAroundBothWays(t *testing.T) {
+	m := tabModel(t, 100, 30)
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.screen != screenDrive {
+		t.Fatalf("Shift+Tab from the first tab should wrap to the last, got %v", m.screen)
+	}
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.screen != screenHome {
+		t.Fatalf("Tab from the last tab should wrap to the first, got %v", m.screen)
+	}
+}
+
+func TestArrowsKeepTheirJobWhereTheyAreNeeded(t *testing.T) {
+	m := tabModel(t, 100, 30)
+	m, cmd := update(t, m, key("7")) // Drive: arrows go through folders
+	m = run(t, m, cmd)
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.screen != screenDrive {
+		t.Fatalf("→ in the Drive browser must not leave it: %v", m.screen)
+	}
+	m, _ = update(t, m, key("6")) // Settings: arrows change the value
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.screen != screenSettings {
+		t.Fatalf("→ in Settings changes the language, it must not switch tab: %v", m.screen)
+	}
+	// Home with text in the prompt: arrows move the text cursor.
+	m, _ = update(t, m, key("1"))
+	m = typeText(t, m, "abc")
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyLeft})
+	if m.screen != screenHome {
+		t.Fatalf("← while typing must move the cursor, got %v", m.screen)
+	}
+}
+
+func TestClickingATabSwitchesToIt(t *testing.T) {
+	m := tabModel(t, 100, 30)
+	spans, _ := m.tabLayout()
+	var jobs tabSpan
+	for _, s := range spans {
+		if tabs[s.index].screen == screenJobs {
+			jobs = s
+		}
+	}
+	m, _ = update(t, m, tea.MouseMsg{X: jobs.x0 + 1, Y: 0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if m.screen != screenJobs {
+		t.Fatalf("a click on the Jobs tab opened %v", m.screen)
+	}
+	m, _ = update(t, m, tea.MouseMsg{X: 5, Y: 3, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if m.screen != screenJobs {
+		t.Fatal("a click below the bar must not switch tabs")
+	}
+}
+
+func TestTheTabBarFitsEveryWidthAndNamesTheActiveTab(t *testing.T) {
+	for _, w := range []int{30, 40, 60, 80, 120} {
+		m := tabModel(t, w, 30)
+		m, _ = update(t, m, key("3"))
+		bar := lines(m.View())[0]
+		if got := ansi.StringWidth(bar); got > w {
+			t.Fatalf("width %d: the tab bar is %d columns wide: %q", w, got, bar)
+		}
+		if !strings.Contains(bar, "Library") && !strings.Contains(bar, "3") {
+			t.Fatalf("width %d: the active tab is not visible: %q", w, bar)
+		}
+	}
+	m := tabModel(t, 100, 30)
+	m, _ = update(t, m, key("2"))
+	if bar := lines(m.View())[0]; !strings.Contains(bar, "[2 Jobs]") {
+		t.Fatalf("without colour the active tab is bracketed: %q", bar)
+	}
+}
+
+func TestTheCatWorksOnTheJobsTabWhileSomethingCopies(t *testing.T) {
+	d := newDriveFake()
+	m := New(d.acts(), Options{Width: 120, Height: 34, Language: "en", Color: true})
+	m = run(t, m, m.fetch())
+	m, _ = update(t, m, tea.WindowSizeMsg{Width: 120, Height: 34})
+	m, _ = update(t, m, key("2"))
+	if len(m.jobsBanner()) == 0 {
+		t.Fatal("a running job should bring the cat to the Jobs tab")
+	}
+	if !m.animating() {
+		t.Fatal("the cat must animate on the Jobs tab while a job runs")
+	}
+	if got := len(lines(m.View())); got != 34 {
+		t.Fatalf("the view is %d lines, want 34", got)
+	}
+	d.snap.Jobs[0].State = "succeeded"
+	d.snap.Status.Running = 0
+	m = run(t, m, m.fetch())
+	if len(m.jobsBanner()) != 0 || m.animating() {
+		t.Fatal("nothing is running: no banner and no animation")
+	}
+}

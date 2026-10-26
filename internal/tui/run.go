@@ -13,7 +13,7 @@ import (
 func Run(ctx context.Context, acts Actions, opt Options) (err error) {
 	m := New(acts, opt)
 	m.ctx = ctx
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithContext(ctx))
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithContext(ctx))
 	defer func() {
 		if r := recover(); r != nil {
 			p.Kill()

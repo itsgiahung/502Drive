@@ -1,8 +1,7 @@
 # Working in 502Drive
 
-Go, HTTP-first, with CLI/TUI, tray launcher and Telegram. The legacy Rust/Tauri/React
-code was removed on 2026-10-26; a local archive is kept outside git in
-`legacy-backup/` (ignored). Start at the [map](docs/README.md), read the
+Go, HTTP-first, with CLI/TUI, tray launcher and Telegram (the earlier Rust/Tauri
+implementation was removed on 2026-10-26). Start at the [map](docs/README.md), read the
 [architecture](docs/architecture.md), then the feature or contract you touch.
 
 ## Before editing
@@ -22,9 +21,10 @@ code was removed on 2026-10-26; a local archive is kept outside git in
   [copy fidelity](docs/features/clone-jobs.md). No relaying file bytes, no quota or
   permission bypass, no automatic public links, no promise of identical IDs,
   owners, permissions or revisions.
-- The daemon runs detached; only the tray's Quit (`POST /v1/shutdown`) stops it.
-  CLI/TUI exiting, closing a terminal tab or an SSE client leaving never does.
-  Realtime is `GET /v1/stream` (change counter only; clients re-read).
+- The daemon runs detached; only `502drive stop` or the tray's *Stop 502Drive…*
+  (`POST /v1/shutdown`) stops it. The TUI or tray exiting, closing a terminal
+  tab or an SSE client leaving never does. Realtime is `GET /v1/stream`
+  (change counter only; clients re-read).
 - Admission (job + idempotency + first event) commits before "accepted". Job IDs
   are durable; accepted ≠ succeeded; retry and restart keep operation identity.
 - A write with an unknown outcome is reconciled, never blindly resent.

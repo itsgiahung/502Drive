@@ -1,0 +1,196 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/itsgiahung/502Drive/internal/i18n"
+)
+
+// The tab bar is the one place that shows where you are and how to move:
+// Tab, Shift+Tab, the arrow keys (on screens that do not use them), [ and ],
+// the number keys and the mouse all switch the same tabs, so nobody has to read
+// a help line first.
+
+type tab struct {
+	screen screen
+	key    i18n.Key
+	digit  string
+}
+
+var tabs = []tab{
+	{screenHome, i18n.TabHome, "1"},
+	{screenJobs, i18n.TabJobs, "2"},
+	{screenLibrary, i18n.TabLibrary, "3"},
+	{screenDestination, i18n.TabDest, "4"},
+	{screenAccount, i18n.TabAccount, "5"},
+	{screenSettings, i18n.TabSettings, "6"},
+	{screenDrive, i18n.TabDrive, "7"},
+}
+
+// activeTab maps any screen (detail views included) to the tab it belongs to.
+func (m Model) activeTab() int {
+	home := screenHome
+	switch m.screen {
+	case screenJob:
+		home = screenJobs
+	case screenCollection:
+		home = screenLibrary
+	case screenCopy:
+		home = screenHome
+	case screenHelp:
+		return -1
+	default:
+		home = m.screen
+	}
+	for i, t := range tabs {
+		if t.screen == home {
+			return i
+		}
+	}
+	return -1
+}
+
+// tabSpan is where one tab sits on the bar, for drawing and for mouse hits.
+type tabSpan struct{ x0, x1, index int }
+
+func (m Model) tabLabel(i int, short bool) string {
+	label := m.t(tabs[i].key)
+	if short {
+		if i == m.activeTab() {
+			return tabs[i].digit + " " + label
+		}
+		return tabs[i].digit
+	}
+	return tabs[i].digit + " " + label
+}
+
+// tabLayout lays the tabs out for the current width: full names when they fit,
+// else only the active one by name.
+func (m Model) tabLayout() (spans []tabSpan, labels []string) {
+	// The status chip keeps its room; tabs shorten before the chip disappears.
+	budget := m.width - 2 - ansi.StringWidth(m.statusChip()) - 1
+	for _, short := range []bool{false, true} {
+		spans, labels = spans[:0], labels[:0]
+		x := 1
+		for i := range tabs {
+			l := " " + m.tabLabel(i, short) + " "
+			w := ansi.StringWidth(l)
+			spans = append(spans, tabSpan{x, x + w, i})
+			labels = append(labels, l)
+			x += w + 1
+		}
+		if x-1 <= budget {
+			break
+		}
+	}
+	return spans, labels
+}
+
+// tabBar is the first line of every screen.
+func (m Model) tabBar() string {
+	spans, labels := m.tabLayout()
+	var sb strings.Builder
+	sb.WriteString(" ")
+	active := m.activeTab()
+	for i, l := range labels {
+		switch {
+		case i == active && m.opt.Color:
+			sb.WriteString(m.accentBG(l))
+		case i == active:
+			sb.WriteString("[" + strings.TrimSpace(l) + "]")
+		default:
+			sb.WriteString(m.dim(l))
+		}
+		if i < len(labels)-1 {
+			sb.WriteString(" ")
+		}
+	}
+	left := sb.String()
+	right := m.statusChip()
+	if gap := m.width - ansi.StringWidth(left) - ansi.StringWidth(right) - 1; gap >= 1 {
+		return left + strings.Repeat(" ", gap) + right
+	}
+	_ = spans
+	return left
+}
+
+// statusChip is the live/offline dot with the running, waiting and blocked
+// counts: everything the old header said, in a few characters.
+func (m Model) statusChip() string {
+	if !m.online {
+		return m.bad("○ " + m.t(i18n.Offline))
+	}
+	st := m.snap.Status
+	dot := m.good("●")
+	if !m.watching && m.acts.Watch != nil {
+		dot = m.warn("○")
+	}
+	chip := dot
+	if st.Running > 0 {
+		chip += " " + m.accent(fmt.Sprintf("▶%d", st.Running))
+	}
+	if st.Queued > 0 {
+		chip += " " + m.dim(fmt.Sprintf("⏳%d", st.Queued))
+	}
+	if st.Blocked > 0 {
+		chip += " " + m.warn(fmt.Sprintf("⚠%d", st.Blocked))
+	}
+	if st.AccountStatus != "" && st.AccountStatus != "connected" {
+		chip += " " + m.warn("G!")
+	}
+	return chip
+}
+
+func (m Model) accentBG(s string) string {
+	return m.paintBG("39", "16", s)
+}
+
+// moveTab switches to the next (+1) or previous (-1) tab, wrapping around.
+func (m Model) moveTab(delta int) (tea.Model, tea.Cmd) {
+	cur := m.activeTab()
+	if cur < 0 {
+		cur = 0
+	}
+	return m.gotoTab((cur + delta + len(tabs)) % len(tabs))
+}
+
+func (m Model) gotoTab(i int) (tea.Model, tea.Cmd) {
+	if i < 0 || i >= len(tabs) {
+		return m, nil
+	}
+	if tabs[i].screen == screenDrive {
+		return m.openDrive(false)
+	}
+	m.drv, m.cp = nil, nil
+	return m.goTo(tabs[i].screen)
+}
+
+// arrowsSwitchTabs says whether ←/→ mean "previous/next tab" on this screen:
+// not where they already move through folders or change a setting.
+func (m Model) arrowsSwitchTabs() bool {
+	switch m.screen {
+	case screenJobs, screenLibrary, screenDestination, screenAccount, screenHelp:
+		return true
+	case screenHome:
+		return m.cmd.Value() == ""
+	}
+	return false
+}
+
+// onMouse handles a left click on the tab bar.
+func (m Model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft || msg.Y != 0 {
+		return m, nil
+	}
+	spans, _ := m.tabLayout()
+	for _, s := range spans {
+		if msg.X >= s.x0 && msg.X < s.x1 {
+			return m.gotoTab(s.index)
+		}
+	}
+	return m, nil
+}

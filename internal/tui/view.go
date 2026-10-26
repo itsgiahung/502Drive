@@ -27,7 +27,7 @@ func (m Model) View() string {
 	if m.height > 0 {
 		body = clipPad(body, m.bodyRows())
 	}
-	lines := append([]string{m.header()}, body...)
+	lines := append([]string{m.tabBar()}, body...)
 	lines = append(lines, m.statusLine(), m.footer())
 	return m.fitBlock(lines)
 }
@@ -52,27 +52,6 @@ func (m Model) statusLine() string {
 		return m.accent(m.tf(i18n.Selected, len(m.selected)))
 	}
 	return ""
-}
-
-func (m Model) header() string {
-	left := m.bold("502Drive")
-	if m.opt.Version != "" && m.opt.Version != "dev" {
-		left += " " + m.opt.Version
-	}
-	if m.online {
-		left += " · " + m.liveWord()
-		left += " · " + m.t(i18n.Google) + ": " + m.accountWord(m.snap.Status.AccountStatus)
-	} else {
-		left += " · " + m.bad(m.t(i18n.Offline)) + " " + m.dim(m.t(i18n.ShownLast))
-	}
-	right := fmt.Sprintf("%s · %s · %s",
-		countWord(m.snap.Status.Running, m.t(i18n.Running)),
-		countWord(m.snap.Status.Queued, m.t(i18n.Queued)),
-		countWord(m.snap.Status.Blocked, m.t(i18n.Blocked)))
-	if m.width >= 70 {
-		return left + strings.Repeat(" ", max(1, m.width-visible(left)-visible(right))) + right
-	}
-	return left
 }
 
 func (m Model) liveWord() string {
@@ -231,7 +210,8 @@ func (m Model) jobsView() []string {
 		return []string{"", m.bold(m.t(i18n.Jobs)), "", m.dim(m.t(i18n.NoJobs))}
 	}
 	start, end := m.window()
-	lines := []string{"", m.bold(m.t(i18n.Jobs)) + " " + m.dim(m.scrollLabel(start, end, len(m.snap.Jobs)))}
+	lines := append([]string{""}, m.jobsBanner()...)
+	lines = append(lines, m.bold(m.t(i18n.Jobs))+" "+m.dim(m.scrollLabel(start, end, len(m.snap.Jobs))))
 	barWidth := min(36, m.width-49)
 	for i := start; i < end; i++ {
 		j := m.snap.Jobs[i]
@@ -585,6 +565,14 @@ func (m Model) bold(s string) string {
 		return s
 	}
 	return lipgloss.NewStyle().Bold(true).Render(s)
+}
+
+// paintBG draws s with a background colour (used for the active tab).
+func (m Model) paintBG(bg, fg, s string) string {
+	if !m.opt.Color {
+		return s
+	}
+	return lipgloss.NewStyle().Background(lipgloss.Color(bg)).Foreground(lipgloss.Color(fg)).Bold(true).Render(s)
 }
 
 func (m Model) paint(color string, bold bool, s string) string {

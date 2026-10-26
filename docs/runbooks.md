@@ -46,7 +46,8 @@ schema (binary cũ hơn DB). Dead bot không làm core unready.
 
 ## Backup / restore / cleanup
 
-Chi tiết và invariant: [migration](migration.md#backup-và-restore).
+Source: [internal/maintenance](../internal/maintenance). Test:
+[maintenance_test.go](../internal/maintenance/maintenance_test.go).
 
 ```bash
 systemctl --user stop 502drive        # hoặc dừng container
@@ -56,8 +57,15 @@ systemctl --user stop 502drive        # hoặc dừng container
 502drive cleanup --apply        # chỉ file *.tmp cũ, không symlink
 ```
 
-`backup` từ chối khi daemon giữ `instance.lock`; `cleanup` cũng vậy. Không bao
-giờ xóa DB/WAL/`master.key`/backup/idempotency/mapping.
+- `backup`: từ chối nếu daemon giữ `instance.lock`; `VACUUM INTO` DB + `secrets/master.key`
+  + `secrets/google-token.enc` (nếu có) + `config.json`; thư mục 0700, file 0600,
+  `MANIFEST.json` (schema_version, sha256 từng file, thời điểm, version binary).
+- `restore`: chỉ vào data dir **mới/trống**; kiểm sha256, `integrity_check`,
+  `foreign_key_check`, schema ≤ binary, giải mã token bằng key trong backup; lỗi
+  → không để lại thư mục dở dang; `config.json` được sửa `data_dir` sang đích.
+- `cleanup`: chỉ xóa `*.tmp` do chương trình tạo, cũ hơn ngưỡng, không theo symlink, không
+  ra ngoài data dir, từ chối khi có writer. Không bao giờ xóa DB/WAL/`master.key`/backup/
+  idempotency/mapping.
 
 ## Tải và phản hồi chậm
 
@@ -73,10 +81,18 @@ giờ xóa DB/WAL/`master.key`/backup/idempotency/mapping.
 
 ## Nâng cấp / rollback
 
-1. Stop daemon → backup → thay binary → `serve` → `status`/`doctor` → quan sát job.
-2. Schema forward-only; binary cũ từ chối DB mới. Rollback: restore **cả bộ**
-   backup vào dir mới + trỏ config, không chép DB đè.
-3. Không rollback tác động Drive; freeze sync, reconcile output trước khi resume.
+- Migration forward-only trong [internal/state/migrations](../internal/state/migrations), áp
+  trong transaction khi `state.Open`; **không sửa migration đã áp**, chỉ thêm file mới. Binary cũ
+  gặp DB mới hơn sẽ từ chối mở (`unsupported database version`): nâng cấp một chiều.
+- Quy trình: dừng daemon → backup → thay binary → khởi động → `502drive status` / `doctor` →
+  quan sát job và sync. `serve --maintenance` đọc được status/doctor nhưng từ chối job mới,
+  cấu hình sync và run now (`503 maintenance`).
+- **Binary và DB phải khớp.** Schema không tương thích: restore **cả bộ** backup vào data dir
+  mới rồi trỏ config sang; không chép DB cũ đè lên DB mới.
+- **Không rollback tác động trên Drive.** Restore DB cũ không xóa file đã tạo trên Drive kể từ
+  backup. Sau rollback: đóng băng lịch/realtime, đối soát output bằng operation identity, chỉ
+  tiếp tục khi trạng thái rõ. Không tự bỏ output vào thùng rác để "undo". Nếu không thể đối
+  soát an toàn, để job/sync `blocked`/`needs_reconcile` và xử lý tiến, không hứa rollback một cú bấm.
 
 ## Release tại máy (không cần CI)
 

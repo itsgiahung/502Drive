@@ -37,7 +37,7 @@ dùng chung `internal/app`.
 - Không GUI web; tray + TUI + Telegram là bề mặt desktop.
 - Không multi-account Google, không team/tenant, không billing.
 
-## Chưa hỗ trợ (ghi nhận, xem thêm [backlog](backlog.md))
+## Chưa hỗ trợ (ghi nhận)
 
 - Notification desktop từ tray; lịch tuỳ biến trong chat (chỉ preset).
 - `after_copy_sync_mode` mới lưu preference, chưa tự bật sync cho collection mới.

@@ -1,8 +1,8 @@
 # Kiến trúc
 
 Go 1.27, một module (`github.com/itsgiahung/502Drive`), một binary chính
-`502drive` và một wrapper GUI `502drive-tray` cho Windows. Rust/Tauri/React đã
-gỡ 2026-10-26 (archive ngoài git); không còn runtime thứ hai.
+`502drive` và một wrapper GUI `502drive-tray` cho Windows. Bản Rust/Tauri cũ đã
+gỡ 2026-10-26; không còn runtime thứ hai.
 
 ## Bố cục source
 
@@ -75,7 +75,7 @@ kiểm tra lock ([maintenance.go](../internal/maintenance/maintenance.go)).
 
 - Không SQLite/HTTP phụ, không engine thứ hai, không webview, không sidecar.
 - Không migration legacy: data dir Go riêng, `application_id=502002`.
-  Chi tiết nâng cấp: [migration](migration.md).
+  Chi tiết nâng cấp: [runbooks](runbooks.md#nâng-cấp--rollback).
 
 ## Tín hiệu thay đổi và vòng đời
 
