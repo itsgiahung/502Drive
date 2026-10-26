@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/itsgiahung/502Drive/internal/i18n"
 )
 
 // ErrUnsupported is returned on platforms without a tray backend (macOS).
@@ -28,10 +30,13 @@ type Options struct {
 	// Copy submits one validated Drive link and returns the job id.
 	Copy func(ctx context.Context, link string) (string, error)
 	// StartDaemon and StopDaemon replace the OS-specific start/stop when set.
-	// StopDaemon is what Quit calls: the tray is the one place that ends the
-	// background daemon.
+	// StopDaemon is what the confirmed "Stop 502Drive…" item (and, with
+	// QuitStopsDaemon, Quit) calls: a graceful POST /v1/shutdown.
 	StartDaemon func(ctx context.Context) (string, error)
 	StopDaemon  func(ctx context.Context) (string, error)
+	// QuitStopsDaemon restores the old behaviour where quitting the tray also
+	// stops the daemon. Off by default: Quit leaves 502Drive running.
+	QuitStopsDaemon bool
 	// UpdateCheck, when set, is called about once a day and may return a note
 	// such as "update available: v1.4.0". It is opt-in (config check_updates).
 	UpdateCheck func(ctx context.Context) (string, error)
@@ -86,7 +91,15 @@ type agent struct {
 	p    presenter
 	// primed is set after the first successful poll (the notification baseline).
 	primed bool
+	// stopArmed is the two-step confirmation of "Stop 502Drive…": the first
+	// click only arms it; the second one inside stopConfirmWindow stops.
+	stopArmed   bool
+	stopArmedAt time.Time
 }
+
+// stopConfirmWindow is how long the armed confirmation stays valid. It is
+// short because the next poll (3–10s) disarms it again anyway.
+const stopConfirmWindow = 10 * time.Second
 
 func newAgent(o Options) *agent {
 	lang := "en"
@@ -151,11 +164,26 @@ func (a *agent) refresh(ctx context.Context) (View, bool) {
 	}
 	a.mu.Lock()
 	a.on = online
+	now := a.o.now()
+	// A stale confirmation disarms itself: the next poll (or going offline)
+	// clears it, so a mis-click can never linger for minutes.
+	if !online || a.stopArmed && now.Sub(a.stopArmedAt) > stopConfirmWindow {
+		a.stopArmed = false
+	}
+	armed := a.stopArmed
 	note := a.note
 	last := a.snap
 	a.mu.Unlock()
 
 	view := BuildViewLang(last, online, note, a.language())
+	if armed {
+		active := last.Status.Running + last.Status.Queued
+		for i := range view.Items {
+			if view.Items[i].ID == ActionStopDaemon {
+				view.Items[i].Title = i18n.Tf(a.language(), i18n.StopAppConfirm, active)
+			}
+		}
+	}
 	if showErr := a.p.show(view); showErr != nil {
 		a.o.log().Warn("tray: cannot update the menu", "err", showErr)
 	}
@@ -231,8 +259,10 @@ func (a *agent) action(ctx context.Context, id string) {
 	var err error
 	switch id {
 	case ActionQuit:
-		if a.o.StopDaemon != nil {
-			stopCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		// Quitting the tray keeps the daemon running unless the user opted in
+		// (tray_quit_stops_daemon) — closing the tray is not a shutdown.
+		if a.o.QuitStopsDaemon && a.o.StopDaemon != nil {
+			stopCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 			if _, derr := a.o.StopDaemon(stopCtx); derr != nil {
 				a.o.log().Warn("tray: cannot stop the daemon on quit", "err", derr)
 			}
@@ -240,6 +270,8 @@ func (a *agent) action(ctx context.Context, id string) {
 		}
 		a.p.quit()
 		return
+	case ActionStopDaemon:
+		err = a.stopDaemonAction(ctx)
 	case ActionOpenTUI, ActionOpenTUI + ":jobs":
 		err = OpenTUI(a.o.Host, a.o.Exe)
 	case ActionPaste:
@@ -254,24 +286,19 @@ func (a *agent) action(ctx context.Context, id string) {
 			err = OpenURL(ctx, a.o.Host, url)
 		}
 	case ActionDaemon:
+		// The toggle only starts the daemon; stopping is the confirmed item.
 		a.mu.Lock()
 		online := a.on
 		a.mu.Unlock()
-		action := DaemonStart
 		if online {
-			action = DaemonStop
+			return
 		}
 		var out string
-		var derr error
-		switch {
-		case online && a.o.StopDaemon != nil:
-			out, derr = a.o.StopDaemon(ctx)
-		case !online && a.o.StartDaemon != nil:
-			out, derr = a.o.StartDaemon(ctx)
-		default:
-			out, derr = ControlDaemon(ctx, a.o.Host, action, a.o.Exe)
+		if a.o.StartDaemon != nil {
+			out, err = a.o.StartDaemon(ctx)
+		} else {
+			out, err = ControlDaemon(ctx, a.o.Host, DaemonStart, a.o.Exe)
 		}
-		err = derr
 		if err == nil {
 			a.setNote(out)
 		}
@@ -286,6 +313,39 @@ func (a *agent) action(ctx context.Context, id string) {
 	}
 	// Show the result immediately instead of waiting for the poll tick.
 	a.refresh(ctx)
+}
+
+// stopDaemonAction implements the two-step "Stop 502Drive…": with jobs in
+// flight the first click only arms the confirmation; a second click inside
+// stopConfirmWindow stops. Without jobs it stops at once.
+func (a *agent) stopDaemonAction(ctx context.Context) error {
+	a.mu.Lock()
+	online, active := a.on, a.snap.Status.Running+a.snap.Status.Queued
+	armed, armedAt := a.stopArmed, a.stopArmedAt
+	a.mu.Unlock()
+	if !online {
+		return nil
+	}
+	now := a.o.now()
+	if active > 0 && (!armed || now.Sub(armedAt) > stopConfirmWindow) {
+		a.mu.Lock()
+		a.stopArmed, a.stopArmedAt = true, now
+		a.mu.Unlock()
+		a.refresh(ctx)
+		return nil
+	}
+	a.mu.Lock()
+	a.stopArmed = false
+	a.mu.Unlock()
+	if a.o.StopDaemon == nil {
+		return errors.New("this tray cannot stop the daemon")
+	}
+	out, derr := a.o.StopDaemon(ctx)
+	if derr != nil {
+		return derr
+	}
+	a.setNote(out)
+	return nil
 }
 
 // paste copies the Drive link found in the clipboard.

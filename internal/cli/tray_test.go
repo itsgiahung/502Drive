@@ -1,10 +1,15 @@
 package cli
 
 import (
+	"context"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/itsgiahung/502Drive/internal/tray"
 )
 
 func TestTrayWriteIconsNeedsNoDaemonOrConfig(t *testing.T) {
@@ -70,6 +75,77 @@ func TestAssetsWriteIconsAndCompletions(t *testing.T) {
 	var raw, errb2 strings.Builder
 	if code = Execute(t.Context(), []string{"assets"}, IO{In: strings.NewReader(""), Out: &raw, Err: &errb2}); code != ExitUsage {
 		t.Fatalf("missing --dir exit = %d", code)
+	}
+}
+
+func desktopApp(cfgPath string) *App {
+	return &App{io: IO{Getenv: func(k string) string {
+		if k == "DISPLAY" {
+			return ":0"
+		}
+		return ""
+	}}, g: global{configPath: cfgPath}}
+}
+
+func TestEnsureTraySkipsWithoutStatusNotifierWatcher(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the watcher probe is a Linux session-bus check")
+	}
+	old := probeTrayHost
+	probeTrayHost = func(context.Context) (bool, string) { return false, "no StatusNotifierWatcher" }
+	t.Cleanup(func() { probeTrayHost = old })
+	a := desktopApp(filepath.Join(t.TempDir(), "config.json"))
+	status, note := a.ensureTray()
+	if status != "unavailable" || !strings.Contains(note, "StatusNotifierWatcher") {
+		t.Fatalf("ensureTray = %q / %q", status, note)
+	}
+}
+
+func TestEnsureTrayReportsARunningTrayWithoutProbing(t *testing.T) {
+	old := probeTrayHost
+	probeTrayHost = func(context.Context) (bool, string) {
+		t.Fatal("the watcher was probed although another tray holds the lock")
+		return false, ""
+	}
+	t.Cleanup(func() { probeTrayHost = old })
+	home := t.TempDir()
+	release, err := tray.LockInstance(filepath.Join(home, "tray.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	a := desktopApp(filepath.Join(home, "config.json"))
+	status, note := a.ensureTray()
+	if status != "running" || note != "" {
+		t.Fatalf("ensureTray = %q / %q", status, note)
+	}
+}
+
+func TestDoctorReportsTheTrayHost(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the watcher probe is a Linux session-bus check")
+	}
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && r.URL.Path == "/v1/doctor" {
+			reply(w, 200, map[string]any{"checks": []any{
+				map[string]any{"name": "database", "status": "passed", "message": "State database is open."},
+			}})
+			return
+		}
+		t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(500)
+	})
+	old := probeTrayHost
+	probeTrayHost = func(context.Context) (bool, string) { return false, "no StatusNotifierWatcher" }
+	t.Cleanup(func() { probeTrayHost = old })
+	code, out, _ := driveCLI(t, h, "doctor")
+	if code != ExitJobFailed || !strings.Contains(out, "tray_host") || !strings.Contains(out, "no StatusNotifierWatcher") {
+		t.Fatalf("exit = %d, out = %q", code, out)
+	}
+	probeTrayHost = func(context.Context) (bool, string) { return true, "" }
+	code, out, _ = driveCLI(t, h, "doctor")
+	if code != ExitOK || !strings.Contains(out, "tray_host") {
+		t.Fatalf("exit = %d, out = %q", code, out)
 	}
 }
 

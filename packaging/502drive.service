@@ -3,6 +3,10 @@ Description=502Drive daemon (copy Google Drive links and keep them in sync)
 Documentation=https://github.com/itsgiahung/502Drive
 After=network-online.target
 Wants=network-online.target
+# Give up after 5 crashes in 5 minutes instead of restarting forever: the
+# tray shows the daemon offline and the user decides what to do.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 # User unit, opt-in only: there is no [Install] section, so the package never
 # enables or starts it. Start it once with `systemctl --user start 502drive`
 # (the tray's "Start daemon" item does exactly that).

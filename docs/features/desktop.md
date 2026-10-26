@@ -23,8 +23,9 @@ tường/đơn điệu > 30s (logind/Power API là lớp phụ, chỉ thêm đ�
 - `keep_awake_while_copying: true` (mặc định **tắt**) giữ máy thức khi có job —
   tốn pin/nhiệt; Linux dùng inhibitor `sleep:idle` kiểu block, Windows
   `SetThreadExecutionState`.
-- Thiết kế/giới hạn: [design/t1-power-lifecycle.md](../design/t1-power-lifecycle.md);
-  kiểm tay: [runbooks](../runbooks.md#kiểm-tra-laptop-thật).
+- Thiết kế/giới hạn: [design/t1-power-lifecycle.md](../design/t1-power-lifecycle.md) (ngủ/mạng),
+  [design/t2-lifecycle.md](../design/t2-lifecycle.md) (3 hành động, single instance); kiểm tay:
+  [runbooks](../runbooks.md#kiểm-tra-laptop-thật).
 
 ## Tray
 
@@ -37,8 +38,31 @@ tường/đơn điệu > 30s (logind/Power API là lớp phụ, chỉ thêm đ�
 | Copy link trong clipboard | đọc clipboard (`wl-paste`/`xclip`/`xsel`, PowerShell `Get-Clipboard`), đúng **một** link qua `drive.Parse`, rồi submit copy |
 | Jobs & thư viện | 3 job gần nhất (state · tên · tiến độ) + Open TUI |
 | Open latest result folder | mở URL kết quả (chỉ https, host `drive.google.com`) |
-| Start/Stop daemon | Start: spawn `502drive serve` tách khỏi terminal (Unix `setsid`, Windows `DETACHED_PROCESS`), log ở `<config>/logs/daemon.log`; Stop: `POST /v1/shutdown` |
-| Quit | dừng daemon (`POST /v1/shutdown`, job đang chạy tiếp tục lần sau) rồi thoát tray |
+| Start daemon | chỉ bật khi daemon đang tắt: spawn `502drive serve` tách khỏi terminal (Unix `setsid`, Windows `DETACHED_PROCESS`), log ở `<config>/logs/daemon.log` |
+| Dừng 502Drive… | chỉ bật khi daemon đang chạy: `POST /v1/shutdown` (graceful, không kill theo tên), chờ tối đa 6s rồi báo kết quả; khi còn job phải **bấm xác nhận lần hai trong 10s** (mục menu đổi thành "Dừng 502Drive (N việc)?…", poll kế tự hạ) |
+| Quit tray | chỉ thoát khay — **daemon tiếp tục chạy**; opt-in `tray_quit_stops_daemon: true` trả lại hành vi cũ (thoát khay cũng dừng daemon) |
+
+Ba hành động dùng chung từ vựng ở tray/CLI/docs: *Đóng TUI* (daemon tiếp tục), *Thoát
+khay* (daemon tiếp tục), *Dừng 502Drive…* — CLI tương ứng `502drive stop [--yes]`
+(hỏi `[y/N]` trong TTY khi còn job, ngoài TTY bắt buộc `--yes`, `--json` giữ nguyên
+hợp đồng).
+
+## Một daemon, một tray; chống restart loop
+
+- Khóa instance: daemon giữ `instance.lock`, tray giữ `tray.lock` (flock chết cùng
+  process — tray/daemon crash không chặn lần mở sau). `502drive`/`up` ping
+  `/health/live` trước khi spawn; tray đang chạy thì không spawn thêm.
+- **Không có giám sát hồi sinh từ tray**: daemon tự hồi sinh qua systemd user unit
+  (`Restart=on-failure`, `RestartSec=5`, `StartLimitIntervalSec=300`,
+  `StartLimitBurst=5` — dừng sau 5 lần crash/5 phút; tray lúc đó hiện offline, người
+  dùng bấm Start daemon). Poll tray backoff 5→30s khi daemon tắt.
+- Windows: dừng daemon **luôn** qua HTTP (`POST /v1/shutdown`), không còn
+  `taskkill`; icon tự dựng lại khi Explorer restart (`TaskbarCreated` do
+  `fyne.io/systray` xử lý sẵn).
+- Linux thiếu `StatusNotifierWatcher` (GNOME thuần, không AppIndicator): `502drive
+  up` **không spawn tray**, ghi note rõ; `502drive doctor` có check `tray_host`;
+  chạy tay `502drive tray` vẫn được — thư viện tự đăng ký lại khi watcher xuất hiện
+  (shell restart). Daemon + CLI vẫn chạy (chế độ không tray).
 
 - Icon vẽ bằng `image` stdlib, 5 trạng thái (idle/busy/needs/error/offline), PNG
   cho Linux, ICO (PNG bên trong) cho Windows; busy tối đa 4fps, `--no-motion` tắt.

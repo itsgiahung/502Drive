@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -888,6 +889,16 @@ func (a *App) doctorCmd() *cobra.Command {
 		}
 		if err = r.Decode(&d); err != nil {
 			return err
+		}
+		// The tray host is about this desktop session, which the daemon may
+		// not share (another session, a container), so the probe runs here.
+		if runtime.GOOS == "linux" {
+			if present, why := probeTrayHost(cmd.Context()); present {
+				d.Checks = append(d.Checks, struct{ Name, Status, Message string }{Name: "tray_host", Status: "passed", Message: "A StatusNotifierWatcher owns the tray host."})
+			} else {
+				d.Checks = append(d.Checks, struct{ Name, Status, Message string }{Name: "tray_host", Status: "failed",
+					Message: "No StatusNotifierWatcher (" + why + "); the tray icon cannot show. The daemon and `502drive menu` still work."})
+			}
 		}
 		failed := false
 		a.emit(r, "", func() {

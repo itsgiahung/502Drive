@@ -31,6 +31,10 @@ type Config struct {
 	// KeepAwakeWhileCopying holds a block inhibitor while jobs run. Off by
 	// default on purpose: keeping a laptop awake costs battery and heat.
 	KeepAwakeWhileCopying bool `json:"keep_awake_while_copying,omitempty"`
+	// TrayQuitStopsDaemon restores the old behaviour where quitting the tray
+	// also stops the daemon. Off by default: quitting the tray keeps
+	// 502Drive running; stop it with `502drive stop` or the tray's stop item.
+	TrayQuitStopsDaemon bool `json:"tray_quit_stops_daemon,omitempty"`
 }
 
 func DefaultPath() string {

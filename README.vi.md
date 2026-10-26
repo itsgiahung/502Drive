@@ -74,8 +74,9 @@ kết nối xong. Thêm thư mục đích rồi dán link:
 502drive copy 'https://drive.google.com/drive/folders/SOURCE_ID' --wait
 ```
 
-Daemon và khay vẫn chạy khi bạn đóng terminal. Chỉ **Thoát trên khay** mới dừng
-chúng (công việc đang chạy sẽ tiếp tục ở lần mở sau).
+Daemon và khay vẫn chạy khi bạn đóng terminal hay thoát khay. Chỉ `502drive stop`
+(hoặc **Dừng 502Drive…** trên khay — có hỏi lại khi còn công việc) mới dừng
+daemon; công việc đang chạy sẽ tiếp tục ở lần mở sau.
 
 ## Cài đặt
 
@@ -109,7 +110,7 @@ Chạy cùng hệ thống: `502drive autostart enable`. Kiểm tra bản mới b
 | Giữ bản copy đồng bộ | `502drive sync enable COLLECTION --daily 22:00` · `sync run` · `sync pause` · `sync stop` |
 | Kiểm tra sức khỏe | `502drive doctor` |
 | Xem log daemon | `502drive logs -f` |
-| Bật/tắt chạy nền | `502drive up` (nút Thoát trên khay sẽ dừng) |
+| Bật/tắt chạy nền | `502drive up` · `502drive stop` |
 | Viết script | thêm `--json`, dùng [mã thoát](docs/features/cli.md) đã tài liệu hóa |
 
 ### Trong TUI

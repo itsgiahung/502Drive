@@ -73,3 +73,34 @@ func TestRejectPublicListenerAndUnknownConfig(t *testing.T) {
 		t.Fatal("unknown config accepted")
 	}
 }
+
+func TestTrayQuitStopsDaemonOptionRoundTrips(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.json")
+	body := `{"listen":"127.0.0.1:5020","data_dir":"` + filepath.Dir(p) + `/data","token_file":"` + filepath.Dir(p) + `/token","tray_quit_stops_daemon":true}`
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.TrayQuitStopsDaemon {
+		t.Fatal("tray_quit_stops_daemon was dropped")
+	}
+	if err = Save(p, cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(p)
+	if err != nil || !cfg.TrayQuitStopsDaemon {
+		t.Fatalf("reload = %v / %v", err, cfg.TrayQuitStopsDaemon)
+	}
+	// The default stays off: quitting the tray never stops the daemon.
+	def := filepath.Join(t.TempDir(), "config.json")
+	body = `{"listen":"127.0.0.1:5020","data_dir":"` + filepath.Dir(def) + `/data","token_file":"` + filepath.Dir(def) + `/token"}`
+	if err = os.WriteFile(def, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err = Load(def); err != nil || cfg.TrayQuitStopsDaemon {
+		t.Fatalf("default = %v / %v", err, cfg.TrayQuitStopsDaemon)
+	}
+}

@@ -75,8 +75,9 @@ Approve once and you are connected. Add a destination folder and paste a link:
 502drive copy 'https://drive.google.com/drive/folders/SOURCE_ID' --wait
 ```
 
-The daemon and the tray keep running when you close the terminal. Only **Quit in
-the tray** stops them (running jobs resume on the next start).
+The daemon and the tray keep running when you close the terminal or quit the
+tray. Only `502drive stop` (or the tray's **Stop 502Drive…**, which asks when
+jobs are running) stops the daemon; running jobs resume on the next start.
 
 ## Install
 
@@ -112,7 +113,7 @@ installs anything).
 | Keep a copy in sync | `502drive sync enable COLLECTION --daily 22:00` · `sync run` · `sync pause` · `sync stop` |
 | Check health | `502drive doctor` |
 | Read the daemon log | `502drive logs -f` |
-| Start/stop in the background | `502drive up` (the tray's Quit stops it) |
+| Start/stop in the background | `502drive up` · `502drive stop` |
 | Script it | add `--json`, use the documented [exit codes](docs/features/cli.md) |
 
 ### In the TUI

@@ -39,6 +39,9 @@ func (a *App) writeIcons(cmd *cobra.Command, dir string) error {
 	return nil
 }
 
+// probeTrayHost is the Linux StatusNotifierWatcher probe; tests replace it.
+var probeTrayHost = tray.StatusNotifierWatcherPresent
+
 func (a *App) runTray(ctx context.Context) error {
 	if _, err := a.api(); err != nil {
 		return err
@@ -74,8 +77,11 @@ func (a *App) runTray(ctx context.Context) error {
 		StopDaemon:  a.stopDaemon,
 		Log:         slog.New(slog.NewTextHandler(a.errw(), &slog.HandlerOptions{Level: slog.LevelWarn})),
 	}
-	if cfg, cerr := a.loadConfig(); cerr == nil && cfg.CheckUpdates {
-		opts.UpdateCheck = a.trayUpdateNote
+	if cfg, cerr := a.loadConfig(); cerr == nil {
+		opts.QuitStopsDaemon = cfg.TrayQuitStopsDaemon
+		if cfg.CheckUpdates {
+			opts.UpdateCheck = a.trayUpdateNote
+		}
 	}
 	if err := tray.Run(ctx, opts); err != nil {
 		return localErr(ExitInternal, "tray_unavailable", err.Error())

@@ -165,12 +165,22 @@ func TestClassifyPrecedence(t *testing.T) {
 
 func TestBuildViewUsesTheLanguage(t *testing.T) {
 	vi := BuildViewLang(snapOf(1, 0, 0, "connected"), true, "", "vi")
-	if vi.Items[1].Title != "Mở menu TUI" || vi.Items[6].Title != "Dừng daemon" {
+	if vi.Items[1].Title != "Mở menu TUI" || vi.Items[6].Title != "Bật daemon" {
 		t.Fatalf("vi view = %+v", vi.Items)
 	}
+	if vi.Items[7].Title != "Dừng 502Drive…" || vi.Items[9].Title != "Thoát khay" {
+		t.Fatalf("vi stop/quit = %q / %q", vi.Items[7].Title, vi.Items[9].Title)
+	}
 	en := BuildViewLang(snapOf(1, 0, 0, "connected"), true, "", "en")
-	if en.Items[1].Title != "Open TUI" || en.Items[6].Title != "Stop daemon" {
+	if en.Items[1].Title != "Open TUI" || en.Items[6].Title != "Start daemon" {
 		t.Fatalf("en view = %+v", en.Items)
+	}
+	if en.Items[7].Title != "Stop 502Drive…" || en.Items[9].Title != "Quit tray" {
+		t.Fatalf("en stop/quit = %q / %q", en.Items[7].Title, en.Items[9].Title)
+	}
+	// Start is for a down daemon; stopping is the confirmed item, only online.
+	if en.Items[6].Enabled || !en.Items[7].Enabled {
+		t.Fatalf("start/stop enabled flags = %v / %v while online", en.Items[6].Enabled, en.Items[7].Enabled)
 	}
 	// The default BuildView stays English for the CLI contract.
 	if got := BuildView(snapOf(0, 0, 0, "connected"), true, "").Items[1].Title; got != "Open TUI" {
@@ -204,7 +214,7 @@ func TestBuildViewKeepsAStableStructure(t *testing.T) {
 			ids = append(ids, c.ID)
 		}
 	}
-	want := []string{"status", ActionOpenTUI, ActionPaste, "jobs", "job:0", "job:1", "job:2", ActionOpenTUI + ":jobs", ActionOpenResult, ActionDaemon, ActionQuit}
+	want := []string{"status", ActionOpenTUI, ActionPaste, "jobs", "job:0", "job:1", "job:2", ActionOpenTUI + ":jobs", ActionOpenResult, ActionDaemon, ActionStopDaemon, ActionQuit}
 	if strings.Join(ids, ",") != strings.Join(want, ",") {
 		t.Fatalf("ids = %v, want %v", ids, want)
 	}
@@ -223,6 +233,9 @@ func TestBuildViewKeepsAStableStructure(t *testing.T) {
 	}
 	if offline.Items[6].Title != "Start daemon" {
 		t.Fatalf("daemon label = %q", offline.Items[6].Title)
+	}
+	if !offline.Items[6].Enabled || offline.Items[7].Enabled {
+		t.Fatalf("start/stop enabled flags offline = %v / %v", offline.Items[6].Enabled, offline.Items[7].Enabled)
 	}
 }
 
@@ -424,6 +437,7 @@ func TestControlDaemonUsesFixedCommands(t *testing.T) {
 		t.Fatalf("stop argv = %q", got)
 	}
 
+	// Windows never kills by name: stopping goes through POST /v1/shutdown.
 	windows := &fakeHost{goos: "windows", have: map[string]bool{"taskkill": true}}
 	if _, err := ControlDaemon(context.Background(), windows.Host(), DaemonStart, `C:\502Drive\502drive.exe`); err != nil {
 		t.Fatal(err)
@@ -431,11 +445,11 @@ func TestControlDaemonUsesFixedCommands(t *testing.T) {
 	if len(windows.started) != 1 || windows.started[0][1] != "serve" {
 		t.Fatalf("windows start argv = %v", windows.started)
 	}
-	if _, err := ControlDaemon(context.Background(), windows.Host(), DaemonStop, ""); err != nil {
-		t.Fatal(err)
+	if _, err := ControlDaemon(context.Background(), windows.Host(), DaemonStop, ""); err == nil {
+		t.Fatal("windows daemon stop must refuse to run taskkill")
 	}
-	if got := strings.Join(windows.ran[0], "\x00"); got != strings.Join([]string{"taskkill", "/IM", "502drive.exe", "/F"}, "\x00") {
-		t.Fatalf("windows stop argv = %q", got)
+	if len(windows.ran) != 0 {
+		t.Fatalf("windows stop ran %v", windows.ran)
 	}
 	if _, err := ControlDaemon(context.Background(), (&fakeHost{goos: "darwin"}).Host(), DaemonStart, ""); err == nil {
 		t.Fatal("macOS daemon control should be refused")
@@ -534,11 +548,6 @@ func TestAgentRefreshAndActions(t *testing.T) {
 		t.Fatalf("result note = %q", p.last().Title)
 	}
 
-	a.action(context.Background(), ActionDaemon)
-	if len(h.ran) == 0 || h.ran[len(h.ran)-1][0] != "systemctl" {
-		t.Fatalf("daemon not started through systemd: %v", h.ran)
-	}
-
 	// Offline keeps the last snapshot but reports the offline view.
 	statusErr = errors.New("connection refused")
 	view, online = a.refresh(context.Background())
@@ -549,9 +558,133 @@ func TestAgentRefreshAndActions(t *testing.T) {
 		t.Fatal("the last jobs were dropped while offline")
 	}
 
+	// Start daemon is the only daemon action from the tray toggle; stopping
+	// lives in the confirmed stop item, and quitting leaves the daemon alone.
+	a.action(context.Background(), ActionDaemon)
+	if len(h.ran) == 0 || h.ran[len(h.ran)-1][0] != "systemctl" {
+		t.Fatalf("daemon not started through systemd: %v", h.ran)
+	}
 	a.action(context.Background(), ActionQuit)
 	if p.quits != 1 {
 		t.Fatalf("quit count = %d", p.quits)
+	}
+}
+
+// stopAgent builds an agent whose clock and stop counter the test owns.
+func stopAgent(t *testing.T, running, queued int, now *time.Time, stops *int, mutate func(*Options)) (*agent, *fakePresenter) {
+	t.Helper()
+	o := Options{
+		Status: func(context.Context) (Status, error) {
+			return Status{Ready: true, Running: running, Queued: queued, AccountStatus: "connected"}, nil
+		},
+		Jobs: func(context.Context) ([]Job, error) { return nil, nil },
+		Copy: func(context.Context, string) (string, error) { return "", nil },
+		Now:  func() time.Time { return *now },
+		StopDaemon: func(context.Context) (string, error) {
+			*stops++
+			return "daemon stopped", nil
+		},
+	}
+	if mutate != nil {
+		mutate(&o)
+	}
+	a := newAgent(o)
+	p := &fakePresenter{}
+	a.p = p
+	a.refresh(context.Background())
+	return a, p
+}
+
+func itemByID(v View, id string) *Item {
+	for i := range v.Items {
+		if v.Items[i].ID == id {
+			return &v.Items[i]
+		}
+	}
+	return nil
+}
+
+func TestQuitTrayKeepsTheDaemonRunning(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	stops := 0
+	a, p := stopAgent(t, 1, 1, &now, &stops, nil)
+	a.action(context.Background(), ActionQuit)
+	if p.quits != 1 || stops != 0 {
+		t.Fatalf("quits = %d, daemon stops = %d", p.quits, stops)
+	}
+}
+
+func TestQuitStopsTheDaemonOnlyWhenOptIn(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	stops := 0
+	a, p := stopAgent(t, 0, 0, &now, &stops, func(o *Options) { o.QuitStopsDaemon = true })
+	a.action(context.Background(), ActionQuit)
+	if p.quits != 1 || stops != 1 {
+		t.Fatalf("quits = %d, daemon stops = %d", p.quits, stops)
+	}
+}
+
+func TestStopDaemonNeedsASecondClickWhileJobsRun(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	stops := 0
+	a, p := stopAgent(t, 1, 2, &now, &stops, nil)
+	// The first click only arms the confirmation; it never stops anything.
+	a.action(context.Background(), ActionStopDaemon)
+	if stops != 0 {
+		t.Fatal("the first click stopped the daemon")
+	}
+	item := itemByID(p.last(), ActionStopDaemon)
+	if item == nil || !strings.Contains(item.Title, "3") || !strings.Contains(item.Title, "confirm") {
+		t.Fatalf("confirm title = %+v", item)
+	}
+	// The second click inside the window stops and clears the arm.
+	now = now.Add(time.Second)
+	a.action(context.Background(), ActionStopDaemon)
+	if stops != 1 {
+		t.Fatalf("stops = %d after the confirm click", stops)
+	}
+	a.refresh(context.Background())
+	if got := itemByID(p.last(), ActionStopDaemon); got == nil || got.Title != "Stop 502Drive…" {
+		t.Fatalf("title after stop = %+v", got)
+	}
+}
+
+func TestStopDaemonConfirmationExpires(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	stops := 0
+	a, _ := stopAgent(t, 0, 1, &now, &stops, nil)
+	a.action(context.Background(), ActionStopDaemon) // armed
+	now = now.Add(11 * time.Second)                  // past the window
+	a.action(context.Background(), ActionStopDaemon)
+	if stops != 0 {
+		t.Fatal("a stale confirmation stopped the daemon")
+	}
+	now = now.Add(time.Second)
+	a.action(context.Background(), ActionStopDaemon)
+	if stops != 1 {
+		t.Fatalf("stops = %d after re-arming", stops)
+	}
+}
+
+func TestStopDaemonActsAtOnceWhenIdle(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	stops := 0
+	a, _ := stopAgent(t, 0, 0, &now, &stops, nil)
+	a.action(context.Background(), ActionStopDaemon)
+	if stops != 1 {
+		t.Fatalf("stops = %d with no jobs", stops)
+	}
+}
+
+func TestStopDaemonDoesNothingWhileOffline(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	stops := 0
+	a, _ := stopAgent(t, 1, 0, &now, &stops, func(o *Options) {
+		o.Status = func(context.Context) (Status, error) { return Status{}, errors.New("down") }
+	})
+	a.action(context.Background(), ActionStopDaemon)
+	if stops != 0 {
+		t.Fatal("an offline tray stopped the daemon")
 	}
 }
 

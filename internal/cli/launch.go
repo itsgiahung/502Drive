@@ -179,8 +179,13 @@ func (a *App) startDaemonAction(ctx context.Context) (string, error) {
 	return "daemon " + res, nil
 }
 
-// stopDaemon asks the daemon to shut down gracefully; running jobs resume on
-// the next start.
+// daemonStopWait bounds how long we wait for the daemon to go quiet after an
+// accepted shutdown. A variable so tests can shrink it.
+var daemonStopWait = 6 * time.Second
+
+// stopDaemon asks the daemon to shut down gracefully and waits until
+// /health/live stops answering. There is no kill: if the daemon is still up
+// after daemonStopWait the caller reports it and the user decides.
 func (a *App) stopDaemon(ctx context.Context) (string, error) {
 	if !a.daemonUp(ctx) {
 		return "daemon not running", nil
@@ -188,7 +193,19 @@ func (a *App) stopDaemon(ctx context.Context) (string, error) {
 	if _, err := a.call(ctx, "POST", "/v1/shutdown", nil, nil, ""); err != nil {
 		return "", err
 	}
-	return "daemon stopping", nil
+	deadline := time.Now().Add(daemonStopWait)
+	for time.Now().Before(deadline) {
+		if !a.daemonUp(ctx) {
+			return "daemon stopped", nil
+		}
+		select {
+		case <-ctx.Done():
+			return "", localErr(ExitInterrupt, "interrupted", "interrupted")
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	return "", localErr(ExitUnavailable, "daemon_stop_failed",
+		"The daemon did not stop within "+daemonStopWait.String()+"; it may still be busy. Check "+filepath.Join(a.stateDir(), "logs", "daemon.log"))
 }
 
 // trayPossible says whether a tray can be shown here, and why not.
@@ -213,6 +230,14 @@ func (a *App) ensureTray() (status, note string) {
 	}
 	if tray.InstanceRunning(a.trayLock()) {
 		return "running", ""
+	}
+	// Without a StatusNotifierWatcher (GNOME without AppIndicator, a bare
+	// session, …) the icon would never appear; run the no-tray mode instead.
+	// The daemon and the CLI keep working either way.
+	if runtime.GOOS == "linux" {
+		if present, why := probeTrayHost(context.Background()); !present {
+			return "unavailable", "no StatusNotifierWatcher (" + why + "); the daemon and `502drive menu` still work"
+		}
 	}
 	exe, err := os.Executable()
 	if err != nil {

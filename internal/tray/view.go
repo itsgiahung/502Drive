@@ -15,6 +15,9 @@ const (
 	ActionPaste      = "paste"
 	ActionOpenResult = "open-result"
 	ActionDaemon     = "daemon"
+	// ActionStopDaemon is the confirmed "Stop 502Drive…" item: a graceful
+	// POST /v1/shutdown, distinct from ActionQuit (which only leaves the tray).
+	ActionStopDaemon = "stop-daemon"
 	ActionQuit       = "quit"
 	// Job slots are informational menu rows, addressed by index.
 	jobSlotID = "job"
@@ -123,7 +126,8 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 		{ID: "jobs", Title: i18n.T(lang, i18n.JobsLibrary), Enabled: true, Children: jobItems(snap, lang)},
 		{ID: ActionOpenResult, Title: i18n.T(lang, i18n.OpenResult), Enabled: online && result != ""},
 		{Separator: true},
-		{ID: ActionDaemon, Title: daemonLabel(online, lang), Enabled: true},
+		{ID: ActionDaemon, Title: i18n.T(lang, i18n.StartDaemon), Enabled: !online},
+		{ID: ActionStopDaemon, Title: i18n.T(lang, i18n.StopApp), Enabled: online},
 		{Separator: true},
 		{ID: ActionQuit, Title: i18n.T(lang, i18n.Quit), Enabled: true},
 	}
@@ -178,13 +182,6 @@ func latestResult(snap Snapshot) string {
 		}
 	}
 	return ""
-}
-
-func daemonLabel(online bool, lang string) string {
-	if online {
-		return i18n.T(lang, i18n.StopDaemon)
-	}
-	return i18n.T(lang, i18n.StartDaemon)
 }
 
 func stateLabel(s State, lang string) string {

@@ -103,10 +103,9 @@ func ControlDaemon(ctx context.Context, h Host, action DaemonAction, exe string)
 			}
 			return "daemon started", nil
 		}
-		if _, ok := runHost(ctx, h, []string{"taskkill", "/IM", "502drive.exe", "/F"}); ok {
-			return "daemon stopped", nil
-		}
-		return "", errors.New("cannot stop the daemon (taskkill failed)")
+		// Never kill by name: the graceful stop goes through the HTTP API
+		// (the tray's Stop 502Drive… item or `502drive stop`).
+		return "", errors.New("stopping the daemon on Windows goes through POST /v1/shutdown (the tray's Stop item or `502drive stop`), not taskkill")
 	case "darwin":
 		return "", errors.New("the tray is not supported on macOS; run `502drive serve` under launchd")
 	default:
