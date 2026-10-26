@@ -1,0 +1,3496 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "502Drive target-v2 core control API",
+    "version": "0.0.0-design",
+    "description": "PLANNED CONTRACT 2026-10-26, NOT IMPLEMENTED. Go HTTP-first target. This file is documentation, not a running server or claim of tested OpenAPI conformance. Includes copied-source collections and required scheduled/realtime sync; no desktop framework dependency."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:5020",
+      "description": "Loopback-only default (configurable with `listen`)"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "paths": {
+    "/health/live": {
+      "get": {
+        "summary": "Minimal liveness without DB or provider access",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Live"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "summary": "Local DB/worker readiness",
+        "description": "Principal-scoped.",
+        "responses": {
+          "200": {
+            "description": "Snapshot/query result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        }
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "summary": "Daemon and scoped queue status",
+        "description": "Principal-scoped.",
+        "responses": {
+          "200": {
+            "description": "Snapshot/query result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        }
+      }
+    },
+    "/v1/plans": {
+      "post": {
+        "summary": "Inspect source and create a ten-minute immutable plan",
+        "description": "Principal-scoped.",
+        "responses": {
+          "201": {
+            "description": "Durably created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/jobs": {
+      "get": {
+        "summary": "List visible jobs",
+        "description": "Principal-scoped.",
+        "responses": {
+          "200": {
+            "description": "Snapshot/query result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobPageResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "running",
+                "pausing",
+                "paused",
+                "cancelling",
+                "reconciling",
+                "blocked",
+                "succeeded",
+                "partial",
+                "failed",
+                "cancelled"
+              ]
+            }
+          }
+        ]
+      },
+      "post": {
+        "summary": "Commit a durable job from an unconsumed plan",
+        "description": "Principal-scoped.",
+        "responses": {
+          "202": {
+            "description": "Durably admitted; execution is not complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Durable job URL"
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/jobs/{job_id}": {
+      "get": {
+        "summary": "Read one visible job",
+        "description": "Principal-scoped.",
+        "responses": {
+          "200": {
+            "description": "Snapshot/query result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "job_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/jobs/{job_id}/events": {
+      "get": {
+        "summary": "Poll ascending durable job events",
+        "description": "Principal-scoped.",
+        "responses": {
+          "200": {
+            "description": "Snapshot/query result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventPageResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "410": {
+            "$ref": "#/components/responses/Error410"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "after_sequence",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ]
+      },
+      "parameters": [
+        {
+          "name": "job_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/destinations": {
+      "get": {
+        "summary": "List allowed destination profiles",
+        "description": "Principal-scoped.",
+        "responses": {
+          "200": {
+            "description": "Snapshot/query result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DestinationPageResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ]
+      },
+      "post": {
+        "summary": "Validate and save destination profile",
+        "description": "Owner only.",
+        "responses": {
+          "201": {
+            "description": "Durably created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DestinationResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DestinationInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/destinations/default": {
+      "put": {
+        "summary": "Set global default and invalidate affected auto-copy bindings",
+        "description": "Owner only.",
+        "responses": {
+          "200": {
+            "description": "Snapshot/query result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DestinationResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefaultDestinationInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account": {
+      "get": {
+        "summary": "Default Google account state",
+        "description": "Principal-scoped.",
+        "responses": {
+          "200": {
+            "description": "Snapshot/query result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        }
+      }
+    },
+    "/v1/account/auth-sessions": {
+      "post": {
+        "summary": "Start owner loopback OAuth session without returning tokens",
+        "description": "Owner only.",
+        "responses": {
+          "201": {
+            "description": "Durably created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthSessionInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account/auth-sessions/{session_id}": {
+      "get": {
+        "summary": "Read OAuth session outcome without authorization URL replay",
+        "description": "Owner only.",
+        "responses": {
+          "200": {
+            "description": "Snapshot/query result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "session_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/account/revoke": {
+      "post": {
+        "summary": "Persist revocation intent and disable new work",
+        "description": "Owner only.",
+        "responses": {
+          "202": {
+            "description": "Durably admitted; execution is not complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/v1/preferences": {
+      "get": {
+        "summary": "Read own presentation/auto-copy preferences",
+        "description": "Principal-scoped.",
+        "responses": {
+          "200": {
+            "description": "Snapshot/query result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update own preferences; auto-copy requires matching validated destination revision",
+        "description": "Principal-scoped.",
+        "responses": {
+          "200": {
+            "description": "Snapshot/query result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferencePatch"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operators": {
+      "get": {
+        "summary": "List operator identities",
+        "description": "Owner only.",
+        "responses": {
+          "200": {
+            "description": "Snapshot/query result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorPageResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ]
+      },
+      "post": {
+        "summary": "Grant operator access; cannot grant owner",
+        "description": "Owner only.",
+        "responses": {
+          "201": {
+            "description": "Durably created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operators/{principal_id}": {
+      "delete": {
+        "summary": "Disable operator and invalidate prior callbacks; sole owner cannot be disabled",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Durably disabled; safe idempotent replay"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "principal_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/doctor": {
+      "get": {
+        "summary": "Offline checks by default; explicit online provider checks",
+        "description": "Owner only.",
+        "responses": {
+          "200": {
+            "description": "Snapshot/query result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DoctorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "online",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/pause": {
+      "post": {
+        "summary": "Guarded pause; preserve job identity",
+        "description": "Principal-scoped.",
+        "responses": {
+          "202": {
+            "description": "Durably admitted; execution is not complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Durable job URL"
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionInput"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "job_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/jobs/{job_id}/resume": {
+      "post": {
+        "summary": "Guarded resume; preserve job identity",
+        "description": "Principal-scoped.",
+        "responses": {
+          "202": {
+            "description": "Durably admitted; execution is not complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Durable job URL"
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionInput"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "job_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/jobs/{job_id}/cancel": {
+      "post": {
+        "summary": "Guarded cancel; preserve job identity",
+        "description": "Principal-scoped.",
+        "responses": {
+          "202": {
+            "description": "Durably admitted; execution is not complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Durable job URL"
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionInput"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "job_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/jobs/{job_id}/retry": {
+      "post": {
+        "summary": "Guarded retry; preserve job identity",
+        "description": "Principal-scoped.",
+        "responses": {
+          "202": {
+            "description": "Durably admitted; execution is not complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Durable job URL"
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionInput"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "job_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/collections": {
+      "get": {
+        "summary": "List copied-source library",
+        "description": "Own collection or owner. Idempotent mutation; expected revision required.",
+        "responses": {
+          "200": {
+            "description": "Committed resource snapshot; admitted job is not completion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionPageResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sync_mode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "off",
+                "scheduled",
+                "realtime"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "/v1/collections/{collection_id}": {
+      "get": {
+        "summary": "Copied root, baseline, current mode/last/next sync",
+        "description": "Own collection or owner. Idempotent mutation; expected revision required.",
+        "responses": {
+          "200": {
+            "description": "Committed resource snapshot; admitted job is not completion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "collection_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/collections/{collection_id}/sync": {
+      "put": {
+        "summary": "Create or configure sync mode without creating a new output root",
+        "description": "Own collection or owner. Idempotent mutation; expected revision required.",
+        "responses": {
+          "200": {
+            "description": "Committed resource snapshot; admitted job is not completion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncInput"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "collection_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/collections/{collection_id}/sync/pause": {
+      "post": {
+        "summary": "Guarded sync pause; preserve destination and mappings",
+        "description": "Own collection or owner. Idempotent mutation; expected revision required.",
+        "responses": {
+          "202": {
+            "description": "Committed resource snapshot; admitted job is not completion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionInput"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "collection_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/collections/{collection_id}/sync/resume": {
+      "post": {
+        "summary": "Guarded sync resume; preserve destination and mappings",
+        "description": "Own collection or owner. Idempotent mutation; expected revision required.",
+        "responses": {
+          "202": {
+            "description": "Committed resource snapshot; admitted job is not completion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionInput"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "collection_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/collections/{collection_id}/sync/stop": {
+      "post": {
+        "summary": "Guarded sync stop; preserve destination and mappings",
+        "description": "Own collection or owner. Idempotent mutation; expected revision required.",
+        "responses": {
+          "202": {
+            "description": "Committed resource snapshot; admitted job is not completion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionInput"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "collection_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/collections/{collection_id}/runs": {
+      "post": {
+        "summary": "Run delta reconciliation now; coalesce if already active",
+        "description": "Own collection or owner. Idempotent mutation; expected revision required.",
+        "responses": {
+          "202": {
+            "description": "Committed resource snapshot; admitted job is not completion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Admitted or existing coalesced job URL"
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionInput"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "collection_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      ]
+    },
+    "/v1/stream": {
+      "get": {
+        "summary": "Realtime change stream (Server-Sent Events)",
+        "description": "Owner token. Emits `hello` on connect, then `changed` whenever the daemon wrote state; both carry {\"version\":N}. Bursts are coalesced (≥150 ms apart). Clients re-read the resources they show; nothing is replayed after a reconnect. A `: ping` comment is sent every 15 s. At most 16 streams are open at once (429 too_many_streams).",
+        "responses": {
+          "200": {
+            "description": "Event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        }
+      }
+    },
+    "/v1/shutdown": {
+      "post": {
+        "summary": "Stop the daemon gracefully",
+        "description": "Owner token. Answers 202 and stops shortly after: the API stops accepting requests, workers reach safe points and running jobs resume on the next start. Used by the tray's Quit.",
+        "responses": {
+          "202": {
+            "description": "Stopping",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShutdownResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "501": {
+            "description": "This daemon cannot be stopped over HTTP"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Opaque random token from protected client file; maps to principal server-side"
+      }
+    },
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "description": "Principal/method/path scoped. Replay uses saved response; different payload returns 409."
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "retry_after_seconds": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retryable",
+              "retry_after_seconds"
+            ]
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "request_id"
+        ],
+        "examples": [
+          {
+            "error": {
+              "code": "plan_expired",
+              "message": "Inspect the source again.",
+              "retryable": false,
+              "retry_after_seconds": null
+            },
+            "request_id": "req_demo"
+          }
+        ]
+      },
+      "Live": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "alive"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "Ready": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "worker_ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ready",
+          "schema_version",
+          "worker_ready"
+        ]
+      },
+      "Account": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "const": "default"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "disconnected",
+              "connected",
+              "reconnect_required",
+              "revoking",
+              "revoked"
+            ]
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "label",
+          "last_error"
+        ]
+      },
+      "Destination": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "name": {
+            "type": "string"
+          },
+          "folder_id": {
+            "type": "string"
+          },
+          "drive_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "is_default": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "folder_id",
+          "drive_id",
+          "revision",
+          "is_default"
+        ]
+      },
+      "PreviewCounts": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "observed_files": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observed_folders": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "scan_complete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "observed_files",
+          "observed_folders",
+          "scan_complete"
+        ]
+      },
+      "PlanInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "destination_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "root_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "examples": [
+          {
+            "source": "https://drive.google.com/drive/folders/SOURCE_DEMO",
+            "destination_id": "dst_demo",
+            "root_name": "Project Alpha"
+          }
+        ]
+      },
+      "Plan": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_name": {
+            "type": "string"
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "folder",
+              "binary",
+              "google_native",
+              "shortcut"
+            ]
+          },
+          "destination_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "destination_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "root_name": {
+            "type": "string"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/PreviewCounts"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "expires_at",
+          "source_id",
+          "source_name",
+          "source_kind",
+          "destination_id",
+          "destination_revision",
+          "root_name",
+          "preview",
+          "warnings"
+        ]
+      },
+      "JobInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "plan_id",
+          "expected_revision"
+        ]
+      },
+      "ActionInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "expected_revision"
+        ]
+      },
+      "JobCounts": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "observed_items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_items": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "completed_items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed_items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "blocked_items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "skipped_items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "logical_bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "observed_items",
+          "total_items",
+          "completed_items",
+          "failed_items",
+          "blocked_items",
+          "skipped_items",
+          "logical_bytes"
+        ]
+      },
+      "Job": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "principal_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "source_name": {
+            "type": "string"
+          },
+          "destination_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "root_name": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "pausing",
+              "paused",
+              "cancelling",
+              "reconciling",
+              "blocked",
+              "succeeded",
+              "partial",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "discovering",
+                  "copying",
+                  "finalizing"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "desired_state": {
+            "type": "string",
+            "enum": [
+              "run",
+              "pause",
+              "cancel"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "counts": {
+            "$ref": "#/components/schemas/JobCounts"
+          },
+          "result_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "collection_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "id",
+          "principal_id",
+          "source_name",
+          "destination_id",
+          "root_name",
+          "state",
+          "phase",
+          "desired_state",
+          "revision",
+          "counts",
+          "result_url",
+          "last_error",
+          "created_at",
+          "updated_at",
+          "collection_id"
+        ]
+      },
+      "Event": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "job_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "kind": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "message": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "sequence",
+          "job_id",
+          "kind",
+          "revision",
+          "message",
+          "occurred_at"
+        ]
+      },
+      "EventPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            }
+          },
+          "next_sequence": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "items",
+          "next_sequence"
+        ]
+      },
+      "JobPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Job"
+            }
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ]
+      },
+      "DestinationPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Destination"
+            }
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ]
+      },
+      "DestinationInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "source"
+        ]
+      },
+      "DefaultDestinationInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "destination_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "destination_id",
+          "expected_revision"
+        ]
+      },
+      "AuthSession": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "connected",
+              "expired",
+              "failed"
+            ]
+          },
+          "authorization_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "authorization_url",
+          "expires_at"
+        ]
+      },
+      "AuthSessionInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "no_browser": {
+            "type": "boolean"
+          }
+        },
+        "required": []
+      },
+      "Preferences": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "type": "string",
+            "enum": [
+              "vi",
+              "en"
+            ]
+          },
+          "timezone": {
+            "type": "string",
+            "minLength": 1,
+            "description": "IANA timezone used for schedules and date display (e.g. Asia/Ho_Chi_Minh)."
+          },
+          "auto_copy": {
+            "type": "boolean"
+          },
+          "destination_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "destination_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "notify_completed": {
+            "type": "boolean"
+          },
+          "notify_failed": {
+            "type": "boolean"
+          },
+          "notify_action_required": {
+            "type": "boolean"
+          },
+          "after_copy_sync_mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "scheduled",
+              "realtime"
+            ]
+          },
+          "after_copy_schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "language",
+          "timezone",
+          "auto_copy",
+          "destination_id",
+          "destination_revision",
+          "notify_completed",
+          "notify_failed",
+          "notify_action_required",
+          "after_copy_sync_mode",
+          "after_copy_schedule"
+        ]
+      },
+      "PreferencePatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "type": "string",
+            "enum": [
+              "vi",
+              "en"
+            ]
+          },
+          "timezone": {
+            "type": "string",
+            "minLength": 1,
+            "description": "IANA timezone (validated with time.LoadLocation)."
+          },
+          "auto_copy": {
+            "type": "boolean"
+          },
+          "destination_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "destination_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "notify_completed": {
+            "type": "boolean"
+          },
+          "notify_failed": {
+            "type": "boolean"
+          },
+          "notify_action_required": {
+            "type": "boolean"
+          },
+          "after_copy_sync_mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "scheduled",
+              "realtime"
+            ]
+          },
+          "after_copy_schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": []
+      },
+      "Operator": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "telegram_user_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "role": {
+            "const": "operator"
+          }
+        },
+        "required": [
+          "id",
+          "telegram_user_id",
+          "enabled",
+          "role"
+        ]
+      },
+      "OperatorInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "telegram_user_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "telegram_user_id"
+        ]
+      },
+      "OperatorPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Operator"
+            }
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ]
+      },
+      "Doctor": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "online": {
+            "type": "boolean"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "passed",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "status",
+                "message"
+              ]
+            }
+          }
+        },
+        "required": [
+          "online",
+          "checks"
+        ]
+      },
+      "Status": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "account": {
+            "$ref": "#/components/schemas/Account"
+          },
+          "bot_state": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "starting",
+              "polling",
+              "error",
+              "unknown"
+            ]
+          },
+          "running_jobs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "queued_jobs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "blocked_jobs": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "version",
+          "schema_version",
+          "ready",
+          "account",
+          "bot_state",
+          "running_jobs",
+          "queued_jobs",
+          "blocked_jobs"
+        ]
+      },
+      "LiveResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Live"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "ReadyResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Ready"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "AccountResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Account"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "DestinationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Destination"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "PreviewCountsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PreviewCounts"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "PlanResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Plan"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "JobCountsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/JobCounts"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "JobResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Job"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "EventResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Event"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "EventPageResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EventPage"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "JobPageResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/JobPage"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "DestinationPageResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DestinationPage"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "AuthSessionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AuthSession"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "PreferencesResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Preferences"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "OperatorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Operator"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "OperatorPageResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OperatorPage"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "DoctorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Doctor"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "StatusResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "ScheduleSpec": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "interval"
+              },
+              "interval_minutes": {
+                "type": "integer",
+                "minimum": 5,
+                "maximum": 10080
+              },
+              "anchor_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "kind",
+              "interval_minutes",
+              "anchor_at"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "daily"
+              },
+              "timezone": {
+                "type": "string",
+                "minLength": 1
+              },
+              "local_time": {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              }
+            },
+            "required": [
+              "kind",
+              "timezone",
+              "local_time"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "weekly"
+              },
+              "timezone": {
+                "type": "string",
+                "minLength": 1
+              },
+              "local_time": {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              },
+              "weekdays": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 7,
+                "uniqueItems": true,
+                "items": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 7
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "timezone",
+              "local_time",
+              "weekdays"
+            ]
+          }
+        ],
+        "examples": [
+          {
+            "kind": "daily",
+            "timezone": "Asia/Ho_Chi_Minh",
+            "local_time": "22:00"
+          },
+          {
+            "kind": "weekly",
+            "timezone": "Asia/Ho_Chi_Minh",
+            "local_time": "07:30",
+            "weekdays": [
+              1,
+              3,
+              5
+            ]
+          },
+          {
+            "kind": "interval",
+            "interval_minutes": 60,
+            "anchor_at": "2026-10-26T00:00:00Z"
+          }
+        ]
+      },
+      "SyncSubscription": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "collection_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "scheduled",
+              "realtime"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "waiting_for_baseline",
+              "bootstrapping",
+              "active",
+              "paused",
+              "stopping",
+              "stopped",
+              "needs_reconcile",
+              "error"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content_policy": {
+            "type": "string",
+            "enum": [
+              "versioned_copy",
+              "replace_copy"
+            ]
+          },
+          "deletion_policy": {
+            "const": "preserve_destination"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_run_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "active_job_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "collection_id",
+          "mode",
+          "state",
+          "revision",
+          "schedule",
+          "content_policy",
+          "deletion_policy",
+          "last_attempt_at",
+          "last_success_at",
+          "next_run_at",
+          "active_job_id",
+          "last_error"
+        ]
+      },
+      "Collection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_name": {
+            "type": "string"
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "folder",
+              "binary",
+              "google_native",
+              "shortcut"
+            ]
+          },
+          "destination_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "destination_root_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "baseline_job_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "copying",
+              "ready",
+              "partial",
+              "needs_action",
+              "legacy_read_only"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncSubscription"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "source_id",
+          "source_name",
+          "source_kind",
+          "destination_id",
+          "destination_root_id",
+          "result_url",
+          "baseline_job_id",
+          "state",
+          "revision",
+          "sync"
+        ]
+      },
+      "CollectionPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Collection"
+            }
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ]
+      },
+      "SyncInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "expected_collection_revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expected_subscription_revision": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "content_policy": {
+                "type": "string",
+                "enum": [
+                  "versioned_copy",
+                  "replace_copy"
+                ]
+              },
+              "mode": {
+                "const": "scheduled"
+              },
+              "schedule": {
+                "$ref": "#/components/schemas/ScheduleSpec"
+              }
+            },
+            "required": [
+              "expected_collection_revision",
+              "expected_subscription_revision",
+              "content_policy",
+              "mode",
+              "schedule"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "expected_collection_revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expected_subscription_revision": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "content_policy": {
+                "type": "string",
+                "enum": [
+                  "versioned_copy",
+                  "replace_copy"
+                ]
+              },
+              "mode": {
+                "const": "realtime"
+              }
+            },
+            "required": [
+              "expected_collection_revision",
+              "expected_subscription_revision",
+              "content_policy",
+              "mode"
+            ]
+          }
+        ],
+        "examples": [
+          {
+            "mode": "scheduled",
+            "expected_collection_revision": 1,
+            "expected_subscription_revision": null,
+            "content_policy": "versioned_copy",
+            "schedule": {
+              "kind": "daily",
+              "timezone": "Asia/Ho_Chi_Minh",
+              "local_time": "22:00"
+            }
+          },
+          {
+            "mode": "realtime",
+            "expected_collection_revision": 2,
+            "expected_subscription_revision": 1,
+            "content_policy": "versioned_copy"
+          }
+        ]
+      },
+      "SyncSubscriptionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SyncSubscription"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "CollectionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Collection"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "CollectionPageResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CollectionPage"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ]
+      },
+      "ShutdownResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "request_id"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "stopping"
+              }
+            }
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "responses": {
+      "Error400": {
+        "description": "Invalid JSON/input/unknown field",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error401": {
+        "description": "Missing or invalid authentication",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error403": {
+        "description": "Forbidden or Google reconnection required",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error404": {
+        "description": "Not found within principal scope",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error409": {
+        "description": "Conflict/stale plan/state/idempotency mismatch",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error413": {
+        "description": "Request too large",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error429": {
+        "description": "Rate/capacity limit",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error500": {
+        "description": "Redacted internal error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error502": {
+        "description": "Provider unavailable",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error503": {
+        "description": "Not ready",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error504": {
+        "description": "Provider timeout",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error410": {
+        "description": "Cursor history expired; refetch job snapshot",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "DefaultError": {
+        "description": "Redacted error envelope. Status/code mapping is defined in docs/control-contracts.md; includes 400/401/403/404/409/410/413/429/500/502/503/504.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,523 @@
+package telegram
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
+
+	"github.com/GiaHung07/502Drive/internal/app"
+	"github.com/GiaHung07/502Drive/internal/drive"
+	"github.com/GiaHung07/502Drive/internal/schedule"
+	"github.com/GiaHung07/502Drive/internal/state"
+)
+
+// button is one inline-keyboard cell. nav buttons are static and reusable;
+// action buttons get a one-shot callback state row.
+type button struct {
+	text     string
+	nav      string
+	action   string
+	object   string
+	revision int
+	payload  string
+}
+
+func nav(text, page string) button { return button{text: text, nav: page} }
+
+func act(text, action, object string, revision int, payload string) button {
+	return button{text: text, action: action, object: object, revision: revision, payload: payload}
+}
+
+// planPayload is the private callback payload needed to rebuild a preview
+// without asking the user for the link again.
+type planPayload struct {
+	Source      string `json:"source"`
+	Root        string `json:"root,omitempty"`
+	Destination string `json:"destination,omitempty"`
+}
+
+// panel sends or edits one card and returns the message it lives in. An empty
+// rows argument leaves the existing keyboard alone; pass one empty row to
+// remove it.
+func (t *Telegram) panel(ctx context.Context, p app.Principal, chatID int64, messageID int, text string, rows [][]button, clear bool) (int, error) {
+	var callbacks []string
+	keyboard := make([][]models.InlineKeyboardButton, 0, len(rows))
+	for _, row := range rows {
+		var keys []models.InlineKeyboardButton
+		for _, b := range row {
+			data := ""
+			switch {
+			case b.action != "":
+				cb := state.Callback{ID: state.ID("cb"), Principal: p.ID, ChatID: chatID, Action: b.action,
+					Object: b.object, Revision: b.revision, Payload: b.payload,
+					ExpiresAt: t.now().Add(callbackTTL), CreatedAt: t.now()}
+				if err := t.store.PutCallback(ctx, cb); err != nil {
+					return 0, err
+				}
+				callbacks = append(callbacks, cb.ID)
+				data = callbackPrefix + cb.ID
+			case b.nav != "":
+				data = navPrefix + b.nav
+			default:
+				continue
+			}
+			keys = append(keys, models.InlineKeyboardButton{Text: b.text, CallbackData: data})
+		}
+		if len(keys) > 0 {
+			keyboard = append(keyboard, keys)
+		}
+	}
+	var markup models.ReplyMarkup
+	if len(keyboard) > 0 {
+		markup = &models.InlineKeyboardMarkup{InlineKeyboard: keyboard}
+	} else if clear {
+		markup = &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{}}
+	}
+	var msg *models.Message
+	var err error
+	if messageID > 0 {
+		msg, err = t.bot.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: chatID, MessageID: messageID, Text: text,
+			ParseMode: models.ParseModeHTML, ReplyMarkup: markup})
+	} else {
+		msg, err = t.bot.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: text,
+			ParseMode: models.ParseModeHTML, ReplyMarkup: markup})
+	}
+	if err != nil {
+		return 0, err
+	}
+	if msg != nil && msg.ID != 0 {
+		if err := t.store.BindCallbackMessage(ctx, callbacks, msg.ID); err != nil {
+			t.log.Warn("telegram: cannot bind callbacks", "err", err)
+		}
+		return msg.ID, nil
+	}
+	return messageID, nil
+}
+
+func (t *Telegram) show(ctx context.Context, p app.Principal, chatID int64, messageID int, text string, rows ...[]button) (int, error) {
+	return t.panel(ctx, p, chatID, messageID, text, rows, false)
+}
+
+func (t *Telegram) showBare(ctx context.Context, p app.Principal, chatID int64, messageID int, text string, rows ...[]button) (int, error) {
+	return t.panel(ctx, p, chatID, messageID, text, rows, true)
+}
+
+func (t *Telegram) answer(ctx context.Context, callbackID, toast string) error {
+	_, err := t.bot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: callbackID, Text: toast})
+	return err
+}
+
+func (t *Telegram) text(ctx context.Context, p app.Principal) texts { return t.textFor(ctx, p.ID) }
+
+func (t *Telegram) textFor(ctx context.Context, principalID string) texts {
+	prefs, err := t.svc.Preferences(ctx, app.Principal{ID: principalID, Role: app.RoleOperator})
+	if err != nil {
+		return vietnamese
+	}
+	return textsFor(langOf(prefs.Language))
+}
+
+// page renders one menu page into an existing panel (messageID > 0) or a new
+// message.
+func (t *Telegram) page(ctx context.Context, p app.Principal, chatID int64, messageID int, name string) error {
+	tx := t.text(ctx, p)
+	switch name {
+	case "copy":
+		return t.showCard(ctx, p, chatID, messageID, tx.copyHint, []button{nav(tx.back, "home")})
+	case "jobs":
+		return t.jobsPage(ctx, p, chatID, messageID, tx)
+	case "library":
+		return t.libraryPage(ctx, p, chatID, messageID, tx)
+	case "dest":
+		return t.destPage(ctx, p, chatID, messageID, tx)
+	case "account":
+		return t.accountPage(ctx, p, chatID, messageID, tx)
+	case "settings":
+		return t.settingsPage(ctx, p, chatID, messageID, tx)
+	}
+	return t.homePage(ctx, p, chatID, messageID, tx)
+}
+
+func (t *Telegram) showCard(ctx context.Context, p app.Principal, chatID int64, messageID int, text string, rows ...[]button) error {
+	_, err := t.show(ctx, p, chatID, messageID, text, rows...)
+	return err
+}
+
+func (t *Telegram) homePage(ctx context.Context, p app.Principal, chatID int64, messageID int, tx texts) error {
+	st, err := t.svc.Status(ctx)
+	if err != nil {
+		return t.showCard(ctx, p, chatID, messageID, fmt.Sprintf("%s: %s", tx.problemLabel, escape(app.Classify(err).Message)),
+			[]button{nav(tx.back, "home")})
+	}
+	prefs, _ := t.svc.Preferences(ctx, p)
+	var b strings.Builder
+	fmt.Fprintf(&b, "<b>502Drive</b>\n")
+	fmt.Fprintf(&b, "%s: %s   %s: %s\n", tx.google, escape(googleState(st.Account.Status, tx)), tx.destLabel, escape(destName(ctx, t.svc)))
+	fmt.Fprintf(&b, "%s: %d   %s: %d   %s: %d\n", tx.running, st.Running, tx.queued, st.Queued, tx.needAction, st.Blocked)
+	fmt.Fprintf(&b, "%s: %s\n\n%s", tx.autoCopy, onOff(prefs.AutoCopy, tx), tx.pasteHint)
+	return t.showCard(ctx, p, chatID, messageID, b.String(),
+		[]button{nav(tx.copy, "copy"), nav(tx.jobs, "jobs")},
+		[]button{nav(tx.library, "library")},
+		[]button{nav(tx.destination, "dest"), nav(tx.settings, "settings")},
+		[]button{nav(tx.account, "account")})
+}
+
+func googleState(status string, tx texts) string {
+	switch status {
+	case "connected":
+		return tx.connected
+	case "reconnect_required":
+		return tx.reconnect
+	}
+	return tx.disconnected
+}
+
+func onOff(v bool, tx texts) string {
+	if v {
+		return tx.on
+	}
+	return tx.off
+}
+
+// destName reads the default destination label; empty when none is set.
+func destName(ctx context.Context, svc *app.Service) string {
+	dests, err := svc.Destinations(ctx)
+	if err != nil {
+		return ""
+	}
+	for _, d := range dests {
+		if d.IsDefault {
+			return d.Name
+		}
+	}
+	return ""
+}
+
+func (t *Telegram) jobsPage(ctx context.Context, p app.Principal, chatID int64, messageID int, tx texts) error {
+	jobs, _, err := t.svc.Jobs(ctx, p, false, "", 5, 0)
+	if err != nil {
+		return t.showCard(ctx, p, chatID, messageID, tx.jobsEmpty, []button{nav(tx.back, "home")})
+	}
+	if len(jobs) == 0 {
+		return t.showCard(ctx, p, chatID, messageID, "<b>"+tx.jobs+"</b>\n"+tx.jobsEmpty, []button{nav(tx.back, "home")})
+	}
+	var b strings.Builder
+	b.WriteString("<b>" + tx.jobs + "</b>\n")
+	for _, j := range jobs {
+		fmt.Fprintf(&b, "· %s — %s\n", escape(short(j.RootName, 40)), tx.stateLabel(j.State))
+	}
+	rows := make([][]button, 0, len(jobs)+1)
+	for _, j := range jobs {
+		rows = append(rows, []button{act(short(j.RootName, 24)+" · "+tx.stateLabel(j.State), "job", j.ID, j.Revision, "")})
+	}
+	rows = append(rows, []button{nav(tx.back, "home")})
+	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
+}
+
+func (t *Telegram) libraryPage(ctx context.Context, p app.Principal, chatID int64, messageID int, tx texts) error {
+	cols, err := t.svc.Collections(ctx, p, false)
+	if err != nil {
+		return t.showCard(ctx, p, chatID, messageID, tx.libraryEmpty, []button{nav(tx.back, "home")})
+	}
+	if len(cols) == 0 {
+		return t.showCard(ctx, p, chatID, messageID, "<b>"+tx.library+"</b>\n"+tx.libraryEmpty, []button{nav(tx.back, "home")})
+	}
+	var b strings.Builder
+	b.WriteString("<b>" + tx.library + "</b>\n")
+	var rows [][]button
+	for i, c := range cols {
+		if i == 5 {
+			break
+		}
+		status := tx.syncOff
+		if view, configured, err := t.svc.SyncStatus(ctx, c.ID); err == nil && configured {
+			status = tx.syncStateLabel(view.Subscription.State)
+		}
+		fmt.Fprintf(&b, "· %s — %s\n", escape(short(c.SourceName, 40)), escape(status))
+		rows = append(rows, []button{act(short(c.SourceName, 24)+" · "+status, "collection", c.ID, c.Revision, "")})
+	}
+	rows = append(rows, []button{nav(tx.destination, "dest"), nav(tx.back, "home")})
+	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
+}
+
+// collectionCard is the library detail: copy state, real sync state and the
+// actions that are valid in that state.
+func (t *Telegram) collectionCard(ctx context.Context, p app.Principal, chatID int64, messageID int, id, note string) error {
+	c, err := t.svc.Collection(ctx, p, id)
+	if err != nil {
+		return t.showError(ctx, p, chatID, messageID, err)
+	}
+	view, configured, err := t.svc.SyncStatus(ctx, id)
+	if err != nil {
+		return t.showError(ctx, p, chatID, messageID, err)
+	}
+	tx := t.text(ctx, p)
+	var b strings.Builder
+	fmt.Fprintf(&b, "<b>%s</b>\n", escape(short(c.SourceName, 60)))
+	fmt.Fprintf(&b, "%s: %s\n", tx.copyStateLabel, escape(c.State))
+	if !configured {
+		fmt.Fprintf(&b, "%s: %s\n", tx.syncLabel, tx.syncOff)
+	} else {
+		sub := view.Subscription
+		fmt.Fprintf(&b, "%s: %s · %s\n", tx.syncLabel, escape(sub.Mode), escape(tx.syncStateLabel(sub.State)))
+		fmt.Fprintf(&b, "%s: %s\n", tx.scheduleLabel, escape(tx.scheduleSummary(sub.Schedule)))
+		if sub.NextDue != nil {
+			fmt.Fprintf(&b, "%s: %s\n", tx.nextRun, sub.NextDue.UTC().Format("2006-01-02 15:04 MST"))
+		}
+		if sub.LastSuccessAt != nil {
+			fmt.Fprintf(&b, "%s: %s\n", tx.lastSuccess, sub.LastSuccessAt.UTC().Format("2006-01-02 15:04 MST"))
+		}
+		if sub.LastError != nil {
+			fmt.Fprintf(&b, "%s: %s\n", tx.problemLabel, escape(short(sub.LastError.Message, 160)))
+		}
+	}
+	if view.ActiveJobID != "" {
+		fmt.Fprintf(&b, "%s: <code>%s</code>\n", tx.activeJob, escape(view.ActiveJobID))
+	}
+	b.WriteString("\n" + tx.keepCopies)
+	if note != "" {
+		b.WriteString("\n\n" + note)
+	}
+	rows := t.collectionButtons(tx, id, view, configured)
+	rows = append(rows, []button{nav(tx.library, "library"), nav(tx.back, "home")})
+	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
+}
+
+// collectionButtons lists only actions that can succeed in the current state.
+func (t *Telegram) collectionButtons(tx texts, id string, view app.SyncView, configured bool) [][]button {
+	var rows [][]button
+	primary := []button{act(tx.runNow, "sync_run", id, 0, "")}
+	if !configured {
+		primary = append([]button{act(tx.enableSync, "sync_presets", id, 0, "")}, primary...)
+		return [][]button{primary}
+	}
+	sub := view.Subscription
+	switch sub.State {
+	case "active", "bootstrapping", "needs_reconcile":
+		primary = append(primary, act(tx.pauseSync, "sync_pause", id, sub.Revision, ""))
+	case "paused", "stopped", "error":
+		primary = append(primary, act(tx.resumeSync, "sync_resume", id, sub.Revision, ""))
+	}
+	rows = append(rows, primary)
+	secondary := []button{act(tx.changeSchedule, "sync_presets", id, 0, "")}
+	if sub.State != "stopped" && sub.State != "stopping" {
+		secondary = append(secondary, act(tx.stopSync, "sync_stop", id, sub.Revision, ""))
+	}
+	return append(rows, secondary)
+}
+
+// syncPayload is the private intent of a preset button; revisions are read
+// again when the button is clicked.
+type syncPayload struct {
+	Mode     string         `json:"mode"`
+	Schedule *schedule.Spec `json:"schedule,omitempty"`
+}
+
+// syncPreviewCard shows a schedule and its next three runs before saving, so a
+// bot user sees what will happen without cron syntax.
+func (t *Telegram) syncPreviewCard(ctx context.Context, p app.Principal, chatID int64, messageID int, collectionID, payload string) error {
+	tx := t.text(ctx, p)
+	var pl syncPayload
+	if err := json.Unmarshal([]byte(payload), &pl); err != nil || pl.Schedule == nil {
+		return t.showError(ctx, p, chatID, messageID, app.Fail(409, "plan_changed", tx.expired))
+	}
+	slots, err := pl.Schedule.Preview(t.now().UTC(), 3)
+	if err != nil {
+		return t.showError(ctx, p, chatID, messageID, app.Fail(400, "invalid_request", err.Error()))
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "<b>%s</b>\n", tx.pickPreset)
+	fmt.Fprintf(&b, "%s: %s\n", tx.scheduleLabel, escape(tx.scheduleSummary(pl.Schedule)))
+	fmt.Fprintf(&b, "\n%s:\n", tx.nextRuns)
+	for _, slot := range slots {
+		fmt.Fprintf(&b, "· %s\n", slotTime(pl.Schedule, slot.At))
+	}
+	return t.showCard(ctx, p, chatID, messageID, b.String(),
+		[]button{act(tx.save, "sync_set", collectionID, 0, payload), act(tx.cancel, "collection", collectionID, 0, "")})
+}
+
+// slotTime renders a run time in the schedule's own zone, so the user sees the
+// wall clock they configured instead of a UTC instant.
+func slotTime(sp *schedule.Spec, at time.Time) string {
+	if sp != nil && sp.Timezone != "" {
+		if loc, err := time.LoadLocation(sp.Timezone); err == nil {
+			return at.In(loc).Format("2006-01-02 15:04 MST")
+		}
+	}
+	return at.UTC().Format("2006-01-02 15:04 MST")
+}
+
+// syncPresetCard offers structured presets instead of cron syntax.
+func (t *Telegram) syncPresetCard(ctx context.Context, p app.Principal, chatID int64, messageID int, id string) error {
+	tx := t.text(ctx, p)
+	prefs, err := t.svc.Preferences(ctx, p)
+	if err != nil {
+		return t.showError(ctx, p, chatID, messageID, err)
+	}
+	tz := prefs.Timezone
+	if tz == "" {
+		tz = syncTimezone
+	}
+	spec := func(kind string, minutes int, local string, weekdays []int) string {
+		sp := schedule.Spec{Kind: kind, IntervalMinutes: minutes, LocalTime: local, Timezone: tz}
+		if kind == schedule.KindInterval {
+			sp.AnchorAt = t.now().UTC()
+		}
+		sp.Weekdays = weekdays
+		pl, _ := json.Marshal(syncPayload{Mode: "scheduled", Schedule: &sp})
+		return string(pl)
+	}
+	realtime, _ := json.Marshal(syncPayload{Mode: "realtime"})
+	return t.showCard(ctx, p, chatID, messageID, "<b>"+tx.pickPreset+"</b>",
+		[]button{act(tx.every30m, "sync_preview", id, 0, spec(schedule.KindInterval, 30, "", nil)),
+			act(tx.everyHour, "sync_preview", id, 0, spec(schedule.KindInterval, 60, "", nil))},
+		[]button{act(tx.every6h, "sync_preview", id, 0, spec(schedule.KindInterval, 360, "", nil)),
+			act(tx.daily2200, "sync_preview", id, 0, spec(schedule.KindDaily, 0, "22:00", nil))},
+		[]button{act(tx.weeklyMWF, "sync_preview", id, 0, spec(schedule.KindWeekly, 0, "22:00", []int{1, 3, 5})),
+			act(tx.realtimePreset, "sync_set", id, 0, string(realtime))},
+		[]button{act(tx.back, "collection", id, 0, "")})
+}
+
+func (t *Telegram) destPage(ctx context.Context, p app.Principal, chatID int64, messageID int, tx texts) error {
+	dests, err := t.svc.Destinations(ctx)
+	if err != nil || len(dests) == 0 {
+		return t.showCard(ctx, p, chatID, messageID, "<b>"+tx.destination+"</b>\n"+tx.noDestination+"\n\n"+tx.destHint,
+			[]button{nav(tx.back, "home")})
+	}
+	var b strings.Builder
+	b.WriteString("<b>" + tx.destination + "</b>\n")
+	for _, d := range dests {
+		mark := ""
+		if d.IsDefault {
+			mark = " (" + tx.destLabel + ")"
+		}
+		fmt.Fprintf(&b, "· %s%s\n", escape(short(d.Name, 48)), mark)
+	}
+	b.WriteString("\n" + tx.destHint)
+	return t.showCard(ctx, p, chatID, messageID, b.String(),
+		[]button{nav(tx.jobs, "jobs"), nav(tx.back, "home")})
+}
+
+func (t *Telegram) accountPage(ctx context.Context, p app.Principal, chatID int64, messageID int, tx texts) error {
+	acc, err := t.svc.Account(ctx)
+	if err != nil {
+		return t.showCard(ctx, p, chatID, messageID, tx.accountHint, []button{nav(tx.back, "home")})
+	}
+	var b strings.Builder
+	b.WriteString("<b>" + tx.account + "</b>\n")
+	fmt.Fprintf(&b, "%s: %s\n", tx.google, googleState(acc.Status, tx))
+	if acc.Label != nil && *acc.Label != "" {
+		fmt.Fprintf(&b, "%s\n", escape(*acc.Label))
+	}
+	if acc.LastError != nil {
+		fmt.Fprintf(&b, "%s: %s\n", tx.problemLabel, escape(short(acc.LastError.Message, 160)))
+	}
+	b.WriteString("\n" + tx.accountHint)
+	return t.showCard(ctx, p, chatID, messageID, b.String(),
+		[]button{nav(tx.settings, "settings"), nav(tx.back, "home")})
+}
+
+func (t *Telegram) settingsPage(ctx context.Context, p app.Principal, chatID int64, messageID int, tx texts) error {
+	prefs, err := t.svc.Preferences(ctx, p)
+	if err != nil {
+		return t.showCard(ctx, p, chatID, messageID, tx.settingsHint, []button{nav(tx.back, "home")})
+	}
+	var b strings.Builder
+	b.WriteString("<b>" + tx.settings + "</b>\n")
+	fmt.Fprintf(&b, "%s: %s\n", tx.language, escape(string(langOf(prefs.Language))))
+	fmt.Fprintf(&b, "%s: %s\n\n%s", tx.autoCopy, onOff(prefs.AutoCopy, tx), tx.settingsHint)
+	return t.showCard(ctx, p, chatID, messageID, b.String(),
+		[]button{act("Tiếng Việt", "lang", string(langVI), 0, ""), act("English", "lang", string(langEN), 0, "")},
+		[]button{act(tx.on, "auto", "on", 0, ""), act(tx.off, "auto", "off", 0, "")},
+		[]button{nav(tx.back, "home")})
+}
+
+func (t *Telegram) previewCard(ctx context.Context, p app.Principal, chatID int64, messageID int, view app.PlanView, note string) error {
+	tx := t.text(ctx, p)
+	var b strings.Builder
+	fmt.Fprintf(&b, "<b>%s</b>\n", escape(fmt.Sprintf(tx.previewTitle, short(view.RootName, 60))))
+	fmt.Fprintf(&b, "%s: %s\n", tx.sourceLabel, escape(short(view.SourceName, 80)))
+	fmt.Fprintf(&b, "%s: %s\n", tx.targetLabel, escape(short(view.RootName, 80)))
+	seen := fmt.Sprintf("%d files, %d folders", view.Preview.ObservedFiles, view.Preview.ObservedFolders)
+	if !view.Preview.ScanComplete {
+		seen += " " + tx.scanIncomplete
+	}
+	fmt.Fprintf(&b, "%s: %s\n", tx.seenLabel, seen)
+	if note != "" {
+		fmt.Fprintf(&b, "\n%s\n", note)
+	}
+	payload, _ := json.Marshal(planPayload{Source: refOf(view.Plan), Root: view.RootName})
+	return t.showCard(ctx, p, chatID, messageID, b.String(),
+		[]button{act(tx.copy, "copy", view.ID, view.Revision, string(payload)), act(tx.destination, "choose_dest", view.ID, view.Revision, string(payload))},
+		[]button{act(tx.cancel, "cancel_preview", view.ID, view.Revision, "")})
+}
+
+// syncTimezone is the zone used by chat presets; schedules never use the host
+// timezone.
+const syncTimezone = "Asia/Ho_Chi_Minh"
+
+// refOf rebuilds a Drive reference for a plan without showing it to the user.
+func refOf(p state.Plan) string {
+	if p.ResourceKey == "" {
+		return p.SourceID
+	}
+	ref := drive.Reference{ID: p.SourceID, Key: p.ResourceKey}
+	return "https://drive.google.com/open?id=" + ref.ID + "&resourcekey=" + ref.Key
+}
+
+func (t *Telegram) jobCard(ctx context.Context, p app.Principal, chatID int64, messageID int, j state.Job, fresh bool) (int, error) {
+	tx := t.text(ctx, p)
+	text := jobText(tx, j)
+	if fresh {
+		text = tx.copyStarted + "\n" + text
+	}
+	return t.show(ctx, p, chatID, messageID, text, t.jobButtons(tx, j)...)
+}
+
+// submitted shows the new job card and starts its durable progress panel. The
+// panel edits that same message instead of sending another one.
+func (t *Telegram) submitted(ctx context.Context, p app.Principal, chatID int64, messageID int, j state.Job) error {
+	if err := t.store.EnqueueProgress(ctx, p.ID, j.ID, chatID, t.now().Add(t.editEvery)); err != nil {
+		t.log.Error("telegram: cannot queue the progress panel", "err", err)
+	}
+	mid, err := t.jobCard(ctx, p, chatID, messageID, j, true)
+	if err != nil {
+		return err
+	}
+	tx := t.text(ctx, p)
+	hash := hashText(jobText(tx, j))
+	if err := t.store.BindProgress(ctx, p.ID, j.ID, mid, hash, j.State); err != nil {
+		t.log.Warn("telegram: cannot bind the progress panel", "err", err)
+	}
+	return nil
+}
+
+func (t *Telegram) jobButtons(tx texts, j state.Job) [][]button {
+	control := func(label, action string) button { return act(label, action, j.ID, j.Revision, "") }
+	var rows [][]button
+	switch j.State {
+	case state.JobQueued, state.JobRunning, state.JobReconciling, state.JobPausing, state.JobCancelling:
+		rows = append(rows, []button{control(tx.pause, "pause"), control(tx.cancel, "job_cancel")})
+	case state.JobPaused:
+		rows = append(rows, []button{control(tx.resume, "resume"), control(tx.cancel, "job_cancel")})
+	case state.JobBlocked, state.JobFailed, state.JobPartial:
+		rows = append(rows, []button{control(tx.retry, "retry")})
+	}
+	rows = append(rows, []button{act(tx.details, "job", j.ID, j.Revision, ""), nav(tx.jobs, "jobs")})
+	return rows
+}
+
+func (t *Telegram) showError(ctx context.Context, p app.Principal, chatID int64, messageID int, err error) error {
+	tx := t.text(ctx, p)
+	ae := app.Classify(err)
+	if ae == nil {
+		ae = app.Fail(500, "internal_error", "Internal error.")
+	}
+	return t.showCard(ctx, p, chatID, messageID, fmt.Sprintf("%s: %s", tx.problemLabel, escape(ae.Message)),
+		[]button{nav(tx.back, "home")})
+}
