@@ -2,7 +2,7 @@
 # Install 502Drive from a GitHub release. The archive is verified against the
 # release's checksums.txt before anything is installed.
 #
-#   curl -fsSL https://raw.githubusercontent.com/GiaHung07/502Drive/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.sh | sh
 #
 # Environment:
 #   VERSION=v1.2.3   install this release instead of the latest
@@ -12,7 +12,7 @@
 # system-wide install use the .rpm/.deb package instead.
 set -eu
 
-repo="GiaHung07/502Drive"
+repo="itsgiahung/502Drive"
 prefix="${PREFIX:-$HOME/.local}"
 
 say() { printf '%s\n' "$*"; }

@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/GiaHung07/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/drive"
 )
 
 func goos() string { return runtime.GOOS }

@@ -20,7 +20,7 @@ dung đã kiểm bằng `rpm -qlp` + `rpm -Kv` + `rpm -i --test` (local, Fedora)
 Cài một dòng (không cần sudo, kiểm checksum, cài vào `~/.local/bin`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GiaHung07/502Drive/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.sh | sh
 ```
 
 Hoặc cài gói:

@@ -10,17 +10,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/GiaHung07/502Drive/internal/config"
-	"github.com/GiaHung07/502Drive/internal/daemon"
+	"github.com/itsgiahung/502Drive/internal/config"
+	"github.com/itsgiahung/502Drive/internal/daemon"
 )
 
 // Version is set at build time.
@@ -318,116 +316,6 @@ func (a *App) serveCmd() *cobra.Command {
 	}}
 	c.Flags().BoolVar(&maintenance, "maintenance", false, "do not start workers or accept new work")
 	return c
-}
-
-func (a *App) setupCmd() *cobra.Command {
-	var oauthClient, telegramToken string
-	var telegramOwner int64
-	var callbackPort int
-	c := &cobra.Command{Use: "setup", Short: "Create the private config and API token", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		// Validate every flag before touching the filesystem, so a bad value
-		// never leaves a half-configured setup behind.
-		oauthAbs, telegramAbs := "", ""
-		if oauthClient != "" {
-			abs, verr := privatePath(oauthClient)
-			if verr != nil {
-				return usage("the OAuth client file must be a private (0600) regular file: %v", verr)
-			}
-			oauthAbs = abs
-		}
-		if telegramToken != "" {
-			abs, verr := privatePath(telegramToken)
-			if verr != nil {
-				return usage("the Telegram token file must be a private (0600) regular file: %v", verr)
-			}
-			telegramAbs = abs
-		}
-		if cmd.Flags().Changed("telegram-owner-id") && telegramOwner <= 0 {
-			return usage("--telegram-owner-id must be a positive numeric Telegram user id")
-		}
-		if cmd.Flags().Changed("oauth-callback-port") && (callbackPort < 0 || callbackPort > 65535) {
-			return usage("--oauth-callback-port must be between 0 and 65535 (0 uses a free port)")
-		}
-		path := a.configPath()
-		cfg, err := config.Load(path)
-		created := false
-		if err != nil {
-			if _, statErr := os.Lstat(path); statErr == nil {
-				return localErr(ExitUsage, "config_invalid", err.Error())
-			}
-			if cfg, err = config.Setup(path); err != nil {
-				return localErr(ExitUsage, "setup_failed", err.Error())
-			}
-			created = true
-		}
-		changed := false
-		if oauthAbs != "" {
-			cfg.OAuthClientFile, changed = oauthAbs, true
-		}
-		if telegramAbs != "" {
-			cfg.TelegramTokenFile, changed = telegramAbs, true
-		}
-		if cmd.Flags().Changed("telegram-owner-id") {
-			cfg.TelegramOwnerID, changed = telegramOwner, true
-		}
-		if cmd.Flags().Changed("oauth-callback-port") {
-			cfg.OAuthCallbackPort, changed = callbackPort, true
-		}
-		if changed {
-			if err = config.Save(path, cfg); err != nil {
-				return localErr(ExitInternal, "setup_failed", err.Error())
-			}
-		}
-		if a.g.json {
-			b, _ := json.Marshal(map[string]any{"data": map[string]any{"config": path, "created": created, "data_dir": cfg.DataDir,
-				"token_file": cfg.TokenFile, "oauth_client_configured": cfg.OAuthClientFile != "",
-				"telegram_configured": cfg.TelegramTokenFile != "", "telegram_owner_id": cfg.TelegramOwnerID,
-				"oauth_callback_port": cfg.OAuthCallbackPort}, "request_id": ""})
-			fmt.Fprintln(a.out(), string(b))
-			return nil
-		}
-		verb := "Using existing"
-		if created {
-			verb = "Created"
-		}
-		fmt.Fprintf(a.out(), "%s config  %s\n", verb, path)
-		fmt.Fprintf(a.out(), "API token       %s (private; never printed)\n", cfg.TokenFile)
-		fmt.Fprintf(a.out(), "Data directory  %s\n", cfg.DataDir)
-		if cfg.TelegramTokenFile != "" {
-			fmt.Fprintf(a.out(), "Telegram        token file configured (never printed), owner id %d\n", cfg.TelegramOwnerID)
-		}
-		if cfg.OAuthCallbackPort > 0 {
-			fmt.Fprintf(a.out(), "OAuth callback  fixed loopback port %d\n", cfg.OAuthCallbackPort)
-		}
-		fmt.Fprintln(a.out())
-		fmt.Fprintln(a.out(), "Next steps:")
-		n := 1
-		if cfg.OAuthClientFile == "" {
-			fmt.Fprintf(a.out(), "  %d. 502drive setup --oauth-client client_secret.json   (see docs/oauth-setup.md)\n", n)
-			n++
-		}
-		fmt.Fprintf(a.out(), "  %d. 502drive serve                                     (keep running)\n", n)
-		fmt.Fprintf(a.out(), "  %d. 502drive account login\n", n+1)
-		fmt.Fprintf(a.out(), "  %d. 502drive destinations add FOLDER_LINK && 502drive destinations default ID\n", n+2)
-		return nil
-	}}
-	c.Flags().StringVar(&oauthClient, "oauth-client", "", "Google OAuth Desktop client JSON (kept in place; must be 0600)")
-	c.Flags().StringVar(&telegramToken, "telegram-token-file", "", "private file holding the Telegram bot token")
-	c.Flags().Int64Var(&telegramOwner, "telegram-owner-id", 0, "Telegram numeric user id of the owner")
-	c.Flags().IntVar(&callbackPort, "oauth-callback-port", 0, "fixed loopback port for the OAuth callback (0 = any free port)")
-	return c
-}
-
-// privatePath validates an argument that must reference a private regular file.
-func privatePath(path string) (string, error) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	if _, err = config.ReadPrivate(abs); err != nil {
-		return "", err
-	}
-	return abs, nil
 }
 
 // openBrowser launches the system browser without a shell.

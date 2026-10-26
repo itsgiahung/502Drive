@@ -10,7 +10,7 @@ kiểm SHA256 trước khi chạy. Chưa acceptance trên Windows 10/11 trong ph
 - **Installer:** chạy `502drive-setup.exe`; chọn "Start 502Drive in the
   notification area when I sign in" nếu muốn autostart (mặc định tắt). Shortcut
   Start Menu: tray + menu. Gỡ cài **không** xóa config/token/data người dùng.
-- **Một dòng (PowerShell):** `irm https://raw.githubusercontent.com/GiaHung07/502Drive/main/scripts/install.ps1 | iex`
+- **Một dòng (PowerShell):** `irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex`
   — kiểm checksum, cài vào `%LOCALAPPDATA%\Programs\502Drive`, thêm vào PATH, tạo
   alias `502`.
 - **Installer** cũng có tùy chọn thêm vào PATH (mặc định bật) và cài `502.cmd`. Chưa

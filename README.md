@@ -41,15 +41,31 @@ starts.
 ## Quick start
 
 ```bash
-502drive          # (or just: 502) first run: creates the private config, starts the daemon and tray, opens the TUI
+502drive          # (or just: 502) asks for your keys on the first run, starts everything, opens the TUI
 ```
 
-Then connect Google once. You need your own OAuth *Desktop* client
-([step by step](docs/oauth-setup.md)):
+You only need two things from Google once: an OAuth **Desktop** client
+([2 minutes, step by step](docs/oauth-setup.md)). Put its id and secret in a `.env`
+file next to where you run the command, or hand over the downloaded JSON:
 
 ```bash
-502drive setup --oauth-client client_secret.json   # the file must be chmod 600
-502drive account login                              # opens the browser, waits for approval
+# .env  (read by `502drive setup`; copied into private 0600 files, never printed)
+GOOGLE_OAUTH_CLIENT_ID=1234-abc.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=...
+TELEGRAM_BOT_TOKEN=123456:ABC...        # optional
+TELEGRAM_OWNER_ID=123456789             # optional, your numeric id from @userinfobot
+```
+
+```bash
+502drive setup                              # reads ./.env (or --env-file PATH), or asks in the terminal
+502drive setup --oauth-client client_secret.json   # alternative: the JSON Google lets you download
+```
+
+Then press **`l`** in the TUI (or run `502drive account login`): it opens the Google
+page in your browser and shows the link too, in case you are on another machine.
+Approve once and you are connected. Add a destination folder and paste a link:
+
+```bash
 502drive destinations add 'https://drive.google.com/drive/folders/FOLDER_ID'
 502drive copy 'https://drive.google.com/drive/folders/SOURCE_ID' --wait
 ```
@@ -62,8 +78,8 @@ the tray** stops them (running jobs resume on the next start).
 One line (verifies the SHA-256 checksum before installing; needs a published release):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GiaHung07/502Drive/main/scripts/install.sh | sh        # Linux, macOS
-irm https://raw.githubusercontent.com/GiaHung07/502Drive/main/scripts/install.ps1 | iex            # Windows (PowerShell)
+curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.sh | sh        # Linux, macOS
+irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex            # Windows (PowerShell)
 ```
 
 Both install `502drive` and the short alias **`502`**, so after installing you can
@@ -74,7 +90,7 @@ just type `502`.
 | Linux (Fedora/RHEL, Debian/Ubuntu) | `.rpm` / `.deb` from the release page (installs `502drive` and `502`). [Guide](docs/install-linux.md) |
 | Windows 10/11 | `.zip`, or the installer (unsigned: SmartScreen will warn). [Guide](docs/install-windows.md) |
 | Docker | [Guide](docs/install-docker.md) |
-| From source | `go install github.com/GiaHung07/502Drive/cmd/502drive@latest` (Go 1.27), or `make build` |
+| From source | `go install github.com/itsgiahung/502Drive/cmd/502drive@latest` (Go 1.27), or `make build` |
 
 Start with the system: `502drive autostart enable` (XDG autostart on Linux, the
 Run key on Windows). Check for a new release with `502drive update` (it never
@@ -106,7 +122,8 @@ when idle. `--no-motion` makes it still; `NO_COLOR` or `--plain` removes it.
 ### Telegram (optional)
 
 ```bash
-502drive setup --telegram-token-file bot-token --telegram-owner-id 123456789
+# put TELEGRAM_BOT_TOKEN and TELEGRAM_OWNER_ID in .env (see above), then:
+502drive setup
 ```
 
 The bot is private-chat only, allow-listed, and uses the same service and

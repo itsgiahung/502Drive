@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/GiaHung07/502Drive/internal/tray"
+	"github.com/itsgiahung/502Drive/internal/tray"
 )
 
 // assetsCmd writes the files the packages need: icons and shell completions.

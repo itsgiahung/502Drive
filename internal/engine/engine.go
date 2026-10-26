@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/drive"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 // Engine claims queued jobs and drives them to a truthful final state.

@@ -1,6 +1,6 @@
 # Kiến trúc
 
-Go 1.27, một module (`github.com/GiaHung07/502Drive`), một binary chính
+Go 1.27, một module (`github.com/itsgiahung/502Drive`), một binary chính
 `502drive` và một wrapper GUI `502drive-tray` cho Windows. Rust/Tauri/React đã
 gỡ 2026-10-26 (archive ngoài git); không còn runtime thứ hai.
 

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/app"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 // admit creates one queued job for principal, like a CLI copy would.

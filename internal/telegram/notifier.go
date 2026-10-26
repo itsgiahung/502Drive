@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/app"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 // Notification kinds map a finished job to the preference that gates it.

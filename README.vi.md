@@ -40,15 +40,31 @@ tự lên.
 ## Bắt đầu nhanh
 
 ```bash
-502drive          # (hoặc chỉ: 502) lần đầu: tạo config riêng tư, bật daemon và khay, mở TUI
+502drive          # (hoặc chỉ: 502) lần đầu hỏi khóa của bạn, bật mọi thứ, mở TUI
 ```
 
-Sau đó kết nối Google một lần. Bạn cần OAuth client loại *Desktop* của riêng mình
-([hướng dẫn](docs/oauth-setup.md)):
+Bạn chỉ cần lấy từ Google một lần: OAuth client loại **Desktop**
+([2 phút, từng bước](docs/oauth-setup.md)). Điền id và secret vào file `.env` ở thư
+mục bạn chạy lệnh, hoặc đưa file JSON đã tải về:
 
 ```bash
-502drive setup --oauth-client client_secret.json   # file phải chmod 600
-502drive account login                              # mở trình duyệt, chờ bạn cho phép
+# .env  (do `502drive setup` đọc; được chép vào file riêng tư 0600, không bao giờ in ra)
+GOOGLE_OAUTH_CLIENT_ID=1234-abc.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=...
+TELEGRAM_BOT_TOKEN=123456:ABC...        # tùy chọn
+TELEGRAM_OWNER_ID=123456789             # tùy chọn, số id của bạn lấy từ @userinfobot
+```
+
+```bash
+502drive setup                              # đọc ./.env (hoặc --env-file PATH), hoặc hỏi ngay trong terminal
+502drive setup --oauth-client client_secret.json   # cách khác: file JSON Google cho tải về
+```
+
+Sau đó nhấn **`l`** trong TUI (hoặc chạy `502drive account login`): app mở trang Google
+trong trình duyệt và hiện cả link, phòng khi bạn đang ở máy khác. Cho phép một lần là
+kết nối xong. Thêm thư mục đích rồi dán link:
+
+```bash
 502drive destinations add 'https://drive.google.com/drive/folders/FOLDER_ID'
 502drive copy 'https://drive.google.com/drive/folders/SOURCE_ID' --wait
 ```
@@ -61,8 +77,8 @@ chúng (job đang chạy sẽ tiếp tục ở lần mở sau).
 Một dòng (kiểm tra checksum SHA-256 trước khi cài; cần đã có bản phát hành):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GiaHung07/502Drive/main/scripts/install.sh | sh        # Linux, macOS
-irm https://raw.githubusercontent.com/GiaHung07/502Drive/main/scripts/install.ps1 | iex            # Windows (PowerShell)
+curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.sh | sh        # Linux, macOS
+irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex            # Windows (PowerShell)
 ```
 
 Cả hai cài `502drive` và alias ngắn **`502`**, nên cài xong chỉ cần gõ `502`.
@@ -72,7 +88,7 @@ Cả hai cài `502drive` và alias ngắn **`502`**, nên cài xong chỉ cần 
 | Linux (Fedora/RHEL, Debian/Ubuntu) | `.rpm` / `.deb` ở trang release (cài `502drive` và `502`). [Hướng dẫn](docs/install-linux.md) |
 | Windows 10/11 | `.zip`, hoặc bộ cài (chưa ký: SmartScreen sẽ cảnh báo). [Hướng dẫn](docs/install-windows.md) |
 | Docker | [Hướng dẫn](docs/install-docker.md) |
-| Từ mã nguồn | `go install github.com/GiaHung07/502Drive/cmd/502drive@latest` (Go 1.27), hoặc `make build` |
+| Từ mã nguồn | `go install github.com/itsgiahung/502Drive/cmd/502drive@latest` (Go 1.27), hoặc `make build` |
 
 Chạy cùng hệ thống: `502drive autostart enable`. Kiểm tra bản mới bằng
 `502drive update` (không bao giờ tự cài).
@@ -103,7 +119,8 @@ làm mèo đứng yên; `NO_COLOR` hoặc `--plain` tắt hẳn.
 ### Telegram (tùy chọn)
 
 ```bash
-502drive setup --telegram-token-file bot-token --telegram-owner-id 123456789
+# điền TELEGRAM_BOT_TOKEN và TELEGRAM_OWNER_ID vào .env (xem trên), rồi:
+502drive setup
 ```
 
 Bot chỉ chạy trong chat riêng, có danh sách cho phép, dùng chung service và quyền

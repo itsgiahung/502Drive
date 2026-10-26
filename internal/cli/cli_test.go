@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/config"
-	"github.com/GiaHung07/502Drive/internal/daemon"
-	"github.com/GiaHung07/502Drive/internal/drive"
-	"github.com/GiaHung07/502Drive/internal/drive/drivetest"
+	"github.com/itsgiahung/502Drive/internal/config"
+	"github.com/itsgiahung/502Drive/internal/daemon"
+	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/drive/drivetest"
 )
 
 type rig struct {

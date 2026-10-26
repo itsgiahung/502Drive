@@ -3,7 +3,7 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/GiaHung07/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/app"
 )
 
 // syncRoutes registers the collection sync routes of the HTTP contract.

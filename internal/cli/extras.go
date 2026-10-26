@@ -17,8 +17,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/GiaHung07/502Drive/internal/config"
-	"github.com/GiaHung07/502Drive/internal/update"
+	"github.com/itsgiahung/502Drive/internal/config"
+	"github.com/itsgiahung/502Drive/internal/update"
 )
 
 // ---- logs ----

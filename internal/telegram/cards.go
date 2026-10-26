@@ -10,10 +10,10 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/GiaHung07/502Drive/internal/app"
-	"github.com/GiaHung07/502Drive/internal/drive"
-	"github.com/GiaHung07/502Drive/internal/schedule"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/schedule"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 // button is one inline-keyboard cell. nav buttons are static and reusable;

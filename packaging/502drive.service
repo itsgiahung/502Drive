@@ -1,6 +1,6 @@
 [Unit]
 Description=502Drive daemon (copy Google Drive links and keep them in sync)
-Documentation=https://github.com/GiaHung07/502Drive
+Documentation=https://github.com/itsgiahung/502Drive
 After=network-online.target
 Wants=network-online.target
 # User unit, opt-in only: there is no [Install] section, so the package never

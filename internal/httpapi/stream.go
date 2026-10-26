@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/app"
 )
 
 const (

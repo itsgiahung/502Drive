@@ -23,7 +23,7 @@ import (
 	"github.com/gofrs/flock"
 	_ "modernc.org/sqlite"
 
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 // Layout of a backup directory.

@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/GiaHung07/502Drive/internal/schedule"
+	"github.com/itsgiahung/502Drive/internal/schedule"
 )
 
 // defaultSyncTimezone is used when a preset does not name a zone. Schedules

@@ -22,13 +22,13 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
-	"github.com/GiaHung07/502Drive/internal/app"
-	"github.com/GiaHung07/502Drive/internal/config"
-	"github.com/GiaHung07/502Drive/internal/drive"
-	"github.com/GiaHung07/502Drive/internal/engine"
-	"github.com/GiaHung07/502Drive/internal/httpapi"
-	"github.com/GiaHung07/502Drive/internal/state"
-	"github.com/GiaHung07/502Drive/internal/telegram"
+	"github.com/itsgiahung/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/config"
+	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/engine"
+	"github.com/itsgiahung/502Drive/internal/httpapi"
+	"github.com/itsgiahung/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/telegram"
 )
 
 type Options struct {

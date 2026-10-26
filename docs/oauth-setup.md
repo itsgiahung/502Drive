@@ -9,19 +9,32 @@ Source: [internal/drive/auth.go](../internal/drive/auth.go),
 
 ## Chuẩn bị
 
-1. Google Cloud Console → tạo OAuth client **Desktop app**; tải JSON.
-2. Đặt file ở chỗ private (0600), ví dụ `~/.config/502drive-next/client_secret.json`.
-3. `502drive setup --oauth-client ~/.config/502drive-next/client_secret.json`.
+1. Google Cloud Console → *APIs & Services* → bật **Google Drive API** → *Credentials* →
+   tạo OAuth client loại **Desktop app**. Màn hình consent để *Testing* và thêm email
+   của bạn vào *Test users*.
+2. Đưa khóa cho 502Drive bằng **một** trong ba cách (tất cả đều được chép vào
+   `<config>/secrets/oauth-client.json` với quyền 0600; file gốc không bị sửa và giá trị
+   không bao giờ được in ra):
+   - **`.env`**: `GOOGLE_OAUTH_CLIENT_ID=…apps.googleusercontent.com` và
+     `GOOGLE_OAUTH_CLIENT_SECRET=…` trong `./.env` (hoặc `<config>/.env`, hoặc
+     `--env-file PATH`), rồi `502drive setup`. Tên cũ `GDCLONE__GOOGLE_OAUTH__CLIENT_ID`/
+     `…CLIENT_SECRET` cũng được hiểu. Biến môi trường cùng tên cũng được; cờ luôn thắng.
+   - **File JSON** tải từ Google: `502drive setup --oauth-client client_secret.json`.
+     File dạng *Web* bị từ chối (cần Desktop).
+   - **Hỏi trong terminal**: chạy `502drive` hoặc `502drive setup` lần đầu và kéo-thả file JSON.
 
-Client JSON được **giữ nguyên tại chỗ** và chỉ đọc khi `serve` khởi động; không
-copy secret vào config/DB/response.
+Client được đọc khi daemon khởi động; secret không nằm trong DB hay response.
 
 ## Đăng nhập
 
 ```bash
-502drive serve                      # terminal/daemon khác
-502drive account login              # in URL, chờ callback loopback
+502drive                            # mở TUI, nhấn l (trang Account) — tự mở trình duyệt, hiện link và chờ
+502drive account login              # tương đương trên dòng lệnh: in URL, chờ callback loopback
 ```
+
+Trong TUI, link hiện hai lần: dạng bấm được (OSC 8) và dạng chữ ngắt dòng để chép lại
+(ví dụ khi bạn đang ở SSH, xem thêm `ssh -L` bên dưới). `esc` chỉ ẩn link; link còn hiệu
+lực tới khi hết 10 phút.
 
 - Luồng PKCE loopback; URL chứa `redirect_uri=http://127.0.0.1:<port>/oauth/callback`.
 - Code chỉ dùng một lần; callback sai/không khớp state không consume session hợp lệ;
@@ -62,7 +75,7 @@ Callback phải đến **cùng** host/port với `redirect_uri`.
 
 | Triệu chứng | Nguyên nhân thường gặp |
 | --- | --- |
-| `oauth_not_configured` | Chưa `setup --oauth-client` hoặc file không đọc được |
+| `oauth_not_configured` | Chưa có khóa Google: điền `.env` rồi `502drive setup`, hoặc `setup --oauth-client` |
 | Login xong nhưng account `disconnected` | Callback không tới đúng port/namespace, hoặc file token không ghi được |
 | `account_reconnect_required` | Refresh token hết hiệu lực, quyền bị thu hồi, client đổi |
 | Docker login treo | Chưa publish/forward cổng callback |

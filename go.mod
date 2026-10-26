@@ -1,4 +1,4 @@
-module github.com/GiaHung07/502Drive
+module github.com/itsgiahung/502Drive
 
 go 1.27.3
 

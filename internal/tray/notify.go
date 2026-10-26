@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/GiaHung07/502Drive/internal/i18n"
+	"github.com/itsgiahung/502Drive/internal/i18n"
 )
 
 // Notice is one desktop notification.

@@ -8,8 +8,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/GiaHung07/502Drive/internal/i18n"
-	"github.com/GiaHung07/502Drive/internal/mascot"
+	"github.com/itsgiahung/502Drive/internal/i18n"
+	"github.com/itsgiahung/502Drive/internal/mascot"
 )
 
 var spinFrames = []string{"⠋", "⠙", "⠹", "⠸"}
@@ -167,12 +167,20 @@ func (m Model) workLine() string {
 		return m.accent(text)
 	case m.snap.Status.Running > 0 || m.snap.Status.Queued > 0:
 		return m.accent(m.tf(i18n.WorkingNow, 0, 0))
+	case m.needsGoogle():
+		return m.warn(m.t(i18n.LoginHome))
 	case m.opt.now().Sub(m.started) < greetFor:
 		return m.dim(m.greeting())
 	case m.opt.now().Before(m.happyUntil):
 		return m.good(m.t(i18n.AllDone))
 	}
 	return m.dim(m.t(i18n.HomeHint))
+}
+
+// needsGoogle reports a daemon that is up but has no usable Google account.
+func (m Model) needsGoogle() bool {
+	st := m.snap.Status.AccountStatus
+	return m.online && m.acts.Login != nil && st != "" && st != "connected"
 }
 
 func (m Model) greeting() string {
@@ -381,6 +389,7 @@ func (m Model) accountView() []string {
 		lines = append(lines, m.kv(m.t(i18n.Problem), m.warn(Sanitize(m.snap.Account.Problem))))
 	}
 	lines = append(lines, m.kv(m.t(i18n.Telegram), Sanitize(orDash(m.snap.Status.BotState))))
+	lines = append(lines, m.loginLines()...)
 	if len(m.snap.Checks) == 0 {
 		lines = append(lines, "", m.dim(m.t(i18n.AccountKeys)))
 		return lines

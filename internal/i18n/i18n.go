@@ -81,6 +81,13 @@ const (
 	NoticeDone   Key = "notice_done"
 	NoticePart   Key = "notice_partial"
 	NoticeFail   Key = "notice_failed"
+	LoginHome    Key = "login_home"
+	LoginWaiting Key = "login_waiting"
+	LoginOpen    Key = "login_open"
+	LoginDone    Key = "login_done"
+	LoginFailed  Key = "login_failed"
+	LoginExpired Key = "login_expired"
+	LoginHide    Key = "login_hide"
 	Language     Key = "language"
 	Timezone     Key = "timezone"
 	Save         Key = "save"
@@ -168,7 +175,7 @@ var VI = map[Key]string{
 	JobKeys:      "p tạm dừng · u tiếp tục · c hủy · t thử lại · esc quay lại",
 	CollKeys:     "d hằng ngày · h mỗi giờ · e mỗi 6 giờ · t realtime · n chạy ngay · p tạm dừng · x dừng · esc quay lại",
 	DestKeys:     "enter đặt mặc định · esc quay lại",
-	AccountKeys:  "d chạy kiểm tra offline",
+	AccountKeys:  "l đăng nhập / kết nối lại Google · d chạy kiểm tra offline",
 	SettingsKeys: "l đổi ngôn ngữ · esc quay lại",
 	FooterKeys:   "1-6 chuyển màn · ↑↓ di chuyển · enter mở · esc quay lại · ? trợ giúp · q thoát",
 	FooterJob:    "p tạm dừng · u tiếp tục · c hủy · t thử lại · esc quay lại · q thoát",
@@ -194,6 +201,13 @@ var VI = map[Key]string{
 	NoticeDone:   "Đã copy xong",
 	NoticePart:   "Copy xong một phần",
 	NoticeFail:   "Copy thất bại",
+	LoginHome:    "Google chưa kết nối — nhấn l để đăng nhập.",
+	LoginWaiting: "Đang chờ bạn cho phép trên trang Google…",
+	LoginOpen:    "▶ Bấm vào đây để mở trang đăng nhập Google",
+	LoginDone:    "Đã kết nối Google.",
+	LoginFailed:  "Đăng nhập không hoàn tất. Nhấn l để thử lại.",
+	LoginExpired: "Link đăng nhập đã hết hạn. Nhấn l để tạo link mới.",
+	LoginHide:    "Link còn hiệu lực khoảng 10 phút · esc để ẩn",
 	Language:     "Ngôn ngữ", Timezone: "Múi giờ", Save: "Lưu", Cancel: "Hủy",
 	Pause: "Tạm dừng", Resume: "Tiếp tục", Retry: "Thử lại", RunNow: "Chạy ngay",
 	EnableSync: "Bật sync", ChangeSched: "Đổi lịch", StopSync: "Dừng sync",
@@ -239,7 +253,7 @@ var EN = map[Key]string{
 	JobKeys:      "p pause · u resume · c cancel · t retry · esc back",
 	CollKeys:     "d daily · h hourly · e every 6h · t realtime · n run now · p pause · x stop · esc back",
 	DestKeys:     "enter set as default · esc back",
-	AccountKeys:  "d run the offline doctor checks",
+	AccountKeys:  "l sign in / reconnect Google · d run the offline doctor checks",
 	SettingsKeys: "l switch language · esc back",
 	FooterKeys:   "1-6 screens · ↑↓ move · enter open · esc back · ? help · q quit",
 	FooterJob:    "p pause · u resume · c cancel · t retry · esc back · q quit",
@@ -265,6 +279,13 @@ var EN = map[Key]string{
 	NoticeDone:   "Copy finished",
 	NoticePart:   "Copy finished partly",
 	NoticeFail:   "Copy failed",
+	LoginHome:    "Google is not connected — press l to sign in.",
+	LoginWaiting: "Waiting for you to approve on the Google page…",
+	LoginOpen:    "▶ Click here to open the Google sign-in page",
+	LoginDone:    "Google is connected.",
+	LoginFailed:  "Sign-in did not complete. Press l to try again.",
+	LoginExpired: "The sign-in link expired. Press l for a new one.",
+	LoginHide:    "The link is valid for about 10 minutes · esc hides it",
 	Language:     "Language", Timezone: "Timezone", Save: "Save", Cancel: "Cancel",
 	Pause: "Pause", Resume: "Resume", Retry: "Retry", RunNow: "Run now",
 	EnableSync: "Enable sync", ChangeSched: "Change schedule", StopSync: "Stop sync",
@@ -342,7 +363,7 @@ func HelpLines(lang string) []string {
 			"Library:    d hằng ngày 22:00 · h mỗi giờ · e mỗi 6 giờ · t realtime",
 			"            n chạy ngay · p tạm dừng sync · x dừng sync",
 			"Destination: enter đặt làm mặc định",
-			"Account:    d chạy kiểm tra offline",
+			"Account:    l đăng nhập / kết nối lại Google · d chạy kiểm tra offline",
 			"Settings:   l đổi ngôn ngữ (vi/en)",
 		}
 	}
@@ -360,7 +381,7 @@ func HelpLines(lang string) []string {
 		"Library:    d daily 22:00 · h hourly · e every 6h · t realtime",
 		"            n run now · p pause sync · x stop sync",
 		"Destination: enter sets the default folder",
-		"Account:    d run the offline doctor checks",
+		"Account:    l sign in / reconnect Google · d run the offline doctor checks",
 		"Settings:   l switch language (vi/en)",
 	}
 }

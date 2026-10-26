@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/GiaHung07/502Drive/internal/drive"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 const (

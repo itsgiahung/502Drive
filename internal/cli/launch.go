@@ -12,9 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/GiaHung07/502Drive/internal/config"
-	"github.com/GiaHung07/502Drive/internal/i18n"
-	"github.com/GiaHung07/502Drive/internal/tray"
+	"github.com/itsgiahung/502Drive/internal/i18n"
+	"github.com/itsgiahung/502Drive/internal/tray"
 )
 
 const (
@@ -89,19 +88,13 @@ func (a *App) bringUp(ctx context.Context) (upResult, error) {
 }
 
 // ensureConfig creates the private config and API token on the very first run.
+// In a terminal it also asks for the Google client and the Telegram bot (all
+// optional); keys found in the environment or a .env file are taken silently.
 func (a *App) ensureConfig() error {
-	path := a.configPath()
-	if _, err := os.Lstat(path); err == nil {
+	if _, err := os.Lstat(a.configPath()); err == nil {
 		return nil
 	}
-	if _, err := config.Setup(path); err != nil {
-		return localErr(ExitUsage, "setup_failed", err.Error())
-	}
-	if !a.g.quiet && !a.g.json {
-		fmt.Fprintf(a.errw(), "First run: created the private config at %s\n", path)
-	}
-	a.cfgSet = false
-	return nil
+	return a.runSetup(&setupInput{}, a.interactive())
 }
 
 func (a *App) stateDir() string { return filepath.Dir(a.configPath()) }

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/config"
-	"github.com/GiaHung07/502Drive/internal/maintenance"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/config"
+	"github.com/itsgiahung/502Drive/internal/maintenance"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 // TestMaintenanceCommands exercises backup/restore/cleanup through the CLI:

@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/schedule"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/schedule"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 // SyncRequest is one subscription configuration. The HTTP layer decodes it

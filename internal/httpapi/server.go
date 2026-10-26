@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/app"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 const maxBody = 64 << 10

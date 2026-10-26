@@ -9,8 +9,8 @@ import (
 
 	"github.com/go-telegram/bot"
 
-	"github.com/GiaHung07/502Drive/internal/app"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 // notifyLoop delivers queued progress/final messages. It is the only writer of

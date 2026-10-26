@@ -5,7 +5,7 @@
 **Do not open a public issue for security problems.** Report privately via GitHub
 Security Advisories:
 
-<https://github.com/GiaHung07/502Drive/security/advisories/new>
+<https://github.com/itsgiahung/502Drive/security/advisories/new>
 
 Include a description, affected version/commit, reproduction steps and impact.
 You will get a response and a fix or mitigation timeline; credit is optional.

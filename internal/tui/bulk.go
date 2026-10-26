@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/GiaHung07/502Drive/internal/i18n"
+	"github.com/itsgiahung/502Drive/internal/i18n"
 )
 
 // rate estimates items per second for one running job with an exponential

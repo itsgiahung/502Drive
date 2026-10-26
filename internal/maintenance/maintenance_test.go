@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 // setupDir builds a stopped data directory with one queued job, a master key,

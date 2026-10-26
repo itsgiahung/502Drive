@@ -15,7 +15,7 @@ import (
 )
 
 // Repo is the project's GitHub repository.
-const Repo = "GiaHung07/502Drive"
+const Repo = "itsgiahung/502Drive"
 
 // Release is the latest published release.
 type Release struct {

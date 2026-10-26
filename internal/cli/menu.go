@@ -14,9 +14,9 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
-	"github.com/GiaHung07/502Drive/internal/i18n"
-	"github.com/GiaHung07/502Drive/internal/schedule"
-	"github.com/GiaHung07/502Drive/internal/tui"
+	"github.com/itsgiahung/502Drive/internal/i18n"
+	"github.com/itsgiahung/502Drive/internal/schedule"
+	"github.com/itsgiahung/502Drive/internal/tui"
 )
 
 var errBack = errors.New("back")

@@ -6,7 +6,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/GiaHung07/502Drive/internal/i18n"
+	"github.com/itsgiahung/502Drive/internal/i18n"
 )
 
 // Action IDs are fixed: the tray never passes user text as an action.

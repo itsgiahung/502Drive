@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/GiaHung07/502Drive/internal/cli"
+	"github.com/itsgiahung/502Drive/internal/cli"
 )
 
 func main() {

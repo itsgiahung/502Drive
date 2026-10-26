@@ -1,8 +1,8 @@
 # Install 502Drive on Windows from a GitHub release (checksum verified).
-#   irm https://raw.githubusercontent.com/GiaHung07/502Drive/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex
 # Parameters (as environment variables): VERSION (default latest), PREFIX (default %LOCALAPPDATA%\Programs\502Drive)
 $ErrorActionPreference = 'Stop'
-$repo = 'GiaHung07/502Drive'
+$repo = 'itsgiahung/502Drive'
 $prefix = if ($env:PREFIX) { $env:PREFIX } else { Join-Path $env:LOCALAPPDATA 'Programs\502Drive' }
 $base = if ($env:DRIVE502_RELEASE_BASE) { $env:DRIVE502_RELEASE_BASE }
         elseif ($env:VERSION) { "https://github.com/$repo/releases/download/$($env:VERSION)" }

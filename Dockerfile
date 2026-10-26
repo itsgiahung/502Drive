@@ -20,7 +20,7 @@ ARG VERSION=docker
 
 RUN CGO_ENABLED=0 GOOS=linux go build \
         -trimpath \
-        -ldflags "-s -w -X github.com/GiaHung07/502Drive/internal/cli.Version=${VERSION}" \
+        -ldflags "-s -w -X github.com/itsgiahung/502Drive/internal/cli.Version=${VERSION}" \
         -o /out/502drive ./cmd/502drive \
     && mkdir -p /out/config /out/data
 

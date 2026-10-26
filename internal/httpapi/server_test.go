@@ -16,11 +16,11 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/GiaHung07/502Drive/internal/app"
-	"github.com/GiaHung07/502Drive/internal/drive"
-	"github.com/GiaHung07/502Drive/internal/drive/drivetest"
-	"github.com/GiaHung07/502Drive/internal/engine"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/drive/drivetest"
+	"github.com/itsgiahung/502Drive/internal/engine"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 const testToken = "test-token-synthetic"

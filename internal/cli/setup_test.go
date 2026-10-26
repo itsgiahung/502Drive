@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GiaHung07/502Drive/internal/config"
+	"github.com/itsgiahung/502Drive/internal/config"
 )
 
 func TestSetupWritesTelegramAndCallbackOptions(t *testing.T) {
@@ -39,8 +39,15 @@ func TestSetupWritesTelegramAndCallbackOptions(t *testing.T) {
 	if err = json.Unmarshal(raw, &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.TelegramTokenFile != tokenFile || cfg.TelegramOwnerID != 4242 || cfg.OAuthCallbackPort != 50200 {
+	if cfg.TelegramTokenFile == tokenFile || cfg.TelegramOwnerID != 4242 || cfg.OAuthCallbackPort != 50200 {
 		t.Fatalf("config = %+v", cfg)
+	}
+	stored, err := os.ReadFile(cfg.TelegramTokenFile)
+	if err != nil || strings.TrimSpace(string(stored)) != "123456:synthetic-token" {
+		t.Fatalf("the token was not copied into the private store: %q, %v", stored, err)
+	}
+	if info, err := os.Stat(cfg.TelegramTokenFile); err != nil || info.Mode().Perm()&0o077 != 0 {
+		t.Fatalf("stored token permissions = %v", info.Mode())
 	}
 	if info, err := os.Stat(cfgPath); err != nil || info.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("config permissions = %v", info.Mode())
@@ -58,7 +65,7 @@ func TestSetupRejectsUnsafeOptions(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"group-readable token", []string{"setup", "--telegram-token-file", shared}},
+		{"not a bot token", []string{"setup", "--telegram-token-file", shared}},
 		{"missing token", []string{"setup", "--telegram-token-file", filepath.Join(home, "nope")}},
 		{"zero owner", []string{"setup", "--telegram-owner-id", "0"}},
 		{"negative owner", []string{"setup", "--telegram-owner-id", "-5"}},

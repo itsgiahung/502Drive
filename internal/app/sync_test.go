@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/drive"
-	"github.com/GiaHung07/502Drive/internal/drive/drivetest"
-	"github.com/GiaHung07/502Drive/internal/schedule"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/drive/drivetest"
+	"github.com/itsgiahung/502Drive/internal/schedule"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 // clock is a settable time source for schedule math.

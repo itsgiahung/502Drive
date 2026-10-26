@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/app"
-	"github.com/GiaHung07/502Drive/internal/drive"
-	"github.com/GiaHung07/502Drive/internal/drive/drivetest"
-	"github.com/GiaHung07/502Drive/internal/schedule"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/drive/drivetest"
+	"github.com/itsgiahung/502Drive/internal/schedule"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 // syncRig is a stopped daemon: store, fake provider, app service and the

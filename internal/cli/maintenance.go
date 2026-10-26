@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/GiaHung07/502Drive/internal/maintenance"
+	"github.com/itsgiahung/502Drive/internal/maintenance"
 )
 
 // maintenanceCmds are offline data-directory commands: they never contact the

@@ -26,7 +26,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X github.com/GiaHung07/502Drive/internal/cli.Version={{ .Version }}
+      - -s -w -X github.com/itsgiahung/502Drive/internal/cli.Version={{ .Version }}
     goos:
       - linux
       - windows
@@ -51,7 +51,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -H=windowsgui -X github.com/GiaHung07/502Drive/internal/cli.Version={{ .Version }}
+      - -s -w -H=windowsgui -X github.com/itsgiahung/502Drive/internal/cli.Version={{ .Version }}
     goos:
       - windows
     goarch:
@@ -103,7 +103,7 @@ nfpms:
   - id: linux
     package_name: 502drive
     vendor: 502Drive
-    homepage: https://github.com/GiaHung07/502Drive
+    homepage: https://github.com/itsgiahung/502Drive
     maintainer: 502Drive contributors
     description: |-
       Copy Google Drive links server-side and keep a copied folder in sync.

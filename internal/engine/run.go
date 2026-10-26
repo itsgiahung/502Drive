@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/drive"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 const maxTransientAttempts = 6

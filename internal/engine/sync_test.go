@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/GiaHung07/502Drive/internal/drive"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 func (e *env) runNow(collection string) state.Job {

@@ -10,7 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/GiaHung07/502Drive/internal/cli"
+	"github.com/itsgiahung/502Drive/internal/cli"
 )
 
 func main() {

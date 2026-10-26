@@ -10,9 +10,9 @@ import (
 
 	"github.com/go-telegram/bot/models"
 
-	"github.com/GiaHung07/502Drive/internal/app"
-	"github.com/GiaHung07/502Drive/internal/drive"
-	"github.com/GiaHung07/502Drive/internal/state"
+	"github.com/itsgiahung/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 func (t *Telegram) onMessage(ctx context.Context, updateID int64, m *models.Message) error {

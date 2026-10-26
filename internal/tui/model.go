@@ -9,8 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
 
-	"github.com/GiaHung07/502Drive/internal/i18n"
-	"github.com/GiaHung07/502Drive/internal/mascot"
+	"github.com/itsgiahung/502Drive/internal/i18n"
+	"github.com/itsgiahung/502Drive/internal/mascot"
 )
 
 // screens of the TUI.
@@ -89,6 +89,7 @@ type Model struct {
 
 	selected map[string]bool
 	confirm  *confirmation
+	login    *loginState
 
 	watching bool // the realtime stream is connected
 	watchCh  <-chan WatchEvent
@@ -148,6 +149,15 @@ type bulkMsg struct {
 	label               string
 	ok, skipped, failed int
 	firstErr            string
+}
+type loginStartedMsg struct {
+	sess LoginSession
+	err  error
+}
+type loginPollMsg struct{ id string }
+type loginStateMsg struct {
+	id, state string
+	err       error
 }
 type watchStartedMsg struct{ ch <-chan WatchEvent }
 type watchMsg struct {
@@ -221,6 +231,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case snapshotMsg:
 		return m.onSnapshot(msg)
+	case loginStartedMsg, loginPollMsg, loginStateMsg:
+		return m.onLogin(msg)
 	case watchStartedMsg:
 		m.watchCh = msg.ch
 		return m, waitWatch(msg.ch)
@@ -389,6 +401,10 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quits = true
 		return m, tea.Quit
 	case tea.KeyEsc:
+		if m.login != nil {
+			m.login = nil
+			return m, nil
+		}
 		if len(m.selected) > 0 {
 			m.selected = map[string]bool{}
 			return m, nil
@@ -526,7 +542,14 @@ func (m Model) screenKey(key string) (tea.Model, tea.Cmd) {
 		if action, found := syncActions[key]; found {
 			return m.syncAct(c, action)
 		}
+	case screenHome:
+		if key == "l" {
+			return m.startLogin()
+		}
 	case screenAccount:
+		if key == "l" {
+			return m.startLogin()
+		}
 		if key == "d" && m.acts.Doctor != nil {
 			ctx := m.ctx
 			return m, func() tea.Msg {

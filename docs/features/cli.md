@@ -14,6 +14,7 @@ TUI: [internal/tui](../../internal/tui). Test: [cli_test.go](../../internal/cli/
 ```text
 502drive setup [--oauth-client FILE] [--telegram-token-file FILE]
                [--telegram-owner-id N] [--oauth-callback-port N]
+               [--env-file PATH] [--no-env]   # keys from .env/env; hỏi trong terminal nếu còn thiếu
 502drive serve [--maintenance]
 502drive status
 502drive inspect SOURCE [--to ID] [--name NAME]
@@ -115,3 +116,17 @@ plain. Tên Drive qua `Sanitize` (ESC/control/bidi). Lệnh nghiệp vụ in ti�
   `destinations list`.
 - Tray: notification desktop trên Windows, macOS.
 - `jobs events` chưa có filter theo kind.
+
+## Setup nhanh (`502drive setup`, lần chạy đầu của `502drive`)
+
+- Nguồn khóa, theo thứ tự ưu tiên: cờ > biến môi trường > `--env-file` hoặc `./.env` >
+  `<config>/.env`. Tên hiểu được: `GOOGLE_OAUTH_CLIENT_ID/SECRET`,
+  `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_ID` (và tiền tố `DRIVE502_`, hoặc tên cũ
+  `GDCLONE__…` của file `.env` thời Rust).
+- Mọi giá trị được **kiểm tra trước** khi tạo bất cứ thứ gì (JSON phải là client *Desktop*,
+  token bot đúng dạng `123456:ABC…`, owner id là số dương, id Google kết thúc
+  `.apps.googleusercontent.com`), rồi chép vào `<config>/secrets/` với quyền 0600. File
+  nguồn (`.env`, JSON) không bị sửa; giá trị không bao giờ được in ra, chỉ in *nguồn*.
+- Trong terminal, nếu còn thiếu và không có cờ nào: hỏi lần lượt (Enter để bỏ qua; token
+  ẩn khi gõ). `502drive up --quiet` (autostart) không hỏi nhưng vẫn đọc env/`.env`.
+- Test: [setup_env_test.go](../../internal/cli/setup_env_test.go).

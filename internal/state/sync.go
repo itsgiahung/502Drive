@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/schedule"
+	"github.com/itsgiahung/502Drive/internal/schedule"
 )
 
 // Subscription states (match the HTTP contract).

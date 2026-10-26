@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/GiaHung07/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/drive"
 )
 
 type Fake struct {

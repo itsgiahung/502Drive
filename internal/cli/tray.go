@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/GiaHung07/502Drive/internal/tray"
+	"github.com/itsgiahung/502Drive/internal/tray"
 )
 
 // trayCmd runs the desktop tray. It is a thin HTTP client: every action goes

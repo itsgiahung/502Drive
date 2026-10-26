@@ -99,6 +99,12 @@ type Snapshot struct {
 	At           time.Time
 }
 
+// LoginSession is a Google sign-in the daemon started: the user opens URL.
+type LoginSession struct {
+	ID  string
+	URL string
+}
+
 // WatchEvent is one signal from the daemon's realtime stream. Connected tells
 // whether the stream is up; Changed asks the model to re-read what it shows.
 type WatchEvent struct {
@@ -117,6 +123,12 @@ type Actions struct {
 	SetDefaultDestination func(ctx context.Context, id string, revision int) error
 	Doctor                func(ctx context.Context) ([]Check, error)
 	SetLanguage           func(ctx context.Context, lang string) error
+	// Login starts a Google sign-in; LoginState reports pending, connected,
+	// failed or expired; OpenURL tries to open the browser (nil or an error
+	// just means the user opens the link by hand).
+	Login      func(ctx context.Context) (LoginSession, error)
+	LoginState func(ctx context.Context, id string) (string, error)
+	OpenURL    func(url string) error
 	// Watch opens the realtime stream; it reconnects by itself and closes its
 	// channel when ctx ends. Nil means the model polls.
 	Watch func(ctx context.Context) <-chan WatchEvent

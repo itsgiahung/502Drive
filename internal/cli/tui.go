@@ -3,11 +3,12 @@ package cli
 import (
 	"context"
 	"net/url"
+	"runtime"
 	"sync"
 	"time"
 
-	"github.com/GiaHung07/502Drive/internal/schedule"
-	"github.com/GiaHung07/502Drive/internal/tui"
+	"github.com/itsgiahung/502Drive/internal/schedule"
+	"github.com/itsgiahung/502Drive/internal/tui"
 )
 
 // tuiActions adapts the CLI HTTP client to the TUI. The TUI never builds a
@@ -22,8 +23,51 @@ func (a *App) tuiActions() tui.Actions {
 		SetDefaultDestination: a.tuiSetDefaultDestination,
 		Doctor:                a.tuiDoctor,
 		SetLanguage:           a.tuiSetLanguage,
+		Login:                 a.tuiLogin,
+		LoginState:            a.tuiLoginState,
+		OpenURL:               a.tuiOpenURL,
 		Watch:                 a.tuiWatch,
 	}
+}
+
+// tuiLogin starts a Google sign-in; the TUI opens the browser itself.
+func (a *App) tuiLogin(ctx context.Context) (tui.LoginSession, error) {
+	var out tui.LoginSession
+	r, err := a.call(ctx, "POST", "/v1/account/auth-sessions", nil, map[string]any{"no_browser": true}, NewKey())
+	if err != nil {
+		return out, err
+	}
+	var sess struct {
+		ID  string  `json:"id"`
+		URL *string `json:"authorization_url"`
+	}
+	if err = r.Decode(&sess); err != nil || sess.URL == nil {
+		return out, localErr(ExitInternal, "bad_response", "No authorization URL was returned.")
+	}
+	return tui.LoginSession{ID: sess.ID, URL: *sess.URL}, nil
+}
+
+func (a *App) tuiLoginState(ctx context.Context, id string) (string, error) {
+	r, err := a.call(ctx, "GET", "/v1/account/auth-sessions/"+url.PathEscape(id), nil, nil, "")
+	if err != nil {
+		return "", err
+	}
+	var st struct {
+		State string `json:"state"`
+	}
+	if err = r.Decode(&st); err != nil {
+		return "", err
+	}
+	return st.State, nil
+}
+
+// tuiOpenURL opens the sign-in page when this machine has a desktop; over SSH
+// it does nothing and the user opens the shown link by hand.
+func (a *App) tuiOpenURL(u string) error {
+	if runtime.GOOS == "linux" && a.env("DISPLAY") == "" && a.env("WAYLAND_DISPLAY") == "" {
+		return nil
+	}
+	return openBrowser(u)
 }
 
 // tuiWatch adapts the client's stream to the TUI's event type.
