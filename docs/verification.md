@@ -53,6 +53,13 @@ throughput Google Drive. Probe bị skip dưới `-race` (chậm ~80x) và dư�
 | `go test -bench` TUI, danh sách 10 000 job (cửa sổ 120×40, có màu) | ≈ 0,5 ms và 958 alloc mỗi `View()` — không phụ thuộc N vì chỉ vẽ cửa sổ |
 | `go test -bench` mèo: `Step` + `Lines` một khung | ≈ 0,6 ms (≈ 0,8% một lõi ở 14 fps, chỉ khi ở màn Home) |
 
+GitHub Actions (repo public từ 2026-10-27, runner của GitHub):
+
+| Workflow | Kết quả |
+| --- | --- |
+| `Go CI` trên `main` | gofmt, vet, `go test -race` và build linux/amd64, linux/arm64, windows/amd64, darwin/arm64: **success** |
+| `Go Release` (dry run `workflow_dispatch`, không đăng) | test, build GoReleaser, verify checksum, **Inno Setup tạo installer Windows**: success; RPM smoke trong container Fedora: success; job Publish bị bỏ qua đúng như thiết kế |
+
 Chưa kiểm chứng ở phiên này: màu/hoạt ảnh thật trong KDE Konsole/GNOME Terminal/
 Windows Terminal (đã xem GIF dựng từ cùng bộ vẽ, không phải terminal thật),
 `notify-send` thật, tray thật, spawn tách rời trên Windows, autostart ở phiên
@@ -68,7 +75,7 @@ private); toàn bộ kiểm tra chạy bằng `scripts/release-local.sh`.
   chương trình Bubble Tea với input/output trong bộ nhớ).
 - Windows 10/11: tray, installer `.exe`, SmartScreen; Inno Setup chưa chạy.
 - Docker: build image, volume, OAuth callback qua cổng publish.
-- CI GitHub: `go.yml`, `go-release.yml` (rpm smoke, Windows installer, publish).
+- Publish thật của `go-release.yml` (chỉ chạy khi đẩy tag `v*`; dry run đã qua).
 - 100k item/100 collection/200 admission; soak 24h; disk full/DB busy.
 - OAuth live (consent/refresh/revoke), macOS tray (ngoài scope).
 

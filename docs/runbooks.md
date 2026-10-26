@@ -91,7 +91,9 @@ scripts/release-local.sh --rpm-smoke   # cài rpm trong container Fedora (podman
 
 Kết quả ở `dist/` kèm `checksums.txt`. Đăng bản phát hành là bước tay riêng
 (`gh release create …`, in ở cuối script). Installer Windows cần Inno Setup trên
-Windows. Repo public thì Actions miễn phí và workflow dưới đây dùng được.
+Windows. Repo đã public nên GitHub Actions chạy miễn phí; thử toàn bộ pipeline mà **không
+đăng gì** bằng `gh workflow run "Go Release" --ref main` (bản dry run: version snapshot,
+artifact nằm ở trang run, job Publish bị bỏ qua). Đăng bản thật chỉ khi đẩy tag `v*`.
 
 ## Release (khi chạy CI thật)
 
