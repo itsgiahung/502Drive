@@ -5,7 +5,8 @@ flags), [commands.go](../../internal/cli/commands.go), [sync.go](../../internal/
 [maintenance.go](../../internal/cli/maintenance.go), [menu.go](../../internal/cli/menu.go),
 [tui.go](../../internal/cli/tui.go), [tray.go](../../internal/cli/tray.go),
 [render.go](../../internal/cli/render.go), [client.go](../../internal/cli/client.go).
-TUI: [internal/tui](../../internal/tui). Test: [cli_test.go](../../internal/cli/cli_test.go),
+TUI: [internal/tui](../../internal/tui); duyệt Drive: [drive.go](../../internal/cli/drive.go).
+Test: [cli_test.go](../../internal/cli/cli_test.go), [drive_test.go](../../internal/cli/drive_test.go),
 [sync_test.go](../../internal/cli/sync_test.go), [tray_test.go](../../internal/cli/tray_test.go),
 [setup_test.go](../../internal/cli/setup_test.go), [tui_test.go](../../internal/tui/tui_test.go).
 
@@ -18,7 +19,10 @@ TUI: [internal/tui](../../internal/tui). Test: [cli_test.go](../../internal/cli/
 502drive serve [--maintenance]
 502drive status
 502drive inspect SOURCE [--to ID] [--name NAME]
-502drive copy [SOURCE|--stdin] [--to ID] [--name NAME] [--wait] [--idempotency-key K]
+502drive copy [SOURCE|--stdin] [--to ID] [--name NAME|--auto-name] [--wait] [--idempotency-key K]
+502drive ls [FOLDER] [--all]                 # FOLDER = link/ID/root (mặc định root)
+502drive info LINK|ID
+502drive mkdir NAME [--in PARENT] [--idempotency-key K]
 502drive jobs list|get|wait|events|pause|resume|cancel|retry
 502drive collections list|get
 502drive sync enable|status|run|pause|resume|stop COLLECTION
@@ -74,6 +78,26 @@ plain. Tên Drive qua `Sanitize` (ESC/control/bidi). Lệnh nghiệp vụ in ti�
 - `--dry-run` in `Spec.Describe` + **3 lần chạy tới** (giờ theo zone), không lưu.
 - Conflict `stale_revision` được retry một lần với revision mới (key mới).
 
+## Lệnh duyệt Drive (`ls`, `info`, `mkdir`)
+
+- `ls [FOLDER]`: một dòng breadcrumb, rồi mỗi mục một dòng — thư mục trước (tên
+  kết thúc `/`), sau đó file; trong mỗi nhóm sắp theo tên không phân biệt hoa
+  thường; cột `size` (B/KB/MB, thư mục `-`), ngày sửa `YYYY-MM-DD`, tên. `--all`
+  đi hết `next_page_token` (dừng ở 200 trang); `--json` in nguyên envelope của
+  trang, còn `--json --all` in **một** envelope đã gộp (`next_page_token: null`,
+  `path` giữ từ trang đầu). `--quiet` không in gì.
+- `info LINK|ID`: `kind`, `size`, `modified`, `created`, `owner`, `can copy`,
+  `can add children`, `id`, `link`; `--json` nguyên envelope
+  `GET /v1/drive/files/{id}`. Link chia sẻ mang `resourcekey` → gửi
+  `resource_key`, không in key.
+- `mkdir NAME [--in PARENT]`: `POST /v1/drive/folders` với `Idempotency-Key`
+  (cờ riêng hoặc key ngẫu nhiên); in `id` + `link`; `--quiet` chỉ `id`; 409 →
+  exit 5. `PARENT` nhận link/ID/`root`; key của folder cha không đi kèm body.
+- `copy --auto-name`: đặt root `<tên nguồn> (copy YYYY-MM-DD)`, lấy tên nguồn
+  bằng một plan chỉ đọc trước khi submit (hai plan, một job); không dùng cùng
+  `--name` (exit 2). `--dry-run --auto-name` in plan với tên tự đặt.
+- Mọi tên qua `Sanitize`; màu chỉ khi TTY.
+
 ## TUI (`502drive menu`)
 
 - Chạy khi stdin/stdout TTY, không `--plain`/`TERM=dumb`/`NO_COLOR` và không
@@ -96,8 +120,30 @@ plain. Tên Drive qua `Sanitize` (ESC/control/bidi). Lệnh nghiệp vụ in ti�
 - Realtime qua `/v1/stream` (làm mới ≤ ~8 lần/giây, gộp sự kiện); poll 8s làm lưới an
   toàn khi stream sống, 2s khi stream mất; các mục ít đổi (đích, tài khoản, cài
   đặt) được cache 30s ở CLI. Mất kết nối giữ dữ liệu cuối + nhãn OFFLINE; resize 40/80/120 cột
-  (mỗi dòng bị cắt theo bề rộng); phím `↑↓ jk enter esc q ? 1..6 r` + phím hành
+  (mỗi dòng bị cắt theo bề rộng); phím `↑↓ jk enter esc q ? 1..7 r` + phím hành
   động; alt-screen được vào/ra kể cả khi lỗi/panic (Bubble Tea + Kill).
+
+### Duyệt Drive trong TUI
+
+`7` mở trình duyệt ở My Drive (chỉ đọc tới khi bấm một phím hành động):
+
+| Phím | Tác dụng |
+| --- | --- |
+| `↑↓ jk`, `pgup/pgdown`, `g/G` | di chuyển, cuộn trang (tự nạp trang kế) |
+| `enter`/`→`/`l` | vào thư mục; file: bật/tắt dòng metadata |
+| `←`/`⌫`/`h` | lên thư mục cha (giữ con trỏ) |
+| `i` | bật/tắt metadata của mục đang chọn |
+| `r` | tải lại thư mục |
+| `n` | tạo thư mục mới (chỉ khi `can_add_children`) |
+| `d` | đặt thư mục đang chọn (hoặc thư mục đang mở) làm destination mặc định |
+| `c` | mở hộp copy cho mục đang chọn |
+| `esc`/`q` | về Home |
+
+- Hộp copy: `enter` submit, `1` giữ tên, `2` tên tự đặt `<tên> (copy ngày)`,
+  `3` tự nhập, `d` mở trình duyệt chọn đích (`y` xác nhận thư mục đang mở),
+  `esc` hủy. Submit tạo job thật; lỗi hiện trong hộp, không đóng.
+- Test: [explorer_test.go](../../internal/tui/explorer_test.go);
+  JSON request/response: [drive_test.go](../../internal/httpapi/drive_test.go).
 
 ## Tray (`502drive tray`)
 

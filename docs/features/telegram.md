@@ -31,6 +31,12 @@ Store: [state/telegram.go](../../internal/state/telegram.go), migration
 - Job card: counts, lỗi, nút Pause/Resume/Cancel/Retry theo state; một panel/job,
   edit tối đa mỗi 3s, 429 tôn trọng `retry_after`, "message not modified" là no-op,
   panel bị xóa → gửi lại một lần.
+- Panel job đang chạy (`queued|running|pausing|cancelling|reconciling`) có
+  hiệu ứng file đi từ 📂 sang 📁 (5 frame) + thanh tiến trình `▰▱` từ counts thật.
+  Frame đổi theo mốc 3 giây của đồng hồ; số lần edit vẫn bị giới hạn bởi khoảng
+  edit của outbox và không edit khi text không đổi. Job kết thúc dừng hiệu ứng,
+  hiện emoji trạng thái và không còn thay đổi giữa các frame.
+  Test: `TestJobPanelShowsABarAndAnAnimationFrameWhileRunning`.
 - Library & sync: chọn collection → bật preset (30m/1h/6h/22:00/T2-4-6/realtime)
   → thẻ xác nhận hiện 3 lần chạy tới → Lưu; chạy ngay, tạm dừng, dừng.
 - Callback: bảng `callback_states` (id ngẫu nhiên, principal/chat/message/action/

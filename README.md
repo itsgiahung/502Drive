@@ -114,7 +114,11 @@ installs anything).
 
 `1`–`6` switch screens, `↑↓` move, `enter` opens. **Space** selects rows, **a**
 selects all; **p** pause, **u** resume, **c** cancel (asks first), **t** retry,
-**n** run now, **x** stop sync apply to the selection. `?` shows help, `q` leaves
+**n** run now, **x** stop sync apply to the selection. **`7`** opens the Drive
+browser: `enter` goes into a folder, `←` goes up, `i` shows metadata, `n` makes a
+folder, `d` sets the folder as the default destination and `c` copies the item
+(the copy box: `1` keep the name, `2` auto-name it `<name> (copy date)`, `3`
+type one, `d` pick another destination). `?` shows help, `q` leaves
 the TUI (the daemon keeps running). The cat reacts: it carries files while
 copying, hops when a job finishes, turns amber when you need to act and sleeps
 when idle. `--no-motion` makes it still; `NO_COLOR` or `--plain` removes it.

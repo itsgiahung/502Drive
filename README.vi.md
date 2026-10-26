@@ -111,8 +111,11 @@ Chạy cùng hệ thống: `502drive autostart enable`. Kiểm tra bản mới b
 
 `1`–`6` đổi màn, `↑↓` di chuyển, `enter` mở. **Space** chọn dòng, **a** chọn hết;
 **p** tạm dừng, **u** tiếp tục, **c** hủy (có hỏi lại), **t** thử lại, **n** chạy
-ngay, **x** dừng sync áp dụng cho các mục đã chọn. `?` là trợ giúp, `q` thoát TUI
-(daemon vẫn chạy). Chú mèo phản ứng theo trạng thái: khiêng file khi đang copy,
+ngay, **x** dừng sync áp dụng cho các mục đã chọn. **`7`** mở trình duyệt Drive:
+`enter` vào thư mục, `←` lên cha, `i` xem metadata, `n` tạo thư mục, `d` đặt thư
+mục làm đích mặc định, `c` copy mục đang chọn (hộp copy: `1` giữ tên, `2` tự đặt
+tên `<tên> (copy ngày)`, `3` tự nhập, `d` chọn đích khác). `?` là trợ giúp,
+`q` thoát TUI (daemon vẫn chạy). Chú mèo phản ứng theo trạng thái: khiêng file khi đang copy,
 nhảy khi xong việc, chuyển vàng khi cần bạn xử lý, ngủ khi rảnh. `--no-motion`
 làm mèo đứng yên; `NO_COLOR` hoặc `--plain` tắt hẳn.
 

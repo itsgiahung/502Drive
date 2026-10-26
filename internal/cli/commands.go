@@ -285,7 +285,7 @@ func readStdinRef(r io.Reader) (string, error) {
 
 func (a *App) copyCmd() *cobra.Command {
 	var to, name, key string
-	var wait, useStdin, dry bool
+	var wait, useStdin, dry, autoName bool
 	var waitTimeout time.Duration
 	c := &cobra.Command{Use: "copy [SOURCE]", Short: "Plan and durably submit a server-side copy", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		var source string
@@ -301,6 +301,16 @@ func (a *App) copyCmd() *cobra.Command {
 			source = strings.TrimSpace(args[0])
 		default:
 			return usage("a Drive link or ID is required (or --stdin)")
+		}
+		if autoName && name != "" {
+			return usage("give --name or --auto-name, not both")
+		}
+		if autoName {
+			plan, _, err := a.makePlan(cmd.Context(), source, to, "", NewKey())
+			if err != nil {
+				return err
+			}
+			name = autoCopyName(plan.SourceName)
 		}
 		if dry {
 			plan, r, err := a.makePlan(cmd.Context(), source, to, name, NewKey())
@@ -329,6 +339,7 @@ func (a *App) copyCmd() *cobra.Command {
 	f := c.Flags()
 	f.StringVar(&to, "to", "", "destination profile ID")
 	f.StringVar(&name, "name", "", "root folder name")
+	f.BoolVar(&autoName, "auto-name", false, "name the root \"<source> (copy YYYY-MM-DD)\"")
 	f.BoolVar(&wait, "wait", false, "follow the job; exit 0 only when it succeeds")
 	f.BoolVar(&useStdin, "stdin", false, "read exactly one reference from stdin")
 	f.BoolVar(&dry, "dry-run", false, "preview only (same as inspect)")
