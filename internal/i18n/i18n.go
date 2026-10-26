@@ -132,6 +132,7 @@ const (
 	TabSettings     Key = "tab_settings"
 	TabDrive        Key = "tab_drive"
 	TabHint         Key = "tab_hint"
+	TabFocusHint    Key = "tab_focus_hint"
 	SyncOption      Key = "sync_option"
 	SettingsKeys2   Key = "settings_keys2"
 	PanelStart      Key = "panel_start"
@@ -321,8 +322,9 @@ var VI = map[Key]string{
 	TabSettings:     `Cài đặt`,
 	TabDrive:        `Drive`,
 	TabHint:         `Tab/←→ chuyển màn`,
+	TabFocusHint:    `←/→ đổi tab · ↓ hoặc Enter vào nội dung`,
 	SyncOption:      `Đồng bộ sau khi copy`,
-	SettingsKeys2:   `←/→ hoặc Enter đổi ngay · esc quay lại`,
+	SettingsKeys2:   `←/→ hoặc Enter đổi ngay · ↑ lên thanh tab · esc quay lại`,
 	PanelStart:      `Bắt đầu`,
 	PanelTip1:       `Dán link Drive vào ô dưới, nhấn Enter để copy`,
 	PanelTip2:       `Gõ / xem lệnh · nhấn 1–7 để chuyển màn`,
@@ -468,8 +470,9 @@ var EN = map[Key]string{
 	TabSettings:     `Settings`,
 	TabDrive:        `Drive`,
 	TabHint:         `Tab/←→ switch`,
+	TabFocusHint:    `←/→ switch tab · ↓ or Enter to go into the page`,
 	SyncOption:      `Keep in sync after copy`,
-	SettingsKeys2:   `←/→ or Enter changes it at once · esc back`,
+	SettingsKeys2:   `←/→ or Enter changes it at once · ↑ to the tab bar · esc back`,
 	PanelStart:      `Get started`,
 	PanelTip1:       `Paste a Drive link below, press Enter to copy`,
 	PanelTip2:       `Type / for commands · 1–7 switch screens`,

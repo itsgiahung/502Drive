@@ -78,6 +78,9 @@ func (m Model) tabLayout() (spans []tabSpan, labels []string) {
 		x := 1
 		for i := range tabs {
 			l := " " + m.tabLabel(i, short) + " "
+			if m.tabFocus && i == m.activeTab() {
+				l = "‹" + m.tabLabel(i, short) + "›" // same width: the bar marks where the cursor is
+			}
 			w := ansi.StringWidth(l)
 			spans = append(spans, tabSpan{x, x + w, i})
 			labels = append(labels, l)
@@ -162,16 +165,29 @@ func (m Model) gotoTab(i int) (tea.Model, tea.Cmd) {
 	if i < 0 || i >= len(tabs) {
 		return m, nil
 	}
+	var next tea.Model
+	var cmd tea.Cmd
 	if tabs[i].screen == screenDrive {
-		return m.openDrive(false)
+		next, cmd = m.openDrive(false)
+	} else {
+		m.drv, m.cp = nil, nil
+		next, cmd = m.goTo(tabs[i].screen)
 	}
-	m.drv, m.cp = nil, nil
-	return m.goTo(tabs[i].screen)
+	// Where ←/→ also act inside the page, the cursor stays on the tab bar until
+	// ↓ or Enter goes into the page, so the arrows keep switching tabs.
+	if nm, ok := next.(Model); ok {
+		nm.tabFocus = tabs[i].screen == screenSettings || tabs[i].screen == screenDrive
+		return nm, cmd
+	}
+	return next, cmd
 }
 
 // arrowsSwitchTabs says whether ←/→ mean "previous/next tab" on this screen:
 // not where they already move through folders or change a setting.
 func (m Model) arrowsSwitchTabs() bool {
+	if m.tabFocus {
+		return true
+	}
 	switch m.screen {
 	case screenJobs, screenLibrary, screenDestination, screenAccount, screenHelp:
 		return true

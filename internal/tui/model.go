@@ -85,6 +85,9 @@ type Model struct {
 	screen        screen
 	cursor, top   int
 	lang          string
+	// tabFocus puts the cursor on the tab bar: ←/→ switch tabs, ↓ or Enter
+	// goes into the page, ↑ at the top of a page comes back.
+	tabFocus bool
 
 	snap   Snapshot
 	online bool
@@ -450,6 +453,19 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.screen == screenCopy { // the dialog owns 1/2/3, d and enter
 		return m.copyScreenKey(msg)
 	}
+	if m.tabFocus {
+		switch msg.String() {
+		case "down", "j", "enter", " ":
+			m.tabFocus = false
+			return m, nil
+		case "up", "k":
+			return m, nil
+		case "h":
+			return m.moveTab(-1)
+		case "l":
+			return m.moveTab(1)
+		}
+	}
 	switch msg.Type {
 	case tea.KeyTab:
 		return m.moveTab(1)
@@ -510,6 +526,10 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "7":
 		return m.openDrive(false)
 	case "up", "k":
+		if m.cursor == 0 && m.activeTab() >= 0 {
+			m.tabFocus = true
+			return m, nil
+		}
 		return m.move(-1), nil
 	case "down", "j":
 		next := m.move(1)
@@ -537,6 +557,7 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) goTo(s screen) (tea.Model, tea.Cmd) {
 	m.screen, m.cursor, m.top = s, 0, 0
+	m.tabFocus = false
 	m.selected = map[string]bool{}
 	return m.startAnim()
 }

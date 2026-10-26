@@ -405,8 +405,12 @@ func (m Model) settingsView() []string {
 		}
 		return m.dim("○ " + label)
 	}
+	mark := m.accent("> ")
+	if m.tabFocus {
+		mark = "  " // the cursor is on the tab bar
+	}
 	return []string{"", m.bold(m.t(i18n.Settings)), "",
-		m.accent("> ") + m.kv(m.t(i18n.Language), pick("Tiếng Việt", cur != "en")+"   "+pick("English", cur == "en")),
+		mark + m.kv(m.t(i18n.Language), pick("Tiếng Việt", cur != "en")+"   "+pick("English", cur == "en")),
 		"  " + m.kv(m.t(i18n.Timezone), Sanitize(orDash(m.snap.Prefs.Timezone))),
 		"", m.dim(m.t(i18n.SettingsKeys2))}
 }
@@ -446,6 +450,9 @@ func (m Model) footer() string {
 		}
 	case screenHelp:
 		keys = m.t(i18n.FooterHelp)
+	}
+	if m.tabFocus {
+		keys = m.t(i18n.TabFocusHint)
 	}
 	return m.dim(keys)
 }

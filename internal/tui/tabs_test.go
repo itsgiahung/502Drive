@@ -131,3 +131,28 @@ func TestTheCatWorksOnTheJobsTabWhileSomethingCopies(t *testing.T) {
 		t.Fatal("nothing is running: no banner and no animation")
 	}
 }
+
+func TestSettingsStartsOnTheTabBar(t *testing.T) {
+	m := tabModel(t, 100, 30)
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyShiftTab}) // Drive → Settings
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyShiftTab})
+	if !m.tabFocus {
+		t.Fatal("Settings must open with the cursor on the tab bar")
+	}
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.screen != screenDrive {
+		t.Fatalf("→ on the tab bar must go to the next tab, got %v", m.screen)
+	}
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyLeft})
+	m, _ = update(t, m, key("down"))
+	if m.tabFocus || m.screen != screenSettings {
+		t.Fatal("↓ must go into the page")
+	}
+	m, _ = update(t, m, key("up"))
+	if !m.tabFocus {
+		t.Fatal("↑ at the top of the page must return to the tab bar")
+	}
+	if !strings.Contains(m.View(), "‹6") {
+		t.Fatalf("the tab bar must mark the cursor:\n%s", m.View())
+	}
+}

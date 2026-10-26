@@ -428,7 +428,6 @@ func TestOpeningAFolderTwiceIsInstantAndKeepsTheCursor(t *testing.T) {
 	m = run(t, m, cmd)
 	m, cmd = pressKey(t, m, tea.KeyMsg{Type: tea.KeyLeft})
 	m = run(t, m, cmd)
-	m, _ = update(t, m, key("up"))
 	m, cmd = update(t, m, key("enter"))
 	if !m.drv.loaded || m.drv.page.Folder.ID != "p1" {
 		t.Fatalf("a cached folder should appear at once, got %q", m.drv.page.Folder.ID)

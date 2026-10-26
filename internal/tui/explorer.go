@@ -61,6 +61,7 @@ func (m Model) openDrive(pick bool) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.screen, m.cursor, m.top = screenDrive, 0, 0
+	m.tabFocus = false
 	m.selected = map[string]bool{}
 	m.drv = &explorer{pick: pick}
 	return m, m.loadFolder("root", "", false)
