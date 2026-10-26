@@ -24,9 +24,16 @@ services:
     volumes:
       # config.json + API token + copied secrets (created by `502drive setup
       # --container`); never bake secrets into the image.
-      - ./config:/config
+      # :z relabels for SELinux hosts (Fedora); harmless elsewhere.
+      - ./config:/config:z
       # state-v2.db, master key, Google token, instance.lock.
       - 502drive-data:/data
+    # The container runs as nonroot (65532). If your ./config files are owned by
+    # another user, either `sudo chown -R 65532:65532 ./config` (Docker) or
+    # `podman unshare chown -R 65532:65532 ./config` (rootless Podman).
+    # user: "65532:65532"
 
 volumes:
   502drive-data:
+    # Fixed name: backup/update commands in the docs can name it exactly.
+    name: 502drive-data

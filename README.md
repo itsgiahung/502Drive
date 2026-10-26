@@ -44,6 +44,11 @@ starts.
 502drive          # (or just: 502d) asks for your keys on the first run, starts everything, opens the TUI
 ```
 
+**Each person runs their own copy.** There is no shared server: you use your own
+Google account, your own OAuth client, and your data stays on your machine (or in
+your own container). Two people copying the same link means two separate copies in
+two separate Drives — nothing is relayed through anyone else.
+
 You only need two things from Google once: an OAuth **Desktop** client
 ([2 minutes, step by step](docs/oauth-setup.md)). Put its id and secret in a `.env`
 file next to where you run the command, or hand over the downloaded JSON:
@@ -112,7 +117,7 @@ installs anything).
 
 ### In the TUI
 
-`1`–`6` switch screens, `↑↓` move, `enter` opens. **Space** selects rows, **a**
+`1`–`7` switch screens, `↑↓` move, `enter` opens. **Space** selects rows, **a**
 selects all; **p** pause, **u** resume, **c** cancel (asks first), **t** retry,
 **n** run now, **x** stop sync apply to the selection. **`7`** opens the Drive
 browser: `enter` goes into a folder, `←` goes up, `i` shows metadata, `n` makes a

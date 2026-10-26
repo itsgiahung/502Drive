@@ -281,9 +281,15 @@ func (t *Telegram) jobsPage(ctx context.Context, p app.Principal, chatID int64, 
 	for _, j := range jobs {
 		fmt.Fprintf(&b, "· %s — %s\n", escape(short(j.RootName, 40)), tx.stateLabel(j.State))
 	}
-	rows := make([][]button, 0, len(jobs)+1)
+	rows := make([][]button, 0, len(jobs)+2)
 	for _, j := range jobs {
 		rows = append(rows, []button{act(short(j.RootName, 24)+" · "+tx.stateLabel(j.State), "job", j.ID, j.Revision, "")})
+	}
+	for _, j := range jobs {
+		if bulkStates[j.State] {
+			rows = append(rows, []button{styled(act(tx.cancelAll, "cancelall_ask", "", 0, ""), "danger")})
+			break
+		}
 	}
 	rows = append(rows, []button{nav(tx.back, "home")})
 	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)

@@ -32,17 +32,19 @@ type texts struct {
 	daily2200, weeklyMWF, realtimePreset                      string
 	scheduleLabel, nextRun, lastSuccess, activeJob            string
 	copyStateLabel, keepCopies                                string
-	noticeCompleted, noticeFailed, noticeAction               string
-	save, nextRuns                                            string
-	syncErrorNotice                                           string
-	syncStates                                                map[string]string
-	settingsHint, autoCopy, on, off, language, totalUnknown   string
-	autoCopyNeedsDestination, notAvailable                    string
-	destHint                                                  string
-	previewTitle, sourceLabel, targetLabel, seenLabel         string
-	scanIncomplete, confirmDest, copyStarted, jobLabel        string
-	updated, itemsLabel, resultLabel, problemLabel            string
-	queueFull, linkOnly                                       string
+	// Bulk cancellation of in-flight jobs.
+	cancelAll, cancelAllAsk, cancelAllDone, cancelAllNone   string
+	noticeCompleted, noticeFailed, noticeAction             string
+	save, nextRuns                                          string
+	syncErrorNotice                                         string
+	syncStates                                              map[string]string
+	settingsHint, autoCopy, on, off, language, totalUnknown string
+	autoCopyNeedsDestination, notAvailable                  string
+	destHint                                                string
+	previewTitle, sourceLabel, targetLabel, seenLabel       string
+	scanIncomplete, confirmDest, copyStarted, jobLabel      string
+	updated, itemsLabel, resultLabel, problemLabel          string
+	queueFull, linkOnly                                     string
 	// Home screen and the persistent keyboard.
 	kbCopy, kbJobs, kbSync, kbDest, kbAccount, kbSettings    string
 	kbPlaceholder, kbReady                                   string
@@ -70,25 +72,25 @@ func textsFor(l language) texts {
 }
 
 var vietnamese = texts{
-	home: "Trang chính", copy: "Sao chép", jobs: "Công việc", library: "Nguồn đã copy / Sync",
+	home: "Trang chính", copy: "Sao chép", jobs: "Công việc", library: "Nguồn đã copy / Đồng bộ",
 	destination: "Thư mục đích", account: "Tài khoản", settings: "Cài đặt",
 	details: "Chi tiết", back: "Về menu", pause: "Tạm dừng", resume: "Tiếp tục",
-	cancel: "Hủy", retry: "Thử lại",
+	cancel: "Huỷ", retry: "Thử lại",
 	pasteHint:   "Dán link Drive hoặc chọn bên dưới.",
 	copyHint:    "Gửi một link Drive (thư mục hoặc file) vào chat này. Một link mỗi lần.",
 	oneLink:     "Mỗi lần chỉ một link. Gửi lại link bạn muốn sao chép.",
 	invalidLink: "Link không hợp lệ. Chỉ nhận link Drive/Docs HTTPS hoặc ID Drive.",
-	google:      "Google", destLabel: "Đích", running: "Đang chạy", queued: "Chờ", needAction: "Cần xử lý",
+	google:      "Google", destLabel: "Thư mục đích", running: "Đang chạy", queued: "Chờ", needAction: "Cần xử lý",
 	connected: "Đã kết nối", disconnected: "Chưa kết nối", reconnect: "Cần kết nối lại",
-	expired: "Nút đã hết hạn", cancelled: "Đã hủy", noDestination: "Chưa có thư mục đích",
+	expired: "Nút đã hết hạn", cancelled: "Đã huỷ", noDestination: "Chưa có thư mục đích",
 	jobsEmpty: "Chưa có công việc nào.", libraryEmpty: "Chưa copy nguồn nào.",
-	syncLabel: "Đồng bộ", syncOff: "Chưa bật", enableSync: "Bật sync", resumeSync: "Bật lại sync",
-	pauseSync: "Tạm dừng", stopSync: "Dừng sync", runNow: "Chạy ngay", changeSchedule: "Đổi lịch",
+	syncLabel: "Đồng bộ", syncOff: "Chưa bật", enableSync: "Bật đồng bộ", resumeSync: "Bật lại đồng bộ",
+	pauseSync: "Tạm dừng", stopSync: "Dừng đồng bộ", runNow: "Chạy ngay", changeSchedule: "Đổi lịch",
 	pickPreset: "Chọn lịch đồng bộ", every30m: "Mỗi 30 phút", everyHour: "Mỗi giờ", every6h: "Mỗi 6 giờ",
 	daily2200: "Hằng ngày 22:00", weeklyMWF: "Thứ 2, 4, 6 lúc 22:00", realtimePreset: "Realtime (theo dõi thay đổi)",
-	scheduleLabel: "Lịch", nextRun: "Lần tới", lastSuccess: "Thành công gần nhất", activeJob: "Job đang chạy",
+	scheduleLabel: "Lịch", nextRun: "Lần tới", lastSuccess: "Thành công gần nhất", activeJob: "Công việc đang chạy",
 	copyStateLabel: "Copy gốc", keepCopies: "Không xóa bản đích khi nguồn mất",
-	noticeCompleted: "Job đã xong", noticeFailed: "Job gặp lỗi", noticeAction: "Job cần xử lý",
+	noticeCompleted: "Công việc đã xong", noticeFailed: "Công việc gặp lỗi", noticeAction: "Công việc cần xử lý",
 	save: "Lưu", nextRuns: "Lần chạy tới",
 	syncErrorNotice: "<b>Đồng bộ cần xử lý</b>\n<code>%s</code>\nMở menu để thử lại hoặc kiểm tra tài khoản.",
 	syncStates: map[string]string{
@@ -102,10 +104,10 @@ var vietnamese = texts{
 	totalUnknown:             "chưa rõ",
 	autoCopyNeedsDestination: "Cần đặt thư mục đích mặc định trước (CLI: 502drive destinations).",
 	notAvailable:             "Chưa hỗ trợ",
-	destHint:                 "Thêm hoặc đổi đích mặc định bằng CLI: 502drive destinations list|add|default.",
-	previewTitle:             "Sao chép %s", sourceLabel: "Nguồn", targetLabel: "Đích", seenLabel: "Đã thấy",
-	scanIncomplete: "(chưa quét hết)", confirmDest: "Cần xác nhận lại đích",
-	copyStarted: "Đã xếp hàng", jobLabel: "Job", updated: "Cập nhật", itemsLabel: "Mục",
+	destHint:                 "Thêm hoặc đổi thư mục đích mặc định bằng CLI: 502drive destinations list|add|default.",
+	previewTitle:             "Sao chép %s", sourceLabel: "Nguồn", targetLabel: "Thư mục đích", seenLabel: "Đã thấy",
+	scanIncomplete: "(chưa quét hết)", confirmDest: "Cần xác nhận lại thư mục đích",
+	copyStarted: "Đã xếp hàng", jobLabel: "Công việc", updated: "Cập nhật", itemsLabel: "Mục",
 	resultLabel: "Kết quả", problemLabel: "Lỗi", queueFull: "Chưa xếp hàng",
 	linkOnly: "Chỉ nhận link Drive.",
 	kbCopy:   "📥 Copy link", kbJobs: "📋 Công việc", kbSync: "🔄 Đồng bộ", kbDest: "📁 Thư mục đích",
@@ -126,6 +128,10 @@ var vietnamese = texts{
 	askFolder: "➕ Gửi tên cho thư mục mới (hoặc gửi /cancel để thôi).",
 	pickTitle: "📁 <b>Chọn nơi lưu</b>", saveToLabel: "📂 Lưu vào", nameLabel: "🏷 Tên kết quả",
 	noFolders: "Chưa có thư mục con nào ở đây.", renamed: "Đã đổi tên.",
+	cancelAll:     "🧹 Huỷ tất cả",
+	cancelAllAsk:  "<b>Huỷ tất cả công việc đang mở?</b>\nCó %d công việc sẽ dừng ngay. Bản đã copy xong vẫn giữ nguyên.",
+	cancelAllDone: "Đã huỷ %d, bỏ qua %d, lỗi %d.",
+	cancelAllNone: "Không có công việc nào đang mở.",
 	errMsg: map[string]string{
 		"destination_required":       "Chọn thư mục đích trước (nhấn 📁 Chọn nơi lưu).",
 		"ambiguous_source":           "Link không rõ ràng. Hãy gửi đúng một link Drive.",
@@ -144,9 +150,9 @@ var vietnamese = texts{
 	},
 	states: map[string]string{
 		state.JobQueued: "Đã xếp hàng", state.JobRunning: "Đang sao chép", state.JobPausing: "Đang dừng",
-		state.JobPaused: "Đã tạm dừng", state.JobCancelling: "Đang hủy", state.JobReconciling: "Đang xác minh",
+		state.JobPaused: "Đã tạm dừng", state.JobCancelling: "Đang huỷ", state.JobReconciling: "Đang xác minh",
 		state.JobBlocked: "Cần xử lý", state.JobSucceeded: "Xong", state.JobPartial: "Xong một phần",
-		state.JobFailed: "Thất bại", state.JobCancelled: "Đã hủy",
+		state.JobFailed: "Thất bại", state.JobCancelled: "Đã huỷ",
 	},
 }
 
@@ -207,6 +213,10 @@ var english = texts{
 	askFolder: "➕ Send a name for the new folder (or /cancel).",
 	pickTitle: "📁 <b>Choose where to save</b>", saveToLabel: "📂 Save to", nameLabel: "🏷 Output name",
 	noFolders: "No sub-folders here yet.", renamed: "Renamed.",
+	cancelAll:     "🧹 Cancel all",
+	cancelAllAsk:  "<b>Cancel every open job?</b>\n%d job(s) will stop now. Anything already copied stays.",
+	cancelAllDone: "Cancelled %d, skipped %d, failed %d.",
+	cancelAllNone: "No open jobs.",
 	errMsg: map[string]string{
 		"destination_required":       "Choose a destination first (tap 📁 Choose where).",
 		"ambiguous_source":           "That link is ambiguous. Send exactly one Drive link.",

@@ -25,7 +25,15 @@ Store: [state/telegram.go](../../internal/state/telegram.go), migration
 
 - Home: trạng thái Google/queue + nút Copy · Jobs · Library & sync · Destination ·
   Settings · Account. Không cần gõ lệnh.
-- Dán link (hoặc `/copy`) → `Inspect` → thẻ preview (Copy / Đổi đích / Hủy).
+- Dán link (hoặc `/copy`) → `Inspect` → thẻ xem trước đã có mặc định hợp lý:
+  **giữ tên gốc** của nguồn và **lưu vào My Drive** khi chưa có thư mục đích nào;
+  không cần setup trước lần copy đầu. Nút: Copy ngay · Đổi tên · Chọn nơi lưu ·
+  Huỷ. Trong ngăn chọn nơi lưu: Lên / Trang sau / **Lưu vào đây** / **Thư mục mới**
+  (tạo xong mở luôn). Lỗi hiện bằng ngôn ngữ đang chọn, kèm hướng xử lý.
+  Test: [flow_test.go](../../internal/telegram/flow_test.go)
+  `TestFirstLinkNeedsNoSetupAndKeepsTheSourceName`, `TestRenameAsksThenUsesTheTypedName`,
+  `TestPickingAFolderChangesWhereTheCopyIsSaved`, `TestNewFolderFromTheChooserIsCreatedAndOpened`,
+  `TestErrorsAreShownInTheUsersLanguage`.
 - `auto_copy` bật và destination revision còn khớp → tự `Submit`; revision đổi
   → quay về preview (không tự đổi đích).
 - Job card: counts, lỗi, nút Pause/Resume/Cancel/Retry theo state; một panel/job,
@@ -42,6 +50,11 @@ Store: [state/telegram.go](../../internal/state/telegram.go), migration
 - Callback: bảng `callback_states` (id ngẫu nhiên, principal/chat/message/action/
   object/revision/payload, TTL 15 phút, `consumed`). Nút ghi là one-shot; nút cũ/
   đã dùng/sai chat → toast "Nút đã hết hạn".
+- Huỷ hàng loạt: `/cancelall` hoặc nút đỏ **Huỷ tất cả** ở trang Công việc →
+  thẻ xác nhận (nút đỏ, không tự huỷ) → chỉ huỷ job mà principal đang chat sở hữu,
+  job đã xong không bị đụng; kết quả "Đã huỷ N, bỏ qua M, lỗi K". Callback
+  one-shot nên bấm hai lần chỉ hủy một lần. Test:
+  [cancelall_test.go](../../internal/telegram/cancelall_test.go).
 
 ## Thông báo (job không tạo từ chat)
 
@@ -65,7 +78,7 @@ syncer trong daemon:
 
 ## Chưa hỗ trợ
 
-- Duyệt folder đích trong chat, tạo folder; nhập giờ HH:MM tuỳ biến (chỉ preset).
+- Nhập giờ HH:MM tuỳ biến (chỉ preset).
 - Đăng nhập Google qua chat (chỉ hướng dẫn chạy CLI trên máy daemon).
 - Bật/tắt từng loại notification bằng nút (đổi qua CLI/preferences API).
 - Quản lý allowlist operator bằng chat (owner dùng `POST /v1/operators`).

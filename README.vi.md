@@ -30,7 +30,7 @@ tự lên.
   đổi của Drive. Chạy ngay, tạm dừng, dừng, tiếp tục mà không mất thư mục đích hay
   ánh xạ. Xóa ở nguồn không bao giờ xóa bản copy của bạn.
 - **An toàn khi sự cố.** Mỗi thao tác ghi lên Drive được ghi nhận trước. Sau khi
-  crash hoặc mất phản hồi, job *đối soát* thay vì ghi hai lần, và báo `blocked`
+  crash hoặc mất phản hồi, công việc *đối soát* thay vì ghi hai lần, và báo `blocked`
   khi không chắc chắn, không bao giờ báo "xong" giả.
 - **Dễ chịu khi dùng.** Tiến trình trực tiếp kèm tốc độ và thời gian còn lại, chọn
   nhiều mục để thao tác hàng loạt, icon khay hiện trạng thái, thông báo desktop,
@@ -42,6 +42,11 @@ tự lên.
 ```bash
 502drive          # (hoặc chỉ: 502d) lần đầu hỏi khóa của bạn, bật mọi thứ, mở TUI
 ```
+
+**Mỗi người chạy bản của mình.** Không có máy chủ chung: bạn dùng tài khoản Google
+của chính bạn, OAuth client của chính bạn, và dữ liệu nằm trên máy bạn (hoặc trong
+container của bạn). Hai người cùng copy một link nghĩa là hai bản copy riêng trong
+hai Drive riêng — không đi qua máy của ai khác.
 
 Bạn chỉ cần lấy từ Google một lần: OAuth client loại **Desktop**
 ([2 phút, từng bước](docs/oauth-setup.md)). Điền id và secret vào file `.env` ở thư
@@ -70,7 +75,7 @@ kết nối xong. Thêm thư mục đích rồi dán link:
 ```
 
 Daemon và khay vẫn chạy khi bạn đóng terminal. Chỉ **Thoát trên khay** mới dừng
-chúng (job đang chạy sẽ tiếp tục ở lần mở sau).
+chúng (công việc đang chạy sẽ tiếp tục ở lần mở sau).
 
 ## Cài đặt
 
@@ -100,7 +105,7 @@ Chạy cùng hệ thống: `502drive autostart enable`. Kiểm tra bản mới b
 | Mở tất cả | `502drive` |
 | Copy một link và chờ | `502drive copy LINK --wait` |
 | Xem trước, không ghi gì | `502drive inspect LINK` |
-| Xem / tạm dừng / tiếp tục / hủy job | `502drive jobs list`, `jobs pause ID`, … |
+| Xem / tạm dừng / tiếp tục / huỷ công việc | `502drive jobs list`, `jobs pause ID`, … |
 | Giữ bản copy đồng bộ | `502drive sync enable COLLECTION --daily 22:00` · `sync run` · `sync pause` · `sync stop` |
 | Kiểm tra sức khỏe | `502drive doctor` |
 | Xem log daemon | `502drive logs -f` |
@@ -109,12 +114,12 @@ Chạy cùng hệ thống: `502drive autostart enable`. Kiểm tra bản mới b
 
 ### Trong TUI
 
-`1`–`6` đổi màn, `↑↓` di chuyển, `enter` mở. **Space** chọn dòng, **a** chọn hết;
-**p** tạm dừng, **u** tiếp tục, **c** hủy (có hỏi lại), **t** thử lại, **n** chạy
-ngay, **x** dừng sync áp dụng cho các mục đã chọn. **`7`** mở trình duyệt Drive:
+`1`–`7` đổi màn, `↑↓` di chuyển, `enter` mở. **Space** chọn dòng, **a** chọn hết;
+**p** tạm dừng, **u** tiếp tục, **c** huỷ (có hỏi lại), **t** thử lại, **n** chạy
+ngay, **x** dừng đồng bộ áp dụng cho các mục đã chọn. **`7`** mở trình duyệt Drive:
 `enter` vào thư mục, `←` lên cha, `i` xem metadata, `n` tạo thư mục, `d` đặt thư
-mục làm đích mặc định, `c` copy mục đang chọn (hộp copy: `1` giữ tên, `2` tự đặt
-tên `<tên> (copy ngày)`, `3` tự nhập, `d` chọn đích khác). `?` là trợ giúp,
+mục làm thư mục đích mặc định, `c` copy mục đang chọn (hộp copy: `1` giữ tên, `2` tự đặt
+tên `<tên> (copy ngày)`, `3` tự nhập, `d` chọn thư mục đích khác). `?` là trợ giúp,
 `q` thoát TUI (daemon vẫn chạy). Chú mèo phản ứng theo trạng thái: khiêng file khi đang copy,
 nhảy khi xong việc, chuyển vàng khi cần bạn xử lý, ngủ khi rảnh. `--no-motion`
 làm mèo đứng yên; `NO_COLOR` hoặc `--plain` tắt hẳn.

@@ -48,6 +48,8 @@ func (t *Telegram) onMessage(ctx context.Context, updateID int64, m *models.Mess
 		return t.page(ctx, p, m.Chat.ID, 0, "home")
 	case "/jobs":
 		return t.page(ctx, p, m.Chat.ID, 0, "jobs")
+	case "/cancelall":
+		return t.cancelAllAsk(ctx, p, m.Chat.ID, 0)
 	case "/copy", "/clone":
 		if rest == "" {
 			return t.page(ctx, p, m.Chat.ID, 0, "copy")
@@ -254,6 +256,10 @@ func (t *Telegram) act(ctx context.Context, p app.Principal, st state.Callback, 
 		return t.actLanguage(ctx, p, st)
 	case "auto":
 		return t.actAutoCopy(ctx, p, st)
+	case "cancelall_ask":
+		return t.cancelAllAsk(ctx, p, st.ChatID, st.MessageID)
+	case "cancelall_do":
+		return t.cancelAllDo(ctx, p, st)
 	}
 	return nil
 }

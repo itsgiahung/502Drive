@@ -173,9 +173,10 @@ func (a *App) activeJobs(ctx context.Context, stateFilter string) ([]jobView, er
 			return nil, err
 		}
 		for _, j := range page.Items {
-			if activeState(j.State) {
-				out = append(out, j)
+			if !activeState(j.State) || (stateFilter != "" && j.State != stateFilter) {
+				continue
 			}
+			out = append(out, j)
 		}
 		if page.Next == nil || *page.Next == "" {
 			return out, nil

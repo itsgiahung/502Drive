@@ -4,12 +4,22 @@ Dockerfile: 2 tầng — `golang:1.27-bookworm` build (`CGO_ENABLED=0`) →
 `gcr.io/distroless/static-debian12:nonroot`. Image chỉ có binary + CA + tzdata;
 không shell, không curl. `HEALTHCHECK` chạy chính binary (`502drive healthcheck`).
 
-## Ba lệnh chạy nhanh
+## Chạy nhanh
 
 ```bash
-cp .env.example .env                 # TZ + đường dẫn config; giá trị mẫu là giả
+cp .env.example .env                              # TZ + đường dẫn config; giá trị mẫu là giả
 502drive setup --config ./config/config.json --container
+sudo chown -R 65532:65532 ./config                # container chạy bằng nonroot (Podman: podman unshare chown …)
 docker compose up -d --build
+```
+
+Không dùng compose:
+
+```bash
+docker run -d --name 502drive --restart unless-stopped --stop-timeout 30 \
+  -v "$PWD/config:/config:z" -v 502drive-data:/data \
+  -p 127.0.0.1:5020:5020 -p 127.0.0.1:50200:50200 \
+  -e TZ=Asia/Ho_Chi_Minh 502drive:latest
 ```
 
 - `--container` đặt `"container": true` và `listen: "0.0.0.0:5020"` **chỉ** trong
@@ -19,6 +29,12 @@ docker compose up -d --build
 - Dữ liệu nằm trong volume `502drive-data` (`state-v2.db`, `secrets/`,
   `instance.lock`); config/token/key nằm trong `./config` (0600). Recreate
   container không mất state.
+- **Quyền file**: container chạy bằng user `nonroot` = uid 65532, nên `./config`
+  phải đọc được bởi uid đó. Docker: `sudo chown -R 65532:65532 ./config`.
+  Podman rootless: `podman unshare chown -R 65532:65532 ./config`. Không chown
+  được thì container thoát với `config unavailable`.
+- **SELinux** (Fedora/RHEL): compose đã gắn `:z`; nếu tự chạy `podman run`, thêm
+  `:Z`/`:z` sau mount, nếu không daemon không đọc được config dù quyền đúng.
 - `container: true` là ngoại lệ duy nhất của luật "chỉ nghe loopback": nếu bạn
   sửa config về `127.0.0.1:5020` trong container thì cổng publish sẽ không tới
   được daemon (Docker DNAT vào địa chỉ mạng của container).
@@ -80,8 +96,16 @@ chạy lại tag cũ. Không hạ schema: bản cũ hơn sẽ từ chối DB m�
 
 ## Ghi chú vận hành
 
-- Podman: `podman compose up -d --build` (cần `podman-compose` hoặc provider
-  docker-compose). Build không cần mạng ngoài sau khi đã có layer `go mod download`.
+- Podman: cần provider compose (`podman compose` dùng `docker-compose` hoặc
+  `podman-compose`; máy không có thì chạy `podman build -t 502drive:latest .` rồi
+  `podman run` như ví dụ trên). Podman mặc định build định dạng **OCI** nên bỏ qua
+  `HEALTHCHECK`; muốn podman theo dõi health: `podman build --format docker ...`
+  hoặc định kỳ `podman exec 502drive /usr/local/bin/502drive healthcheck`.
+- Đã chạy trong phiên 2026-10-27: `podman build` (image distroless, ~27 MB binary),
+  `podman run` với config `container: true`, `podman exec … healthcheck` → exit 0,
+  `GET /v1/status` từ host qua `127.0.0.1:15020` (map tạm) trả `ready:true`;
+  daemon log `listening addr=[::]:5020`. Chưa chạy `docker compose` (máy chỉ có
+  podman, không có compose provider).
 - Không dùng `network_mode: host` cho deployment mặc định: publish loopback là
   đủ, và healthcheck/port rule ở trên giả định bridge network.
 - Telegram long polling không cần mở cổng vào. Bot tắt/sai token không làm
