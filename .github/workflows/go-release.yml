@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - "v*"
+  # Dry run: builds and verifies everything from a branch (snapshot version) and
+  # uploads the files as workflow artifacts. Nothing is published.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,9 +28,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: "Guard: tag refs only"
+      - name: "Guard: tag refs only (a manual dry run is allowed on a branch)"
         run: |
           set -eu
+          if [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
+            echo "Dry run on ${GITHUB_REF}: nothing will be published"
+            exit 0
+          fi
           if [ "${GITHUB_REF_TYPE:-}" != "tag" ]; then
             echo "::error::Go Release must run on a tag ref, got '${GITHUB_REF_TYPE:-unknown}'"
             exit 1
@@ -75,7 +82,7 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean --skip=publish
+          args: ${{ github.event_name == 'workflow_dispatch' && 'release --clean --skip=publish --snapshot' || 'release --clean --skip=publish' }}
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -146,6 +153,7 @@ jobs:
           rpm -qlp "$rpm_file" | sort | tee contents.txt
           for path in \
             /usr/bin/502drive \
+            /usr/bin/502 \
             /usr/lib/systemd/user/502drive.service \
             /usr/share/applications/502drive-tray.desktop \
             /usr/share/icons/hicolor/256x256/apps/502drive.png \
@@ -193,6 +201,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart('v')
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') { $version = '0.0.0-dry-run' }
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path $iscc)) { throw "Inno Setup not found at $iscc" }
           & $iscc "/DMyAppVersion=$version" 'packaging/windows/502drive.iss'
@@ -218,7 +227,7 @@ jobs:
   publish:
     name: Publish GitHub release
     needs: [rpm-smoke, windows-installer]
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
