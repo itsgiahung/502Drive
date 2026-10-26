@@ -67,7 +67,7 @@ func (t *Telegram) deliver(ctx context.Context, m state.Outbox) {
 		return
 	}
 	tx := t.textFor(callCtx, m.Principal)
-	text := jobText(tx, job)
+	text := jobTextFrame(tx, job, int(t.now().Unix()/3))
 	hash := hashText(text)
 	if m.MessageID != 0 && hash == m.LastHash {
 		// Nothing to say: a repeated edit would only burn the rate budget.

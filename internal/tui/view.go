@@ -117,6 +117,10 @@ func (m Model) body() []string {
 		return m.settingsView()
 	case screenHelp:
 		return m.helpView()
+	case screenDrive:
+		return m.driveView()
+	case screenCopy:
+		return m.copyView()
 	}
 	return m.homeView()
 }
@@ -132,7 +136,7 @@ func (m Model) homeView() []string {
 		m.workLine(),
 		"",
 		"1 "+m.t(i18n.Home)+"   2 "+m.t(i18n.Jobs)+"   3 "+m.t(i18n.Library)+"   4 "+
-			m.t(i18n.Destination)+"   5 "+m.t(i18n.Account)+"   6 "+m.t(i18n.Settings)+"   ? "+m.t(i18n.Help))
+			m.t(i18n.Destination)+"   5 "+m.t(i18n.Account)+"   6 "+m.t(i18n.Settings)+"   7 "+m.t(i18n.Drive)+"   c "+m.t(i18n.CopyTitle)+"   ? "+m.t(i18n.Help))
 	if m.snap.Status.BotState != "" && m.snap.Status.BotState != "disabled" {
 		lines = append(lines, "", m.dim(m.t(i18n.Telegram)+": "+Sanitize(m.snap.Status.BotState)))
 	}
@@ -438,6 +442,16 @@ func (m Model) footer() string {
 		keys = m.t(i18n.FooterList)
 	case screenLibrary:
 		keys = m.t(i18n.FooterLib)
+	case screenDrive:
+		keys = m.t(i18n.FooterDrive)
+		if m.drv != nil && m.drv.pick {
+			keys = m.t(i18n.FooterPick)
+		}
+	case screenCopy:
+		keys = m.t(i18n.FooterCopyPlan)
+		if m.cp != nil && m.cp.input != nil {
+			keys = m.t(i18n.FooterCopySrc)
+		}
 	case screenHelp:
 		keys = m.t(i18n.FooterHelp)
 	}

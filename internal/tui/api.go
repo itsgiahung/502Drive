@@ -105,6 +105,37 @@ type LoginSession struct {
 	URL string
 }
 
+// DriveItem is one file or folder in the Drive browser. Kind is folder, binary,
+// google_native or shortcut.
+type DriveItem struct {
+	ID, Name, Kind, Mime string
+	Size                 *int64
+	Modified, Created    time.Time
+	Owner, WebURL        string
+	CanCopy, CanWrite    bool
+}
+
+func (d DriveItem) IsFolder() bool { return d.Kind == "folder" }
+
+// FolderPage is one page of a folder with its breadcrumb (first page only).
+type FolderPage struct {
+	Folder DriveItem
+	Path   []DriveItem
+	Items  []DriveItem
+	Next   string
+}
+
+// Plan is the read-only preview of a copy. RootName is what the output folder
+// will be called.
+type Plan struct {
+	ID, SourceID, SourceName, SourceKind string
+	DestinationID, RootName              string
+	Revision                             int
+	Files, Folders                       int
+	Complete                             bool
+	Warnings                             []string
+}
+
 // WatchEvent is one signal from the daemon's realtime stream. Connected tells
 // whether the stream is up; Changed asks the model to re-read what it shows.
 type WatchEvent struct {
@@ -129,6 +160,15 @@ type Actions struct {
 	Login      func(ctx context.Context) (LoginSession, error)
 	LoginState func(ctx context.Context, id string) (string, error)
 	OpenURL    func(url string) error
+	// Drive browser and copy flow. Browse takes a folder id ("root" = My Drive)
+	// and an optional page token; Inspect is read-only; Submit starts the job
+	// and returns its id; AddDestination returns the existing destination of a
+	// folder or creates one.
+	Browse         func(ctx context.Context, folderID, pageToken string) (FolderPage, error)
+	Mkdir          func(ctx context.Context, parentID, name string) (DriveItem, error)
+	Inspect        func(ctx context.Context, source, destinationID, rootName string) (Plan, error)
+	Submit         func(ctx context.Context, plan Plan) (string, error)
+	AddDestination func(ctx context.Context, folderID string) (Destination, error)
 	// Watch opens the realtime stream; it reconnects by itself and closes its
 	// channel when ctx ends. Nil means the model polls.
 	Watch func(ctx context.Context) <-chan WatchEvent

@@ -35,6 +35,9 @@ với schema.
 | `GET /v1/jobs/{id}` | Có | server.go |
 | `GET /v1/jobs/{id}/events?after_sequence&limit` | Có | server.go |
 | `POST /v1/jobs/{id}/pause\|resume\|cancel\|retry` | Có (202) | server.go, `app.JobAction` |
+| `GET /v1/drive/folders/{id}?page_token` | Có (owner; `root` = My Drive; breadcrumb ở trang đầu) | [drive.go](../internal/httpapi/drive.go), `app.Browse` |
+| `GET /v1/drive/files/{id}` | Có (owner; metadata một mục) | drive.go, `app.FileInfo` |
+| `POST /v1/drive/folders` | Có (201, owner, idempotent theo key+parent+tên) | drive.go, `app.Mkdir` |
 | `GET /v1/destinations` | Có | server.go |
 | `POST /v1/destinations` | Có (201) | server.go, `app.AddDestination` |
 | `PUT /v1/destinations/default` | Có (200) | server.go |

@@ -1473,6 +1473,167 @@
           }
         }
       }
+    },
+    "/v1/drive/folders/{id}": {
+      "get": {
+        "summary": "Browse one folder of the owner's Drive",
+        "description": "Owner only. Folders first, then by name; `path` is the breadcrumb from the highest visible ancestor (first page only). Read-only.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "description": "A Drive id, or `root` for My Drive"
+          },
+          {
+            "name": "page_token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 2048
+            }
+          },
+          {
+            "name": "resource_key",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        }
+      }
+    },
+    "/v1/drive/files/{id}": {
+      "get": {
+        "summary": "Metadata of one Drive file or folder",
+        "description": "Owner only. Read-only.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "description": "A Drive id, or `root` for My Drive"
+          },
+          {
+            "name": "resource_key",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The item",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriveFileResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        }
+      }
+    },
+    "/v1/drive/folders": {
+      "post": {
+        "summary": "Create a folder in the owner's Drive",
+        "description": "Owner only. Idempotent: the write carries an intent derived from the key, the parent and the name, so a retry returns the same folder (`Idempotency-Replayed: true`). No sharing is changed.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MkdirInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new (or already created) folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriveFileResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "default": {
+            "$ref": "#/components/responses/DefaultError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3356,6 +3517,185 @@
           },
           "request_id": {
             "type": "string"
+          }
+        }
+      },
+      "DriveFile": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "mime_type",
+          "can_copy",
+          "can_add_children"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "folder",
+              "binary",
+              "google_native",
+              "shortcut"
+            ]
+          },
+          "mime_type": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "md5": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "modified_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "name",
+                  "email"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "web_url": {
+            "type": "string"
+          },
+          "can_copy": {
+            "type": "boolean"
+          },
+          "can_add_children": {
+            "type": "boolean"
+          },
+          "resource_key": {
+            "type": "string"
+          },
+          "shortcut_target_id": {
+            "type": "string"
+          }
+        }
+      },
+      "DriveFileResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "request_id"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DriveFile"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "FolderResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "request_id"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "folder",
+              "path",
+              "items",
+              "next_page_token"
+            ],
+            "properties": {
+              "folder": {
+                "$ref": "#/components/schemas/DriveFile"
+              },
+              "path": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/DriveFile"
+                }
+              },
+              "next_page_token": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "MkdirInput": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "parent_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Defaults to My Drive (`root`)"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
           }
         }
       }

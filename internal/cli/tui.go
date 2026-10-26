@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,11 +24,155 @@ func (a *App) tuiActions() tui.Actions {
 		SetDefaultDestination: a.tuiSetDefaultDestination,
 		Doctor:                a.tuiDoctor,
 		SetLanguage:           a.tuiSetLanguage,
+		Browse:                a.tuiBrowse,
+		Mkdir:                 a.tuiMkdir,
+		Inspect:               a.tuiInspect,
+		Submit:                a.tuiSubmit,
+		AddDestination:        a.tuiAddDestination,
 		Login:                 a.tuiLogin,
 		LoginState:            a.tuiLoginState,
 		OpenURL:               a.tuiOpenURL,
 		Watch:                 a.tuiWatch,
 	}
+}
+
+// driveFileView is the JSON shape of one Drive item (see /v1/drive/folders).
+type driveFileView struct {
+	ID         string  `json:"id"`
+	Name       string  `json:"name"`
+	Kind       string  `json:"kind"`
+	Mime       string  `json:"mime_type"`
+	Size       *int64  `json:"size_bytes"`
+	CreatedAt  *string `json:"created_at"`
+	ModifiedAt *string `json:"modified_at"`
+	Owner      *struct {
+		Name  string `json:"name"`
+		Email string `json:"email"`
+	} `json:"owner"`
+	WebURL   string `json:"web_url"`
+	CanCopy  bool   `json:"can_copy"`
+	CanWrite bool   `json:"can_add_children"`
+}
+
+func (f driveFileView) item() tui.DriveItem {
+	it := tui.DriveItem{ID: f.ID, Name: f.Name, Kind: f.Kind, Mime: f.Mime, Size: f.Size, WebURL: f.WebURL, CanCopy: f.CanCopy, CanWrite: f.CanWrite}
+	it.Created = parseTime(f.CreatedAt)
+	it.Modified = parseTime(f.ModifiedAt)
+	if f.Owner != nil {
+		it.Owner = f.Owner.Name
+		if f.Owner.Email != "" {
+			it.Owner = strings.TrimSpace(f.Owner.Name + " <" + f.Owner.Email + ">")
+		}
+	}
+	return it
+}
+
+func parseTime(s *string) time.Time {
+	if s == nil {
+		return time.Time{}
+	}
+	t, _ := time.Parse(time.RFC3339Nano, *s)
+	return t
+}
+
+func (a *App) tuiBrowse(ctx context.Context, folderID, pageToken string) (tui.FolderPage, error) {
+	var out tui.FolderPage
+	q := url.Values{}
+	if pageToken != "" {
+		q.Set("page_token", pageToken)
+	}
+	r, err := a.call(ctx, "GET", "/v1/drive/folders/"+url.PathEscape(folderID), q, nil, "")
+	if err != nil {
+		return out, err
+	}
+	var body struct {
+		Folder driveFileView   `json:"folder"`
+		Path   []driveFileView `json:"path"`
+		Items  []driveFileView `json:"items"`
+		Next   *string         `json:"next_page_token"`
+	}
+	if err = r.Decode(&body); err != nil {
+		return out, err
+	}
+	out.Folder = body.Folder.item()
+	for _, p := range body.Path {
+		out.Path = append(out.Path, tui.DriveItem{ID: p.ID, Name: p.Name})
+	}
+	for _, it := range body.Items {
+		out.Items = append(out.Items, it.item())
+	}
+	if body.Next != nil {
+		out.Next = *body.Next
+	}
+	return out, nil
+}
+
+func (a *App) tuiMkdir(ctx context.Context, parentID, name string) (tui.DriveItem, error) {
+	r, err := a.call(ctx, "POST", "/v1/drive/folders", nil, map[string]any{"parent_id": parentID, "name": name}, NewKey())
+	if err != nil {
+		return tui.DriveItem{}, err
+	}
+	var f driveFileView
+	if err = r.Decode(&f); err != nil {
+		return tui.DriveItem{}, err
+	}
+	return f.item(), nil
+}
+
+// tuiInspect is the read-only preview of a copy; each call is a fresh plan.
+func (a *App) tuiInspect(ctx context.Context, source, destinationID, rootName string) (tui.Plan, error) {
+	plan, _, err := a.makePlan(ctx, source, destinationID, rootName, NewKey())
+	if err != nil {
+		return tui.Plan{}, err
+	}
+	return tui.Plan{ID: plan.ID, Revision: plan.Revision, SourceID: plan.SourceID, SourceName: plan.SourceName, SourceKind: plan.SourceKind,
+		DestinationID: plan.Destination, RootName: plan.RootName, Files: plan.Preview.Files, Folders: plan.Preview.Folders,
+		Complete: plan.Preview.Complete, Warnings: plan.Warnings}, nil
+}
+
+func (a *App) tuiSubmit(ctx context.Context, plan tui.Plan) (string, error) {
+	r, err := a.call(ctx, "POST", "/v1/jobs", nil, map[string]any{"plan_id": plan.ID, "expected_revision": plan.Revision}, NewKey())
+	if err != nil {
+		return "", err
+	}
+	var job jobView
+	if err = r.Decode(&job); err != nil {
+		return "", err
+	}
+	return job.ID, nil
+}
+
+// tuiAddDestination reuses the destination that already points at the folder,
+// so choosing the same folder twice does not create duplicates.
+func (a *App) tuiAddDestination(ctx context.Context, folderID string) (tui.Destination, error) {
+	if r, err := a.call(ctx, "GET", "/v1/destinations", nil, nil, ""); err == nil {
+		var page struct {
+			Items []struct {
+				ID       string `json:"id"`
+				Name     string `json:"name"`
+				FolderID string `json:"folder_id"`
+				Revision int    `json:"revision"`
+				Default  bool   `json:"is_default"`
+			} `json:"items"`
+		}
+		if r.Decode(&page) == nil {
+			for _, d := range page.Items {
+				if d.FolderID == folderID {
+					return tui.Destination{ID: d.ID, Name: d.Name, Revision: d.Revision, Default: d.Default}, nil
+				}
+			}
+		}
+	}
+	r, err := a.call(ctx, "POST", "/v1/destinations", nil, map[string]any{"source": folderID}, NewKey())
+	if err != nil {
+		return tui.Destination{}, err
+	}
+	var d destView
+	if err = r.Decode(&d); err != nil {
+		return tui.Destination{}, err
+	}
+	a.forgetSlow()
+	return tui.Destination{ID: d.ID, Name: d.Name, Revision: d.Revision, Default: d.Default}, nil
 }
 
 // tuiLogin starts a Google sign-in; the TUI opens the browser itself.

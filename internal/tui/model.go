@@ -26,6 +26,8 @@ const (
 	screenAccount
 	screenSettings
 	screenHelp
+	screenDrive
+	screenCopy
 )
 
 const (
@@ -90,6 +92,8 @@ type Model struct {
 	selected map[string]bool
 	confirm  *confirmation
 	login    *loginState
+	drv      *explorer
+	cp       *copyFlow
 
 	watching bool // the realtime stream is connected
 	watchCh  <-chan WatchEvent
@@ -231,6 +235,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case snapshotMsg:
 		return m.onSnapshot(msg)
+	case browseMsg:
+		return m.onBrowse(msg)
+	case mkdirMsg:
+		return m.onMkdir(msg)
+	case destMsg:
+		return m.onDest(msg)
+	case planMsg:
+		return m.onPlan(msg)
+	case submitMsg:
+		return m.onSubmit(msg)
 	case loginStartedMsg, loginPollMsg, loginStateMsg:
 		return m.onLogin(msg)
 	case watchStartedMsg:
@@ -270,7 +284,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastInput = m.opt.now()
 		return m.key(msg)
 	}
+	if m.typing() { // cursor blink and paste messages reach the text field
+		return m.forwardToInput(msg)
+	}
 	return m, nil
+}
+
+func (m Model) forwardToInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch {
+	case m.screen == screenCopy && m.cp != nil && m.cp.input != nil:
+		*m.cp.input, cmd = m.cp.input.Update(msg)
+	case m.screen == screenDrive && m.drv != nil && m.drv.prompt != nil:
+		*m.drv.prompt, cmd = m.drv.prompt.Update(msg)
+	}
+	return m, cmd
 }
 
 // refetch starts a refresh unless one is already running.
@@ -387,6 +415,9 @@ func (m Model) mood(now time.Time) mascot.Mood {
 
 // key handles navigation and per-screen actions.
 func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.typing() {
+		return m.typingKey(msg)
+	}
 	if m.confirm != nil {
 		c := m.confirm
 		m.confirm = nil
@@ -396,11 +427,17 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		return m, nil
 	}
+	if m.screen == screenCopy { // the dialog owns 1/2/3, d and enter
+		return m.copyScreenKey(msg)
+	}
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		m.quits = true
 		return m, tea.Quit
 	case tea.KeyEsc:
+		if m.screen == screenDrive && m.drv != nil && m.drv.pick {
+			return m.cancelPick()
+		}
 		if m.login != nil {
 			m.login = nil
 			return m, nil
@@ -431,10 +468,13 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.goTo(screenAccount)
 	case "6":
 		return m.goTo(screenSettings)
+	case "7":
+		return m.openDrive(false)
 	case "up", "k":
 		return m.move(-1), nil
 	case "down", "j":
-		return m.move(1), nil
+		next := m.move(1)
+		return next, next.maybeLoadMore()
 	case "pgup":
 		return m.move(-m.pageSize()), nil
 	case "pgdown":
@@ -444,6 +484,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "end", "G":
 		return m.move(1 << 20), nil
 	case "r":
+		if m.screen == screenDrive {
+			return m.driveKey("r")
+		}
 		return m, m.refetch()
 	case "a":
 		return m.selectAll(), nil
@@ -489,6 +532,8 @@ func (m Model) back() (tea.Model, tea.Cmd) {
 
 func (m Model) enter() (tea.Model, tea.Cmd) {
 	switch m.screen {
+	case screenDrive:
+		return m.driveKey("enter")
 	case screenJobs:
 		if _, ok := m.selectedJob(); ok {
 			m.screen = screenJob
@@ -542,9 +587,16 @@ func (m Model) screenKey(key string) (tea.Model, tea.Cmd) {
 		if action, found := syncActions[key]; found {
 			return m.syncAct(c, action)
 		}
+	case screenDrive:
+		return m.driveKey(key)
+	case screenCopy:
+		return m.copyKey(key)
 	case screenHome:
 		if key == "l" {
 			return m.startLogin()
+		}
+		if key == "c" {
+			return m.startCopy("", screenHome)
 		}
 	case screenAccount:
 		if key == "l" {
@@ -611,6 +663,10 @@ func (m Model) selectedDestination() (Destination, bool) {
 
 func (m Model) listLen() int {
 	switch m.screen {
+	case screenDrive:
+		if m.drv != nil {
+			return len(m.drv.page.Items)
+		}
 	case screenJobs:
 		return len(m.snap.Jobs)
 	case screenLibrary:
@@ -647,6 +703,20 @@ func (m Model) listShape() (per, title int) {
 		return 1, 2
 	case screenHelp:
 		return 1, 2
+	case screenDrive:
+		title := 2
+		if m.drv != nil {
+			if m.drv.info {
+				title += 12
+			}
+			if m.drv.prompt != nil {
+				title += 4
+			}
+			if m.drv.err != "" {
+				title++
+			}
+		}
+		return 1, title
 	}
 	return 1, 0
 }

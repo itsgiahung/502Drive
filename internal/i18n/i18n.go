@@ -12,149 +12,185 @@ import (
 type Key string
 
 const (
-	Ready        Key = "ready"
-	Offline      Key = "offline"
-	ShownLast    Key = "showing_last_data"
-	Google       Key = "google"
-	Telegram     Key = "telegram"
-	Running      Key = "running"
-	Queued       Key = "queued"
-	Blocked      Key = "blocked"
-	Home         Key = "home"
-	Jobs         Key = "jobs"
-	Library      Key = "library"
-	Destination  Key = "destination"
-	Account      Key = "account"
-	Settings     Key = "settings"
-	Help         Key = "help"
-	Job          Key = "job"
-	Checks       Key = "checks"
-	Source       Key = "source"
-	State        Key = "state"
-	Phase        Key = "phase"
-	Progress     Key = "progress"
-	Counts       Key = "counts"
-	Result       Key = "result"
-	Problem      Key = "problem"
-	CopyState    Key = "copy"
-	Sync         Key = "sync"
-	Revision     Key = "revision"
-	Schedule     Key = "schedule"
-	LastSuccess  Key = "last_success"
-	NextRun      Key = "next_run"
-	NextRuns     Key = "next_runs"
-	ActiveJob    Key = "active_job"
-	Output       Key = "output"
-	NoJobs       Key = "no_jobs"
-	NoSources    Key = "no_sources"
-	NoDest       Key = "no_destination"
-	SelectJob    Key = "select_job"
-	SelectSource Key = "select_source"
-	ItemsUnknown Key = "items_unknown"
-	HomeHint     Key = "home_hint"
-	JobKeys      Key = "job_keys"
-	CollKeys     Key = "collection_keys"
-	DestKeys     Key = "dest_keys"
-	AccountKeys  Key = "account_keys"
-	SettingsKeys Key = "settings_keys"
-	FooterKeys   Key = "footer_keys"
-	FooterJob    Key = "footer_job"
-	FooterColl   Key = "footer_collection"
-	FooterHelp   Key = "footer_help"
-	FooterList   Key = "footer_list"
-	FooterLib    Key = "footer_library"
-	Selected     Key = "selected"
-	ConfirmCan   Key = "confirm_cancel"
-	ConfirmStop  Key = "confirm_stop"
-	BulkResult   Key = "bulk_result"
-	Live         Key = "live"
-	Reconnecting Key = "reconnecting"
-	FilesPerSec  Key = "files_per_sec"
-	ETALeft      Key = "eta_left"
-	ScrollPos    Key = "scroll_pos"
-	GreetMorning Key = "greet_morning"
-	GreetDay     Key = "greet_day"
-	GreetEvening Key = "greet_evening"
-	StayRunning  Key = "stay_running"
-	WorkingNow   Key = "working_now"
-	AllDone      Key = "all_done"
-	NoticeDone   Key = "notice_done"
-	NoticePart   Key = "notice_partial"
-	NoticeFail   Key = "notice_failed"
-	LoginHome    Key = "login_home"
-	LoginWaiting Key = "login_waiting"
-	LoginOpen    Key = "login_open"
-	LoginDone    Key = "login_done"
-	LoginFailed  Key = "login_failed"
-	LoginExpired Key = "login_expired"
-	LoginHide    Key = "login_hide"
-	Language     Key = "language"
-	Timezone     Key = "timezone"
-	Save         Key = "save"
-	Cancel       Key = "cancel"
-	Pause        Key = "pause"
-	Resume       Key = "resume"
-	Retry        Key = "retry"
-	RunNow       Key = "run_now"
-	EnableSync   Key = "enable_sync"
-	ChangeSched  Key = "change_schedule"
-	StopSync     Key = "stop_sync"
-	PauseSync    Key = "pause_sync"
-	ResumeSync   Key = "resume_sync"
-	PresetDaily  Key = "preset_daily"
-	PresetHourly Key = "preset_hourly"
-	PresetSixH   Key = "preset_six_hour"
-	PresetReal   Key = "preset_realtime"
-	SyncOff      Key = "sync_off"
-	PickPreset   Key = "pick_preset"
-	OpenTUI      Key = "open_tui"
-	PasteLink    Key = "paste_link"
-	JobsLibrary  Key = "jobs_library"
-	OpenResult   Key = "open_result"
-	StartDaemon  Key = "start_daemon"
-	StopDaemon   Key = "stop_daemon"
-	Quit         Key = "quit"
-	StateIdle    Key = "state_idle"
-	StateBusy    Key = "state_busy"
-	StateNeeds   Key = "state_needs"
-	StateError   Key = "state_error"
-	StateOffline Key = "state_offline"
-	StateQueued  Key = "state_queued"
-	StateRunning Key = "state_running"
-	StateDone    Key = "state_done"
-	StatePartial Key = "state_partial"
-	StateFailed  Key = "state_failed"
-	StatePaused  Key = "state_paused"
-	StatusLine   Key = "status_line"
-	OfflineLine  Key = "offline_line"
-	JobLine      Key = "job_line"
-	NoJobsTray   Key = "no_jobs_tray"
-	MenuTitle    Key = "menu_title"
-	MenuCopy     Key = "menu_copy"
-	MenuJobs     Key = "menu_jobs"
-	MenuLibrary  Key = "menu_library"
-	MenuDest     Key = "menu_destination"
-	MenuAccount  Key = "menu_account"
-	MenuSettings Key = "menu_settings"
-	MenuBack     Key = "menu_back"
-	Choice       Key = "choice"
-	InvalidPick  Key = "invalid_choice"
-	Back         Key = "back"
-	PastePrompt  Key = "paste_prompt"
-	Follow       Key = "follow"
-	BackToMenu   Key = "back_to_menu"
-	JobsLatest   Key = "jobs_latest"
-	JobActions   Key = "job_actions"
-	AddDest      Key = "add_destination"
-	RunChecks    Key = "run_checks"
-	LoginHint    Key = "login_hint"
-	Revoke       Key = "revoke"
-	SettingsHead Key = "settings_head"
-	LangVI       Key = "lang_vi"
-	LangEN       Key = "lang_en"
-	CopiedSrcs   Key = "copied_sources"
-	NothingCopy  Key = "nothing_copied"
-	WhyOff       Key = "why_off"
+	Ready           Key = "ready"
+	Offline         Key = "offline"
+	ShownLast       Key = "showing_last_data"
+	Google          Key = "google"
+	Telegram        Key = "telegram"
+	Running         Key = "running"
+	Queued          Key = "queued"
+	Blocked         Key = "blocked"
+	Home            Key = "home"
+	Jobs            Key = "jobs"
+	Library         Key = "library"
+	Destination     Key = "destination"
+	Account         Key = "account"
+	Settings        Key = "settings"
+	Help            Key = "help"
+	Job             Key = "job"
+	Checks          Key = "checks"
+	Source          Key = "source"
+	State           Key = "state"
+	Phase           Key = "phase"
+	Progress        Key = "progress"
+	Counts          Key = "counts"
+	Result          Key = "result"
+	Problem         Key = "problem"
+	CopyState       Key = "copy"
+	Sync            Key = "sync"
+	Revision        Key = "revision"
+	Schedule        Key = "schedule"
+	LastSuccess     Key = "last_success"
+	NextRun         Key = "next_run"
+	NextRuns        Key = "next_runs"
+	ActiveJob       Key = "active_job"
+	Output          Key = "output"
+	NoJobs          Key = "no_jobs"
+	NoSources       Key = "no_sources"
+	NoDest          Key = "no_destination"
+	SelectJob       Key = "select_job"
+	SelectSource    Key = "select_source"
+	ItemsUnknown    Key = "items_unknown"
+	HomeHint        Key = "home_hint"
+	JobKeys         Key = "job_keys"
+	CollKeys        Key = "collection_keys"
+	DestKeys        Key = "dest_keys"
+	AccountKeys     Key = "account_keys"
+	SettingsKeys    Key = "settings_keys"
+	FooterKeys      Key = "footer_keys"
+	FooterJob       Key = "footer_job"
+	FooterColl      Key = "footer_collection"
+	FooterHelp      Key = "footer_help"
+	FooterList      Key = "footer_list"
+	FooterLib       Key = "footer_library"
+	Selected        Key = "selected"
+	ConfirmCan      Key = "confirm_cancel"
+	ConfirmStop     Key = "confirm_stop"
+	BulkResult      Key = "bulk_result"
+	Live            Key = "live"
+	Reconnecting    Key = "reconnecting"
+	FilesPerSec     Key = "files_per_sec"
+	ETALeft         Key = "eta_left"
+	ScrollPos       Key = "scroll_pos"
+	GreetMorning    Key = "greet_morning"
+	GreetDay        Key = "greet_day"
+	GreetEvening    Key = "greet_evening"
+	StayRunning     Key = "stay_running"
+	WorkingNow      Key = "working_now"
+	AllDone         Key = "all_done"
+	NoticeDone      Key = "notice_done"
+	NoticePart      Key = "notice_partial"
+	NoticeFail      Key = "notice_failed"
+	LoginHome       Key = "login_home"
+	LoginWaiting    Key = "login_waiting"
+	LoginOpen       Key = "login_open"
+	LoginDone       Key = "login_done"
+	LoginFailed     Key = "login_failed"
+	LoginExpired    Key = "login_expired"
+	LoginHide       Key = "login_hide"
+	Drive           Key = "drive"
+	FooterDrive     Key = "footer_drive"
+	FooterPick      Key = "footer_pick"
+	FooterCopySrc   Key = "footer_copy_source"
+	FooterCopyPlan  Key = "footer_copy_plan"
+	DriveEmpty      Key = "drive_empty"
+	Loading         Key = "loading"
+	MoreBelow       Key = "more_below"
+	NewFolderPrompt Key = "new_folder_prompt"
+	FolderCreated   Key = "folder_created"
+	PickHint        Key = "pick_hint"
+	DestSet         Key = "dest_set"
+	CopyTitle       Key = "copy_title"
+	CopyPaste       Key = "copy_paste"
+	CopyChecking    Key = "copy_checking"
+	CopyFrom        Key = "copy_from"
+	CopyTo          Key = "copy_to"
+	CopyOutName     Key = "copy_out_name"
+	NameKeep        Key = "name_keep"
+	NameAuto        Key = "name_auto"
+	NameCustom      Key = "name_custom"
+	NamePrompt      Key = "name_prompt"
+	PreviewCount    Key = "preview_count"
+	PreviewPartial  Key = "preview_partial"
+	CopyStarted     Key = "copy_started"
+	MetaSize        Key = "meta_size"
+	MetaType        Key = "meta_type"
+	MetaModified    Key = "meta_modified"
+	MetaCreated     Key = "meta_created"
+	MetaOwner       Key = "meta_owner"
+	MetaID          Key = "meta_id"
+	MetaLink        Key = "meta_link"
+	MetaCopy        Key = "meta_copy"
+	MetaWrite       Key = "meta_write"
+	Yes             Key = "yes"
+	No              Key = "no"
+	Language        Key = "language"
+	Timezone        Key = "timezone"
+	Save            Key = "save"
+	Cancel          Key = "cancel"
+	Pause           Key = "pause"
+	Resume          Key = "resume"
+	Retry           Key = "retry"
+	RunNow          Key = "run_now"
+	EnableSync      Key = "enable_sync"
+	ChangeSched     Key = "change_schedule"
+	StopSync        Key = "stop_sync"
+	PauseSync       Key = "pause_sync"
+	ResumeSync      Key = "resume_sync"
+	PresetDaily     Key = "preset_daily"
+	PresetHourly    Key = "preset_hourly"
+	PresetSixH      Key = "preset_six_hour"
+	PresetReal      Key = "preset_realtime"
+	SyncOff         Key = "sync_off"
+	PickPreset      Key = "pick_preset"
+	OpenTUI         Key = "open_tui"
+	PasteLink       Key = "paste_link"
+	JobsLibrary     Key = "jobs_library"
+	OpenResult      Key = "open_result"
+	StartDaemon     Key = "start_daemon"
+	StopDaemon      Key = "stop_daemon"
+	Quit            Key = "quit"
+	StateIdle       Key = "state_idle"
+	StateBusy       Key = "state_busy"
+	StateNeeds      Key = "state_needs"
+	StateError      Key = "state_error"
+	StateOffline    Key = "state_offline"
+	StateQueued     Key = "state_queued"
+	StateRunning    Key = "state_running"
+	StateDone       Key = "state_done"
+	StatePartial    Key = "state_partial"
+	StateFailed     Key = "state_failed"
+	StatePaused     Key = "state_paused"
+	StatusLine      Key = "status_line"
+	OfflineLine     Key = "offline_line"
+	JobLine         Key = "job_line"
+	NoJobsTray      Key = "no_jobs_tray"
+	MenuTitle       Key = "menu_title"
+	MenuCopy        Key = "menu_copy"
+	MenuJobs        Key = "menu_jobs"
+	MenuLibrary     Key = "menu_library"
+	MenuDest        Key = "menu_destination"
+	MenuAccount     Key = "menu_account"
+	MenuSettings    Key = "menu_settings"
+	MenuBack        Key = "menu_back"
+	Choice          Key = "choice"
+	InvalidPick     Key = "invalid_choice"
+	Back            Key = "back"
+	PastePrompt     Key = "paste_prompt"
+	Follow          Key = "follow"
+	BackToMenu      Key = "back_to_menu"
+	JobsLatest      Key = "jobs_latest"
+	JobActions      Key = "job_actions"
+	AddDest         Key = "add_destination"
+	RunChecks       Key = "run_checks"
+	LoginHint       Key = "login_hint"
+	Revoke          Key = "revoke"
+	SettingsHead    Key = "settings_head"
+	LangVI          Key = "lang_vi"
+	LangEN          Key = "lang_en"
+	CopiedSrcs      Key = "copied_sources"
+	NothingCopy     Key = "nothing_copied"
+	WhyOff          Key = "why_off"
 )
 
 // VI is the Vietnamese table (the default language).
@@ -170,45 +206,81 @@ var VI = map[Key]string{
 	NoJobs: "Chưa có job. Hãy copy một link.", NoSources: "Chưa copy nguồn nào.",
 	NoDest:    "Chưa có thư mục đích: 502drive destinations add FOLDER_LINK",
 	SelectJob: "Chọn một job trước.", SelectSource: "Chọn một nguồn đã copy trước.",
-	ItemsUnknown: "mục: %d xong · chưa rõ tổng",
-	HomeHint:     "Dán link bằng `502drive copy`, hoặc chọn màn bên dưới.",
-	JobKeys:      "p tạm dừng · u tiếp tục · c hủy · t thử lại · esc quay lại",
-	CollKeys:     "d hằng ngày · h mỗi giờ · e mỗi 6 giờ · t realtime · n chạy ngay · p tạm dừng · x dừng · esc quay lại",
-	DestKeys:     "enter đặt mặc định · esc quay lại",
-	AccountKeys:  "l đăng nhập / kết nối lại Google · d chạy kiểm tra offline",
-	SettingsKeys: "l đổi ngôn ngữ · esc quay lại",
-	FooterKeys:   "1-6 chuyển màn · ↑↓ di chuyển · enter mở · esc quay lại · ? trợ giúp · q thoát",
-	FooterJob:    "p tạm dừng · u tiếp tục · c hủy · t thử lại · esc quay lại · q thoát",
-	FooterColl:   "d/h/e/t bật lịch · n chạy · p tạm dừng · x dừng · esc quay lại · q thoát",
-	FooterHelp:   "esc quay lại · q thoát",
-	FooterList:   "space chọn · a chọn hết · p tạm dừng · u tiếp tục · c hủy · t thử lại · enter mở · q thoát",
-	FooterLib:    "space chọn · a chọn hết · n chạy · p tạm dừng · x dừng · d/h/e/t lịch · enter mở · q thoát",
-	Selected:     "%d đã chọn",
-	ConfirmCan:   "Hủy %d job? [y/N]",
-	ConfirmStop:  "Dừng đồng bộ %d nguồn? [y/N]",
-	BulkResult:   "%s: %d xong, %d bỏ qua, %d lỗi",
-	Live:         "trực tiếp",
-	Reconnecting: "đang nối lại…",
-	FilesPerSec:  "%.0f mục/giây",
-	ETALeft:      "còn %s",
-	ScrollPos:    "%d–%d / %d",
-	GreetMorning: "Chào buổi sáng! Sẵn sàng copy.",
-	GreetDay:     "Chào bạn! Dán link để bắt đầu.",
-	GreetEvening: "Chào buổi tối! Mọi thứ đang ổn.",
-	StayRunning:  "502Drive vẫn chạy nền ở khay hệ thống. Chọn Thoát trên khay để dừng hẳn.",
-	WorkingNow:   "Đang copy %d / %d mục",
-	AllDone:      "Xong rồi — không còn việc nào đang chạy.",
-	NoticeDone:   "Đã copy xong",
-	NoticePart:   "Copy xong một phần",
-	NoticeFail:   "Copy thất bại",
-	LoginHome:    "Google chưa kết nối — nhấn l để đăng nhập.",
-	LoginWaiting: "Đang chờ bạn cho phép trên trang Google…",
-	LoginOpen:    "▶ Bấm vào đây để mở trang đăng nhập Google",
-	LoginDone:    "Đã kết nối Google.",
-	LoginFailed:  "Đăng nhập không hoàn tất. Nhấn l để thử lại.",
-	LoginExpired: "Link đăng nhập đã hết hạn. Nhấn l để tạo link mới.",
-	LoginHide:    "Link còn hiệu lực khoảng 10 phút · esc để ẩn",
-	Language:     "Ngôn ngữ", Timezone: "Múi giờ", Save: "Lưu", Cancel: "Hủy",
+	ItemsUnknown:    "mục: %d xong · chưa rõ tổng",
+	HomeHint:        "Dán link bằng `502drive copy`, hoặc chọn màn bên dưới.",
+	JobKeys:         "p tạm dừng · u tiếp tục · c hủy · t thử lại · esc quay lại",
+	CollKeys:        "d hằng ngày · h mỗi giờ · e mỗi 6 giờ · t realtime · n chạy ngay · p tạm dừng · x dừng · esc quay lại",
+	DestKeys:        "enter đặt mặc định · esc quay lại",
+	AccountKeys:     "l đăng nhập / kết nối lại Google · d chạy kiểm tra offline",
+	SettingsKeys:    "l đổi ngôn ngữ · esc quay lại",
+	FooterKeys:      "1-6 chuyển màn · ↑↓ di chuyển · enter mở · esc quay lại · ? trợ giúp · q thoát",
+	FooterJob:       "p tạm dừng · u tiếp tục · c hủy · t thử lại · esc quay lại · q thoát",
+	FooterColl:      "d/h/e/t bật lịch · n chạy · p tạm dừng · x dừng · esc quay lại · q thoát",
+	FooterHelp:      "esc quay lại · q thoát",
+	FooterList:      "space chọn · a chọn hết · p tạm dừng · u tiếp tục · c hủy · t thử lại · enter mở · q thoát",
+	FooterLib:       "space chọn · a chọn hết · n chạy · p tạm dừng · x dừng · d/h/e/t lịch · enter mở · q thoát",
+	Selected:        "%d đã chọn",
+	ConfirmCan:      "Hủy %d job? [y/N]",
+	ConfirmStop:     "Dừng đồng bộ %d nguồn? [y/N]",
+	BulkResult:      "%s: %d xong, %d bỏ qua, %d lỗi",
+	Live:            "trực tiếp",
+	Reconnecting:    "đang nối lại…",
+	FilesPerSec:     "%.0f mục/giây",
+	ETALeft:         "còn %s",
+	ScrollPos:       "%d–%d / %d",
+	GreetMorning:    "Chào buổi sáng! Sẵn sàng copy.",
+	GreetDay:        "Chào bạn! Dán link để bắt đầu.",
+	GreetEvening:    "Chào buổi tối! Mọi thứ đang ổn.",
+	StayRunning:     "502Drive vẫn chạy nền ở khay hệ thống. Chọn Thoát trên khay để dừng hẳn.",
+	WorkingNow:      "Đang copy %d / %d mục",
+	AllDone:         "Xong rồi — không còn việc nào đang chạy.",
+	NoticeDone:      "Đã copy xong",
+	NoticePart:      "Copy xong một phần",
+	NoticeFail:      "Copy thất bại",
+	LoginHome:       "Google chưa kết nối — nhấn l để đăng nhập.",
+	LoginWaiting:    "Đang chờ bạn cho phép trên trang Google…",
+	LoginOpen:       "▶ Bấm vào đây để mở trang đăng nhập Google",
+	LoginDone:       "Đã kết nối Google.",
+	LoginFailed:     "Đăng nhập không hoàn tất. Nhấn l để thử lại.",
+	LoginExpired:    "Link đăng nhập đã hết hạn. Nhấn l để tạo link mới.",
+	LoginHide:       "Link còn hiệu lực khoảng 10 phút · esc để ẩn",
+	Drive:           "Drive",
+	FooterDrive:     "↑↓ chọn · enter/→ mở · ←/⌫ lên · i thông tin · n thư mục mới · c copy · d đặt làm đích · esc quay lại",
+	FooterPick:      "↑↓ chọn · enter/→ mở · ←/⌫ lên · y chọn thư mục đang mở làm đích · n thư mục mới · esc hủy",
+	FooterCopySrc:   "enter kiểm tra · ctrl+v dán · esc hủy",
+	FooterCopyPlan:  "enter bắt đầu copy · 1/2/3 cách đặt tên · d chọn thư mục đích · esc hủy",
+	DriveEmpty:      "Thư mục trống.",
+	Loading:         "Đang tải…",
+	MoreBelow:       "… còn nữa, cuộn xuống để tải thêm",
+	NewFolderPrompt: "Tên thư mục mới (Enter tạo, Esc hủy)",
+	FolderCreated:   "Đã tạo thư mục “%s”.",
+	PickHint:        "CHỌN THƯ MỤC ĐÍCH — vào thư mục rồi nhấn y",
+	DestSet:         "Đã đặt “%s” làm thư mục đích mặc định.",
+	CopyTitle:       "Copy một link",
+	CopyPaste:       "Dán link Google Drive hoặc ID",
+	CopyChecking:    "Đang kiểm tra…",
+	CopyFrom:        "Nguồn",
+	CopyTo:          "Đích",
+	CopyOutName:     "Tên thư mục kết quả",
+	NameKeep:        "1 giữ tên gốc",
+	NameAuto:        "2 tự đặt tên mới",
+	NameCustom:      "3 tự nhập tên",
+	NamePrompt:      "Tên thư mục kết quả (Enter xác nhận, Esc hủy)",
+	PreviewCount:    "%d tệp, %d thư mục%s",
+	PreviewPartial:  " (mới thấy một phần)",
+	CopyStarted:     "Đã bắt đầu copy — job %s.",
+	MetaSize:        "Kích thước",
+	MetaType:        "Loại",
+	MetaModified:    "Sửa lần cuối",
+	MetaCreated:     "Tạo lúc",
+	MetaOwner:       "Chủ sở hữu",
+	MetaID:          "ID",
+	MetaLink:        "Link",
+	MetaCopy:        "Cho phép copy",
+	MetaWrite:       "Thêm file vào được",
+	Yes:             "có",
+	No:              "không",
+	Language:        "Ngôn ngữ", Timezone: "Múi giờ", Save: "Lưu", Cancel: "Hủy",
 	Pause: "Tạm dừng", Resume: "Tiếp tục", Retry: "Thử lại", RunNow: "Chạy ngay",
 	EnableSync: "Bật sync", ChangeSched: "Đổi lịch", StopSync: "Dừng sync",
 	PauseSync: "Tạm dừng", ResumeSync: "Bật lại sync",
@@ -248,45 +320,81 @@ var EN = map[Key]string{
 	NoJobs: "No jobs yet. Copy a link to start.", NoSources: "Nothing copied yet.",
 	NoDest:    "No destination yet: 502drive destinations add FOLDER_LINK",
 	SelectJob: "Select a job first.", SelectSource: "Select a copied source first.",
-	ItemsUnknown: "items: %d done · total unknown",
-	HomeHint:     "Paste a link with `502drive copy`, or pick a screen below.",
-	JobKeys:      "p pause · u resume · c cancel · t retry · esc back",
-	CollKeys:     "d daily · h hourly · e every 6h · t realtime · n run now · p pause · x stop · esc back",
-	DestKeys:     "enter set as default · esc back",
-	AccountKeys:  "l sign in / reconnect Google · d run the offline doctor checks",
-	SettingsKeys: "l switch language · esc back",
-	FooterKeys:   "1-6 screens · ↑↓ move · enter open · esc back · ? help · q quit",
-	FooterJob:    "p pause · u resume · c cancel · t retry · esc back · q quit",
-	FooterColl:   "d/h/e/t enable · n run · p pause · x stop · esc back · q quit",
-	FooterHelp:   "esc back · q quit",
-	FooterList:   "space select · a all · p pause · u resume · c cancel · t retry · enter open · q quit",
-	FooterLib:    "space select · a all · n run · p pause · x stop · d/h/e/t schedule · enter open · q quit",
-	Selected:     "%d selected",
-	ConfirmCan:   "Cancel %d job(s)? [y/N]",
-	ConfirmStop:  "Stop sync for %d source(s)? [y/N]",
-	BulkResult:   "%s: %d done, %d skipped, %d failed",
-	Live:         "live",
-	Reconnecting: "reconnecting…",
-	FilesPerSec:  "%.0f items/s",
-	ETALeft:      "%s left",
-	ScrollPos:    "%d–%d / %d",
-	GreetMorning: "Good morning! Ready to copy.",
-	GreetDay:     "Hello! Paste a link to start.",
-	GreetEvening: "Good evening! All quiet.",
-	StayRunning:  "502Drive keeps running in the tray. Choose Quit in the tray to stop it.",
-	WorkingNow:   "Copying %d / %d items",
-	AllDone:      "All done — nothing is running.",
-	NoticeDone:   "Copy finished",
-	NoticePart:   "Copy finished partly",
-	NoticeFail:   "Copy failed",
-	LoginHome:    "Google is not connected — press l to sign in.",
-	LoginWaiting: "Waiting for you to approve on the Google page…",
-	LoginOpen:    "▶ Click here to open the Google sign-in page",
-	LoginDone:    "Google is connected.",
-	LoginFailed:  "Sign-in did not complete. Press l to try again.",
-	LoginExpired: "The sign-in link expired. Press l for a new one.",
-	LoginHide:    "The link is valid for about 10 minutes · esc hides it",
-	Language:     "Language", Timezone: "Timezone", Save: "Save", Cancel: "Cancel",
+	ItemsUnknown:    "items: %d done · total unknown",
+	HomeHint:        "Paste a link with `502drive copy`, or pick a screen below.",
+	JobKeys:         "p pause · u resume · c cancel · t retry · esc back",
+	CollKeys:        "d daily · h hourly · e every 6h · t realtime · n run now · p pause · x stop · esc back",
+	DestKeys:        "enter set as default · esc back",
+	AccountKeys:     "l sign in / reconnect Google · d run the offline doctor checks",
+	SettingsKeys:    "l switch language · esc back",
+	FooterKeys:      "1-6 screens · ↑↓ move · enter open · esc back · ? help · q quit",
+	FooterJob:       "p pause · u resume · c cancel · t retry · esc back · q quit",
+	FooterColl:      "d/h/e/t enable · n run · p pause · x stop · esc back · q quit",
+	FooterHelp:      "esc back · q quit",
+	FooterList:      "space select · a all · p pause · u resume · c cancel · t retry · enter open · q quit",
+	FooterLib:       "space select · a all · n run · p pause · x stop · d/h/e/t schedule · enter open · q quit",
+	Selected:        "%d selected",
+	ConfirmCan:      "Cancel %d job(s)? [y/N]",
+	ConfirmStop:     "Stop sync for %d source(s)? [y/N]",
+	BulkResult:      "%s: %d done, %d skipped, %d failed",
+	Live:            "live",
+	Reconnecting:    "reconnecting…",
+	FilesPerSec:     "%.0f items/s",
+	ETALeft:         "%s left",
+	ScrollPos:       "%d–%d / %d",
+	GreetMorning:    "Good morning! Ready to copy.",
+	GreetDay:        "Hello! Paste a link to start.",
+	GreetEvening:    "Good evening! All quiet.",
+	StayRunning:     "502Drive keeps running in the tray. Choose Quit in the tray to stop it.",
+	WorkingNow:      "Copying %d / %d items",
+	AllDone:         "All done — nothing is running.",
+	NoticeDone:      "Copy finished",
+	NoticePart:      "Copy finished partly",
+	NoticeFail:      "Copy failed",
+	LoginHome:       "Google is not connected — press l to sign in.",
+	LoginWaiting:    "Waiting for you to approve on the Google page…",
+	LoginOpen:       "▶ Click here to open the Google sign-in page",
+	LoginDone:       "Google is connected.",
+	LoginFailed:     "Sign-in did not complete. Press l to try again.",
+	LoginExpired:    "The sign-in link expired. Press l for a new one.",
+	LoginHide:       "The link is valid for about 10 minutes · esc hides it",
+	Drive:           "Drive",
+	FooterDrive:     "↑↓ move · enter/→ open · ←/⌫ up · i info · n new folder · c copy · d make destination · esc back",
+	FooterPick:      "↑↓ move · enter/→ open · ←/⌫ up · y use this open folder · n new folder · esc cancel",
+	FooterCopySrc:   "enter check · ctrl+v paste · esc cancel",
+	FooterCopyPlan:  "enter start copy · 1/2/3 naming · d choose destination · esc cancel",
+	DriveEmpty:      "This folder is empty.",
+	Loading:         "Loading…",
+	MoreBelow:       "… more below, scroll down to load",
+	NewFolderPrompt: "New folder name (Enter creates, Esc cancels)",
+	FolderCreated:   "Created folder “%s”.",
+	PickHint:        "CHOOSE A DESTINATION — open a folder, then press y",
+	DestSet:         "“%s” is now the default destination.",
+	CopyTitle:       "Copy a link",
+	CopyPaste:       "Paste a Google Drive link or ID",
+	CopyChecking:    "Checking…",
+	CopyFrom:        "Source",
+	CopyTo:          "To",
+	CopyOutName:     "Output folder name",
+	NameKeep:        "1 keep the source name",
+	NameAuto:        "2 make a new name",
+	NameCustom:      "3 type a name",
+	NamePrompt:      "Output folder name (Enter confirms, Esc cancels)",
+	PreviewCount:    "%d files, %d folders%s",
+	PreviewPartial:  " (seen so far, not a full scan)",
+	CopyStarted:     "Copy started — job %s.",
+	MetaSize:        "Size",
+	MetaType:        "Type",
+	MetaModified:    "Modified",
+	MetaCreated:     "Created",
+	MetaOwner:       "Owner",
+	MetaID:          "ID",
+	MetaLink:        "Link",
+	MetaCopy:        "Copy allowed",
+	MetaWrite:       "Can add files",
+	Yes:             "yes",
+	No:              "no",
+	Language:        "Language", Timezone: "Timezone", Save: "Save", Cancel: "Cancel",
 	Pause: "Pause", Resume: "Resume", Retry: "Retry", RunNow: "Run now",
 	EnableSync: "Enable sync", ChangeSched: "Change schedule", StopSync: "Stop sync",
 	PauseSync: "Pause sync", ResumeSync: "Resume sync",
@@ -363,6 +471,8 @@ func HelpLines(lang string) []string {
 			"Library:    d hằng ngày 22:00 · h mỗi giờ · e mỗi 6 giờ · t realtime",
 			"            n chạy ngay · p tạm dừng sync · x dừng sync",
 			"Destination: enter đặt làm mặc định",
+			"Drive:      ↑↓ ←→ duyệt · i thông tin · n thư mục mới · c copy · d đặt làm đích",
+			"Home:       c copy một link (kèm chọn thư mục đích và cách đặt tên)",
 			"Account:    l đăng nhập / kết nối lại Google · d chạy kiểm tra offline",
 			"Settings:   l đổi ngôn ngữ (vi/en)",
 		}
@@ -381,6 +491,8 @@ func HelpLines(lang string) []string {
 		"Library:    d daily 22:00 · h hourly · e every 6h · t realtime",
 		"            n run now · p pause sync · x stop sync",
 		"Destination: enter sets the default folder",
+		"Drive:      ↑↓ ←→ browse · i info · n new folder · c copy · d make destination",
+		"Home:       c copy a link (choose the destination folder and the name)",
 		"Account:    l sign in / reconnect Google · d run the offline doctor checks",
 		"Settings:   l switch language (vi/en)",
 	}

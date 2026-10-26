@@ -210,9 +210,69 @@ func short(s string, n int) string {
 // jobText is the panel body for one job. Every Drive name is escaped, and the
 // text only depends on the job row: the notification worker skips edits when
 // the rendered text did not change.
-func jobText(tx texts, j state.Job) string {
+// travelFrames is the loading animation of a running copy: a file travels from
+// the source folder to the destination. The panel is edited at most once per
+// edit interval, so each edit simply shows the next frame.
+var travelFrames = []string{
+	"📂 ➤ · · · · 📁",
+	"📂 · ➤ · · · 📁",
+	"📂 · · ➤ · · 📁",
+	"📂 · · · ➤ · 📁",
+	"📂 · · · · ➤ 📁",
+}
+
+func busyJob(state string) bool {
+	switch state {
+	case "queued", "running", "pausing", "cancelling", "reconciling":
+		return true
+	}
+	return false
+}
+
+func stateEmoji(state string) string {
+	switch state {
+	case "succeeded":
+		return "✅ "
+	case "partial":
+		return "⚠️ "
+	case "failed":
+		return "❌ "
+	case "cancelled":
+		return "⏹ "
+	case "paused":
+		return "⏸ "
+	case "blocked":
+		return "⛔ "
+	}
+	return ""
+}
+
+const barCells = 14
+
+// progressBar is a real bar from counts: "▰▰▰▱▱ 42%".
+func progressBar(done, total int) string {
+	if total <= 0 {
+		return ""
+	}
+	done = min(max(done, 0), total)
+	fill := done * barCells / total
+	return strings.Repeat("▰", fill) + strings.Repeat("▱", barCells-fill) + fmt.Sprintf(" %d%%", done*100/total)
+}
+
+func jobText(tx texts, j state.Job) string { return jobTextFrame(tx, j, 0) }
+
+// jobTextFrame renders the job panel; frame picks the animation step.
+func jobTextFrame(tx texts, j state.Job, frame int) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "<b>%s</b> — %s\n", escape(short(j.RootName, 60)), tx.stateLabel(j.State))
+	fmt.Fprintf(&b, "<b>%s%s</b> — %s\n", stateEmoji(j.State), escape(short(j.RootName, 60)), tx.stateLabel(j.State))
+	if busyJob(j.State) {
+		fmt.Fprintf(&b, "%s\n", travelFrames[((frame%len(travelFrames))+len(travelFrames))%len(travelFrames)])
+	}
+	if j.Counts.Total != nil {
+		if bar := progressBar(j.Counts.Completed, *j.Counts.Total); bar != "" {
+			fmt.Fprintf(&b, "%s\n", bar)
+		}
+	}
 	fmt.Fprintf(&b, "%s: <code>%s</code>\n", tx.jobLabel, escape(j.ID))
 	total := tx.totalUnknown
 	if j.Counts.Total != nil {

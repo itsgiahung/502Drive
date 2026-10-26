@@ -34,6 +34,12 @@ type File struct {
 	CanCopy            bool
 	CanAddChildren     bool
 	AppProperties      map[string]string
+	// Display metadata (not used by the copy engine).
+	Created    time.Time
+	Modified   time.Time
+	OwnerName  string
+	OwnerEmail string
+	WebLink    string
 }
 
 func (f File) IsFolder() bool   { return f.MimeType == MimeFolder }

@@ -16,7 +16,7 @@ import (
 	"google.golang.org/api/option"
 )
 
-const fileFields = "id,name,mimeType,parents,size,md5Checksum,version,resourceKey,driveId,trashed,shortcutDetails(targetId,targetMimeType,targetResourceKey),capabilities(canCopy,canAddChildren),appProperties"
+const fileFields = "id,name,mimeType,parents,size,md5Checksum,version,resourceKey,driveId,trashed,shortcutDetails(targetId,targetMimeType,targetResourceKey),capabilities(canCopy,canAddChildren),appProperties,createdTime,modifiedTime,owners(displayName,emailAddress),webViewLink"
 
 // Client is the Google Drive v3 implementation of Provider.
 type Client struct{ svc *gdrive.Service }
@@ -54,6 +54,12 @@ func convert(f *gdrive.File) File {
 	if f.Capabilities != nil {
 		out.CanCopy, out.CanAddChildren = f.Capabilities.CanCopy, f.Capabilities.CanAddChildren
 	}
+	out.Created, _ = time.Parse(time.RFC3339, f.CreatedTime)
+	out.Modified, _ = time.Parse(time.RFC3339, f.ModifiedTime)
+	if len(f.Owners) > 0 && f.Owners[0] != nil {
+		out.OwnerName, out.OwnerEmail = f.Owners[0].DisplayName, f.Owners[0].EmailAddress
+	}
+	out.WebLink = f.WebViewLink
 	return out
 }
 

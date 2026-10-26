@@ -80,6 +80,9 @@ func (s *Server) Handler() http.Handler {
 	for _, a := range []string{"pause", "resume", "cancel", "retry"} {
 		route("POST /v1/jobs/{id}/"+a, s.jobAction(a))
 	}
+	route("GET /v1/drive/folders/{id}", s.browseFolder)
+	route("GET /v1/drive/files/{id}", s.driveFile)
+	route("POST /v1/drive/folders", s.mkdir)
 	route("GET /v1/destinations", s.listDestinations)
 	route("POST /v1/destinations", s.addDestination)
 	route("PUT /v1/destinations/default", s.setDefaultDestination)

@@ -1035,3 +1035,34 @@ func waitFor(t *testing.T, cond func() bool) {
 	}
 	t.Fatal("condition was not reached in time")
 }
+
+func TestJobPanelShowsABarAndAnAnimationFrameWhileRunning(t *testing.T) {
+	tx := english
+	total := 200
+	j := state.Job{ID: "job_1", RootName: "Photos", State: "running", Counts: state.Counts{Completed: 50, Total: &total}}
+	a := jobTextFrame(tx, j, 0)
+	b := jobTextFrame(tx, j, 1)
+	if a == b {
+		t.Fatal("the next frame must look different, or the panel would not animate")
+	}
+	for _, want := range []string{"📂", "📁", "▰▰▰▱", "25%"} {
+		if !strings.Contains(a, want) {
+			t.Fatalf("running panel lacks %q:\n%s", want, a)
+		}
+	}
+	j.State = "succeeded"
+	done := jobTextFrame(tx, j, 3)
+	if strings.Contains(done, "➤") || !strings.Contains(done, "✅") {
+		t.Fatalf("a finished job must stop animating and show a tick:\n%s", done)
+	}
+	if jobTextFrame(tx, j, 3) != jobTextFrame(tx, j, 4) {
+		t.Fatal("a finished panel must not change between frames (no pointless edits)")
+	}
+	j.Counts.Total = nil
+	if strings.Contains(jobTextFrame(tx, j, 0), "%") {
+		t.Fatal("an unknown total must not show a percentage")
+	}
+	if progressBar(500, 100) != "▰▰▰▰▰▰▰▰▰▰▰▰▰▰ 100%" {
+		t.Fatalf("an overshooting count must clamp: %q", progressBar(500, 100))
+	}
+}
