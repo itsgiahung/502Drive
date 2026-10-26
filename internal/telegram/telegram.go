@@ -150,6 +150,8 @@ func (t *Telegram) Run(ctx context.Context) {
 				continue
 			}
 			verified = true
+			// The token works: report polling now, not after the first 30 s long poll.
+			t.setState(StatePolling)
 		}
 		offset, err := t.store.TelegramOffset(ctx, t.instance)
 		if err != nil {
