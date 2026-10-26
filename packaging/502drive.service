@@ -1,0 +1,29 @@
+[Unit]
+Description=502Drive daemon (copy Google Drive links and keep them in sync)
+Documentation=https://github.com/GiaHung07/502Drive
+After=network-online.target
+Wants=network-online.target
+# User unit, opt-in only: there is no [Install] section, so the package never
+# enables or starts it. Start it once with `systemctl --user start 502drive`
+# (the tray's "Start daemon" item does exactly that).
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/502drive serve
+Restart=on-failure
+RestartSec=5
+# The daemon binds loopback only; nothing listens on a public address.
+# Basic hardening. The data directory and config must stay writable:
+# the default v2 locations are under %h/.config/502drive-next and
+# %h/.local/share/502drive. A custom data_dir needs a drop-in with
+# an extra ReadWritePaths= entry.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.config/502drive-next %h/.local/share/502drive
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0077

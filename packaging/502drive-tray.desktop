@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=502Drive
+GenericName=Google Drive copy and sync
+Comment=Copy Drive links server-side and keep a copied folder in sync
+Exec=502drive up --quiet
+Icon=502drive
+Terminal=false
+Categories=Network;
+Keywords=drive;copy;sync;backup;tray;
+StartupNotify=false
+# The tray is optional: autostart is not enabled by the package. To start it
+# with the session, copy this file to ~/.config/autostart/ (or use the
+# "Start when I sign in" entry of your desktop settings).

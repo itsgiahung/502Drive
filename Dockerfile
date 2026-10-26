@@ -1,57 +1,58 @@
-# Multi-stage build for the 502Drive headless daemon (Telegram bot + sync engine)
-# The Tauri desktop GUI is NOT built here — use `cargo tauri build` on a desktop OS.
-FROM rust:bookworm AS builder
-
-WORKDIR /app
-
-# The root crate is a Cargo workspace whose members include src-tauri, so the
-# member manifests must be present even when only the `502drive` bin is built.
-COPY Cargo.toml Cargo.lock ./
-COPY migrations ./migrations
-COPY src ./src
-COPY src-tauri ./src-tauri
-
-RUN cargo build --release --bin 502drive
+# syntax=docker/dockerfile:1
 
 # ------------------------------------------------------------------------------
-# Minimal Runtime Stage
+# Build stage — pure-Go daemon, statically linked (modernc.org/sqlite, so
+# CGO_ENABLED=0 is safe and no libc is required at runtime).
 # ------------------------------------------------------------------------------
-FROM debian:bookworm-slim AS runtime
+FROM golang:1.27-bookworm AS builder
 
-# CA certificates for HTTPS, tzdata for local time, curl for manual probes
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    tzdata \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
 
-# Non-root user for security hardening
-RUN groupadd -g 10001 appuser && \
-    useradd -u 10001 -g appuser -s /bin/sh -m appuser
+# Dependency layer first so `go mod download` is reused across source edits.
+COPY go.mod go.sum ./
+RUN go mod download
 
-COPY --from=builder /app/target/release/502drive /usr/local/bin/502drive
-COPY --from=builder /app/target/release/gdclone-bot /usr/local/bin/gdclone-bot
+COPY cmd ./cmd
+COPY internal ./internal
 
-RUN mkdir -p /config /data && \
-    chown -R appuser:appuser /config /data
+# Stamp the release version: --build-arg VERSION=$(git describe --tags)
+ARG VERSION=docker
 
-USER appuser
+RUN CGO_ENABLED=0 GOOS=linux go build \
+        -trimpath \
+        -ldflags "-s -w -X github.com/GiaHung07/502Drive/internal/cli.Version=${VERSION}" \
+        -o /out/502drive ./cmd/502drive \
+    && mkdir -p /out/config /out/data
+
+# ------------------------------------------------------------------------------
+# Runtime stage — distroless static, non-root, no shell.
+# ------------------------------------------------------------------------------
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=builder /out/502drive /usr/local/bin/502drive
+# Mount points owned by nonroot (65532) in the image, so anonymous volumes
+# inherit the right ownership on first create.
+COPY --from=builder --chown=65532:65532 /out/config /config
+COPY --from=builder --chown=65532:65532 /out/data /data
+
+USER nonroot
 WORKDIR /data
+VOLUME ["/data"]
 
-VOLUME ["/config", "/data"]
-
-ENV RUST_LOG=info
+# distroless/static-debian12 already ships CA certificates and tzdata.
 ENV TZ=Asia/Ho_Chi_Minh
-# Keep all mutable state on the mounted /data volume (defaults would land in
-# the container-internal home and vanish on recreate).
-ENV GDCLONE__STORAGE__DB_PATH=/data/state.db
-ENV GDCLONE__STORAGE__LOG_DIR=/data/logs
-ENV GDCLONE__STORAGE__REPORT_DIR=/data/reports
+# Config JSON: /config/config.json on the config volume, or a path under /data.
+# Override with `--config PATH` or DRIVE502_CONFIG.
+ENV DRIVE502_CONFIG=/config/config.json
 
-# `status` opens the SQLite database read-only — a cheap liveness probe that
-# also fails loudly when /config/config.toml is missing or malformed.
-HEALTHCHECK --interval=60s --timeout=15s --start-period=30s --retries=3 \
-    CMD ["502drive", "--config", "/config/config.toml", "status"]
-
+# `serve` reads that config JSON, requires data_dir + token_file, and keeps all
+# state in the data dir: state-v2.db, secrets/ and instance.lock. Mount /data at
+# a persistent location.
+#
+# Networking: the HTTP API listens on a loopback address only (127.0.0.1 by
+# default), so no public inbound port is needed. Google OAuth uses a loopback
+# callback (config key oauth_callback_port): bind loopback + publish/forward the
+# OAuth callback port when authorizing in-container, and do not expose a public
+# inbound port by default.
 ENTRYPOINT ["/usr/local/bin/502drive"]
-CMD ["--config", "/config/config.toml", "run"]
+CMD ["serve"]

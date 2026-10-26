@@ -1,0 +1,251 @@
+name: Go Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Format, vet and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (exact tag commit)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: "Guard: tag refs only"
+        run: |
+          set -eu
+          if [ "${GITHUB_REF_TYPE:-}" != "tag" ]; then
+            echo "::error::Go Release must run on a tag ref, got '${GITHUB_REF_TYPE:-unknown}'"
+            exit 1
+          fi
+          case "${GITHUB_REF:-}" in
+            refs/tags/v*)
+              echo "Releasing tag ${GITHUB_REF#refs/tags/}"
+              ;;
+            *)
+              echo "::error::ref '${GITHUB_REF:-unknown}' is not a v* tag"
+              exit 1
+              ;;
+          esac
+
+      - name: gofmt
+        run: test -z "$(gofmt -l ./cmd ./internal)"
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test (race)
+        run: go test -race ./...
+
+  build:
+    name: Build release artifacts
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (exact tag commit)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Real (non-snapshot) build of the tagged commit, but nothing is published
+      # here: the very files verified below are the ones that get released.
+      - name: GoReleaser (build only)
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --skip=publish
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    name: Verify artifacts
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (exact tag commit)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Verify checksums
+        working-directory: dist
+        run: sha256sum -c checksums.txt
+
+      - name: Smoke test linux/amd64 binary
+        run: |
+          set -euo pipefail
+          tarball=$(ls dist/502drive_*_linux_amd64.tar.gz)
+          mkdir -p smoke
+          tar -xzf "$tarball" -C smoke
+          ./smoke/502drive version
+
+      - name: Check the Windows archive has both binaries
+        run: |
+          set -euo pipefail
+          archive=$(ls dist/502drive_*_windows_amd64.zip)
+          unzip -l "$archive"
+          unzip -l "$archive" | grep -q '502drive.exe'
+          unzip -l "$archive" | grep -q '502drive-tray.exe'
+
+      - name: Check the Linux packages exist
+        run: |
+          set -euo pipefail
+          ls dist/*.rpm dist/*.deb
+
+  rpm-smoke:
+    name: RPM smoke (Fedora)
+    needs: verify
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - name: Download verified artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Package contents
+        run: |
+          set -euo pipefail
+          rpm_file=$(ls dist/502drive_*_linux_amd64.rpm)
+          rpm -qlp "$rpm_file" | sort | tee contents.txt
+          for path in \
+            /usr/bin/502drive \
+            /usr/lib/systemd/user/502drive.service \
+            /usr/share/applications/502drive-tray.desktop \
+            /usr/share/icons/hicolor/256x256/apps/502drive.png \
+            /usr/share/bash-completion/completions/502drive \
+            /usr/share/zsh/vendor-completions/_502drive \
+            /usr/share/fish/vendor_completions.d/502drive.fish; do
+            grep -qx "$path" contents.txt
+          done
+
+      - name: Verify digests
+        run: |
+          set -euo pipefail
+          rpm -Kv dist/502drive_*_linux_amd64.rpm | tee digest.txt
+          grep -q 'digests OK' digest.txt
+
+      - name: Install transaction test
+        run: rpm -i --test dist/502drive_*_linux_amd64.rpm
+
+  windows-installer:
+    name: Windows installer
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - name: Checkout (exact tag commit)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Download verified artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Stage the verified Windows binaries
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist -Filter '502drive_*_windows_amd64.zip' | Select-Object -First 1
+          if (-not $zip) { throw 'the verified Windows archive is missing' }
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath dist/windows -Force
+          Get-ChildItem dist/windows | Format-Table Name, Length
+
+      - name: Build the installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { throw "Inno Setup not found at $iscc" }
+          & $iscc "/DMyAppVersion=$version" 'packaging/windows/502drive.iss'
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with $LASTEXITCODE" }
+
+      - name: Checksum the installer
+        shell: pwsh
+        run: |
+          $file = 'artifacts/windows/502drive-setup.exe'
+          if (-not (Test-Path $file)) { throw 'the installer was not produced' }
+          $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+          "$hash  502drive-setup.exe" | Set-Content "$file.sha256" -Encoding ascii
+          Get-Content "$file.sha256"
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: artifacts/windows/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub release
+    needs: [rpm-smoke, windows-installer]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Download the Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: artifacts/windows
+
+      - name: Re-check checksums before publishing
+        working-directory: dist
+        run: sha256sum -c checksums.txt
+
+      - name: Create the release from the verified files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            dist/*.tar.gz dist/*.zip dist/*.rpm dist/*.deb dist/checksums.txt \
+            artifacts/windows/502drive-setup.exe artifacts/windows/502drive-setup.exe.sha256 \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes

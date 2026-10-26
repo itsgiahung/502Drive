@@ -16,7 +16,8 @@ body:
       placeholder: |
         OS:
         Install method:
-        Rust version:
+        Go version (go version):
+        502drive version:
         Running as systemd user / Task Scheduler / manual:
     validations:
       required: true
@@ -24,5 +25,5 @@ body:
     id: doctor
     attributes:
       label: Doctor output
-      description: Paste `gdclone-bot doctor` output with secrets redacted.
+      description: Paste `502drive doctor` output with secrets redacted.
       render: text

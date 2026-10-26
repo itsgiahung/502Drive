@@ -1,32 +1,27 @@
-/target/
-/references/
+# secrets and runtime data
 /.env
-/config.toml
+/config.json
 data/
+data-v2/
 reports/
 logs/
 master.key
+api-token
+client_secret*.json
+*.pem
 *.db
 *.db-shm
 *.db-wal
 *.log
 
-
-
-# Added by cargo
-
-/target
-__pycache__/
-
-# Frontend & Distribution artifacts
-node_modules/
-frontend/node_modules/
-frontend/dist/
+# build output
 dist/
+build/
+artifacts/
+bin/
+# generated Windows icon resources (go-winres, see .goreleaser.yaml)
+*.syso
 
-.trash/
-.video_agent/
-*.tsbuildinfo
-.local-notes/
-.zcode/
-.ai/
+# local only
+/legacy-backup/
+/references/

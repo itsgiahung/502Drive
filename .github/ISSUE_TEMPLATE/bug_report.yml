@@ -35,7 +35,7 @@ body:
         OS:
         Drive502 version/commit:
         Install method:
-        telegram.language:
+        preference language (vi/en):
     validations:
       required: true
   - type: textarea

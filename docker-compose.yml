@@ -6,19 +6,21 @@ services:
     image: 502drive:latest
     container_name: 502drive-bot
     restart: unless-stopped
+    command: ["serve"]
     environment:
-      - RUST_LOG=info
       - TZ=Asia/Ho_Chi_Minh
-      # Headless setup: configure entirely via env overrides, or edit
-      # ./config/config.toml on the host instead. See docs/install-docker.md.
-      # - GDCLONE__TELEGRAM__BOT_TOKEN=123456789:AAExample...
-      # - GDCLONE__TELEGRAM__OWNER_TELEGRAM_ID=123456789
-      # - GDCLONE__GOOGLE_OAUTH__CLIENT_ID=xxx.apps.googleusercontent.com
-      # - GDCLONE__GOOGLE_OAUTH__CLIENT_SECRET=GOCSPX-...
+      # The Go daemon reads config JSON (data_dir, token_file, listen,
+      # oauth_callback_port, ...). Default path inside the image is
+      # /config/config.json, which is where the ./config mount lands.
+      # - DRIVE502_CONFIG=/config/config.json
     volumes:
+      # config.json + API token file (create them with `502drive setup`).
       - ./config:/config
+      # Persistent state: state-v2.db, secrets/, instance.lock.
       - ./data:/data
-    # Google OAuth loopback redirect range (config: redirect_port_start/end,
-    # defaults 51000-51100). Only needed while running `auth login` in-container.
-    ports:
-      - "51000-51100:51000-51100"
+    # The HTTP API binds loopback only, so no public port is published.
+    # Google OAuth uses a loopback callback (config key oauth_callback_port);
+    # when running `502drive account login` inside the container, forward that
+    # port from the host instead of exposing a public inbound port, e.g.:
+    # ports:
+    #   - "127.0.0.1:50200:50200"
