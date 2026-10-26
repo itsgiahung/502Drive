@@ -49,14 +49,14 @@ LicenseFile=..\..\LICENSE
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "addtopath"; Description: "Add 502Drive to PATH (so you can type 502drive or the short 502 in a terminal)"; GroupDescription: "Command line:"
+Name: "addtopath"; Description: "Add 502Drive to PATH (so you can type 502drive or the short 502d in a terminal)"; GroupDescription: "Command line:"
 Name: "autostart"; Description: "Start 502Drive in the notification area when I sign in"; GroupDescription: "Startup:"; Flags: unchecked
 
 [Files]
 Source: "..\..\dist\windows\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\dist\windows\{#MyAppTrayName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\logo.ico"; DestDir: "{app}"; DestName: "502drive.ico"; Flags: ignoreversion
-Source: "502.cmd"; DestDir: "{app}"; Flags: ignoreversion
+Source: "502d.cmd"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\NOTICE.md"; DestDir: "{app}"; Flags: ignoreversion
 

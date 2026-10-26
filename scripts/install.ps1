@@ -22,8 +22,8 @@ try {
     New-Item -ItemType Directory -Force -Path $prefix | Out-Null
     Expand-Archive "$tmp\$name" -DestinationPath $tmp\x -Force
     Copy-Item "$tmp\x\502drive.exe", "$tmp\x\502drive-tray.exe" -Destination $prefix -Force
-    # Short alias: `502` runs 502drive.
-    Set-Content -Path (Join-Path $prefix '502.cmd') -Value "@echo off`r`n`"%~dp0502drive.exe`" %*" -Encoding ASCII
+    # Short alias: `502d` runs 502drive.
+    Set-Content -Path (Join-Path $prefix '502d.cmd') -Value "@echo off`r`n`"%~dp0502drive.exe`" %*" -Encoding ASCII
 
     $user = [string][Environment]::GetEnvironmentVariable('Path', 'User')
     if (($user -split ';') -notcontains $prefix) {
@@ -31,8 +31,8 @@ try {
         [Environment]::SetEnvironmentVariable('Path', $joined, 'User')
         Write-Host "Added $prefix to your PATH (open a new terminal)."
     }
-    Write-Host "Installed 502drive and the short alias 502 in $prefix"
-    Write-Host 'Start with:  502drive      (or just: 502)'
+    Write-Host "Installed 502drive and the short alias 502d in $prefix"
+    Write-Host 'Start with:  502drive      (or just: 502d)'
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }

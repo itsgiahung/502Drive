@@ -54,6 +54,37 @@ func TestSetupWritesTelegramAndCallbackOptions(t *testing.T) {
 	}
 }
 
+func TestSetupContainerOptInBindsTheContainerInterfaces(t *testing.T) {
+	home := privateDir(t)
+	cfgPath := filepath.Join(home, "config.json")
+	var out, errb strings.Builder
+	code := Execute(t.Context(), []string{"--config", cfgPath, "setup", "--container", "--no-env"},
+		IO{In: strings.NewReader(""), Out: &out, Err: &errb})
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Container || cfg.Listen != "0.0.0.0:5020" {
+		t.Fatalf("config = %+v", cfg)
+	}
+	if !strings.Contains(out.String(), "0.0.0.0:5020") || !strings.Contains(out.String(), "127.0.0.1") {
+		t.Fatalf("summary does not explain the publish rule: %q", out.String())
+	}
+	// A plain setup on a new path keeps the loopback default.
+	plain := filepath.Join(privateDir(t), "config.json")
+	if code := Execute(t.Context(), []string{"--config", plain, "setup", "--no-env"},
+		IO{In: strings.NewReader(""), Out: &strings.Builder{}, Err: &strings.Builder{}}); code != ExitOK {
+		t.Fatalf("plain setup exit %d", code)
+	}
+	def, err := config.Load(plain)
+	if err != nil || def.Container || def.Listen != "127.0.0.1:5020" {
+		t.Fatalf("default config = %+v, %v", def, err)
+	}
+}
+
 func TestSetupRejectsUnsafeOptions(t *testing.T) {
 	home := privateDir(t)
 	cfgPath := filepath.Join(home, "config.json")

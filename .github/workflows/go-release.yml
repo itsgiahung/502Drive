@@ -153,7 +153,7 @@ jobs:
           rpm -qlp "$rpm_file" | sort | tee contents.txt
           for path in \
             /usr/bin/502drive \
-            /usr/bin/502 \
+            /usr/bin/502d \
             /usr/lib/systemd/user/502drive.service \
             /usr/share/applications/502drive-tray.desktop \
             /usr/share/icons/hicolor/256x256/apps/502drive.png \

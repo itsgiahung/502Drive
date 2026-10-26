@@ -41,7 +41,7 @@ starts.
 ## Quick start
 
 ```bash
-502drive          # (or just: 502) asks for your keys on the first run, starts everything, opens the TUI
+502drive          # (or just: 502d) asks for your keys on the first run, starts everything, opens the TUI
 ```
 
 You only need two things from Google once: an OAuth **Desktop** client
@@ -82,12 +82,12 @@ curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/in
 irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex            # Windows (PowerShell)
 ```
 
-Both install `502drive` and the short alias **`502`**, so after installing you can
-just type `502`.
+Both install `502drive` and the short alias **`502d`** (d for drive), so after
+installing you can just type `502d`. The bare `502` is deliberately left free for other tools.
 
 | Platform | How |
 | --- | --- |
-| Linux (Fedora/RHEL, Debian/Ubuntu) | `.rpm` / `.deb` from the release page (installs `502drive` and `502`). [Guide](docs/install-linux.md) |
+| Linux (Fedora/RHEL, Debian/Ubuntu) | `.rpm` / `.deb` from the release page (installs `502drive` and `502d`). [Guide](docs/install-linux.md) |
 | Windows 10/11 | `.zip`, or the installer (unsigned: SmartScreen will warn). [Guide](docs/install-windows.md) |
 | Docker | [Guide](docs/install-docker.md) |
 | From source | `go install github.com/itsgiahung/502Drive/cmd/502drive@latest` (Go 1.27), or `make build` |

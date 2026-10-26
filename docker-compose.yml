@@ -1,26 +1,32 @@
+# One collector per person: your own Google account, your own data.
+# Nothing is published beyond the host loopback (127.0.0.1).
 services:
   502drive:
     build:
       context: .
       dockerfile: Dockerfile
     image: 502drive:latest
-    container_name: 502drive-bot
+    container_name: 502drive
     restart: unless-stopped
-    command: ["serve"]
+    # Let in-flight jobs reach a safe point before Docker sends SIGKILL.
+    stop_grace_period: 30s
+    env_file:
+      - .env
     environment:
-      - TZ=Asia/Ho_Chi_Minh
-      # The Go daemon reads config JSON (data_dir, token_file, listen,
-      # oauth_callback_port, ...). Default path inside the image is
-      # /config/config.json, which is where the ./config mount lands.
-      # - DRIVE502_CONFIG=/config/config.json
+      # The daemon reads config JSON (listen, data_dir, token_file, ...).
+      - DRIVE502_CONFIG=/config/config.json
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    ports:
+      # HTTP API: reachable at http://127.0.0.1:5020 on the host only.
+      - "127.0.0.1:5020:5020"
+      # Fixed loopback OAuth callback, used by `account login`.
+      - "127.0.0.1:50200:50200"
     volumes:
-      # config.json + API token file (create them with `502drive setup`).
+      # config.json + API token + copied secrets (created by `502drive setup
+      # --container`); never bake secrets into the image.
       - ./config:/config
-      # Persistent state: state-v2.db, secrets/, instance.lock.
-      - ./data:/data
-    # The HTTP API binds loopback only, so no public port is published.
-    # Google OAuth uses a loopback callback (config key oauth_callback_port);
-    # when running `502drive account login` inside the container, forward that
-    # port from the host instead of exposing a public inbound port, e.g.:
-    # ports:
-    #   - "127.0.0.1:50200:50200"
+      # state-v2.db, master key, Google token, instance.lock.
+      - 502drive-data:/data
+
+volumes:
+  502drive-data:

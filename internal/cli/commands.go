@@ -464,24 +464,11 @@ func (a *App) jobsCmd() *cobra.Command {
 	events.Flags().Int64Var(&after, "after-sequence", 0, "resume after this sequence")
 	events.Flags().BoolVar(&follow, "follow", false, "keep polling until the job is finished")
 
-	jobs.AddCommand(list, get, wait, events)
-	for _, act := range []string{"pause", "resume", "cancel", "retry"} {
+	jobs.AddCommand(list, get, wait, events, a.cancelCmd())
+	for _, act := range []string{"pause", "resume", "retry"} {
 		act := act
 		jobs.AddCommand(&cobra.Command{Use: act + " JOB_ID", Short: strings.ToUpper(act[:1]) + act[1:] + " a job", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-			j, err := a.fetchJob(cmd.Context(), args[0])
-			if err != nil {
-				return err
-			}
-			r, err := a.call(cmd.Context(), "POST", "/v1/jobs/"+url.PathEscape(args[0])+"/"+act, nil, map[string]any{"expected_revision": j.Revision}, NewKey())
-			if err != nil {
-				return err
-			}
-			var nj jobView
-			if err = r.Decode(&nj); err != nil {
-				return err
-			}
-			a.emit(r, nj.ID, func() { fmt.Fprintf(a.out(), "%s requested.\n", act); a.printJob(nj) })
-			return nil
+			return a.jobActionByID(cmd.Context(), args[0], act)
 		}})
 	}
 	return jobs

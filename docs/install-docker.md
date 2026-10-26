@@ -1,68 +1,91 @@
-# Cài bằng Docker
+# Chạy bằng Docker / Podman
 
-[Dockerfile](../Dockerfile): 2 tầng — `golang:1.27-bookworm` build
-(`CGO_ENABLED=0 GOOS=linux`) → `gcr.io/distroless/static-debian12:nonroot`.
-Image chỉ có binary + CA + tzdata; không shell, không curl. **Chưa** build/chạy
-image trong phiên này.
+Dockerfile: 2 tầng — `golang:1.27-bookworm` build (`CGO_ENABLED=0`) →
+`gcr.io/distroless/static-debian12:nonroot`. Image chỉ có binary + CA + tzdata;
+không shell, không curl. `HEALTHCHECK` chạy chính binary (`502drive healthcheck`).
 
-```bash
-docker build -t 502drive:latest .
-```
-
-## Chuẩn bị config (trên host, không vào image)
+## Ba lệnh chạy nhanh
 
 ```bash
-mkdir -p config data && chmod 700 config data
-502drive setup --config ./config/config.json     # hoặc viết config JSON thủ công
-# config.json cần: listen, data_dir=/data, token_file=/config/api-token,
-#                  oauth_client_file=/config/client_secret.json (nếu login),
-#                  telegram_token_file=/config/bot-token (nếu bot)
+cp .env.example .env                 # TZ + đường dẫn config; giá trị mẫu là giả
+502drive setup --config ./config/config.json --container
+docker compose up -d --build
 ```
 
-`setup` tạo token file 0600; mount cả thư mục `config`. Secret không nằm trong
-image layer.
-
-## Chạy
-
-```bash
-docker run -d --name 502drive \
-  --restart unless-stopped \
-  -v "$PWD/config:/config" -v "$PWD/data:/data" \
-  -e TZ=Asia/Ho_Chi_Minh \
-  502drive:latest
-```
-
-hoặc `docker compose up -d` với [docker-compose.yml](../docker-compose.yml).
-
-- HTTP API bind **loopback trong container** ⇒ không publish cổng 5020. Muốn gọi
-  từ host: `ssh -L 5020:127.0.0.1:5020 user@docker-host` hoặc
-  `docker exec 502drive /usr/local/bin/502drive --config /config/config.json status`
-  (binary có trong image, không cần shell).
-- `/data` giữ `state-v2.db`, `secrets/` (key + token), `instance.lock`; recreate
-  container không mất state nếu volume còn.
-
-## OAuth trong container
-
-Callback là loopback **trong container**; publish đúng cổng callback ra host khi
-login:
-
-```bash
-docker run --rm -p 127.0.0.1:50200:50200 … 502drive:latest
-# rồi trên host: 502drive account login (nếu CLI cùng máy) hoặc mở URL in ra
-```
-
-Nếu daemon ở máy khác, dùng `ssh -L 50200:127.0.0.1:50200` như CLI hướng dẫn.
-Không publish `5020` ra ngoài; không dùng `network_mode: host` cho deployment
-đầu tiên.
+- `--container` đặt `"container": true` và `listen: "0.0.0.0:5020"` **chỉ** trong
+  config của container; `docker-compose.yml` publish hai cổng **loopback trên
+  host**: `127.0.0.1:5020` (API) và `127.0.0.1:50200` (callback OAuth). Không
+  publish cổng nào ra ngoài; đừng bỏ tiền tố `127.0.0.1:`.
+- Dữ liệu nằm trong volume `502drive-data` (`state-v2.db`, `secrets/`,
+  `instance.lock`); config/token/key nằm trong `./config` (0600). Recreate
+  container không mất state.
+- `container: true` là ngoại lệ duy nhất của luật "chỉ nghe loopback": nếu bạn
+  sửa config về `127.0.0.1:5020` trong container thì cổng publish sẽ không tới
+  được daemon (Docker DNAT vào địa chỉ mạng của container).
 
 ## Kiểm tra
 
 ```bash
-docker logs 502drive
-docker exec 502drive /usr/local/bin/502drive --config /config/config.json status
-docker exec 502drive /usr/local/bin/502drive --config /config/config.json doctor
+docker compose ps                    # health: starting -> healthy
+docker compose exec -it 502drive 502drive healthcheck   # exit 0 = ready
+docker compose logs -f 502drive
+docker compose exec -it 502drive 502drive --config /config/config.json status
+docker compose exec -it 502drive 502drive --config /config/config.json doctor
 ```
 
-Không có HEALTHCHECK trong image (distroless không có curl/wget); dùng lệnh
-`status`/`doctor` ở trên. Chưa hỗ trợ: Kubernetes manifests, image ký cosign,
-multi-arch buildx trong Dockerfile.
+Từ host: `502drive --endpoint http://127.0.0.1:5020 --token-file ./config/api-token status`
+(hoặc `DRIVE502_ENDPOINT=http://127.0.0.1:5020`).
+
+## Đăng nhập Google trong container
+
+```bash
+docker compose exec -it 502drive 502drive account login
+```
+
+Link hiện ra mở trên máy bạn; callback quay về `127.0.0.1:50200` đã publish sẵn.
+`secrets/google-token.enc` nằm trong volume `/data`, không nằm trong image.
+
+## Backup volume
+
+`backup` từ chối chạy khi daemon đang giữ `instance.lock`, nên dừng dịch vụ trước:
+
+```bash
+docker compose stop
+docker compose run --rm 502drive backup /data/backups/$(date +%F)
+docker compose up -d
+```
+
+`backup` tạo thư mục mới 0700 (DB `VACUUM INTO`, `master.key`,
+`secrets/google-token.enc`, `config.json`, `MANIFEST.json`). Copy thư mục đó ra
+khỏi volume (`docker cp`/`rsync`) để có bản ngoài máy. Khôi phục:
+
+```bash
+docker compose stop
+docker compose run --rm 502drive restore /data/backups/2026-10-27 --to /data/restored
+# kiểm xong: đổi volume/config trỏ vào /data/restored, hoặc giữ nguyên và chỉ thử
+docker compose up -d
+```
+
+## Cập nhật image
+
+```bash
+git pull
+docker compose build --pull
+docker compose up -d                    # recreate; migration tự chạy, chỉ tiến
+docker compose exec -it 502drive 502drive healthcheck
+```
+
+Rollback: `docker tag 502drive:latest 502drive:previous` trước khi build, hoặc
+chạy lại tag cũ. Không hạ schema: bản cũ hơn sẽ từ chối DB mới (`schema_version`).
+
+## Ghi chú vận hành
+
+- Podman: `podman compose up -d --build` (cần `podman-compose` hoặc provider
+  docker-compose). Build không cần mạng ngoài sau khi đã có layer `go mod download`.
+- Không dùng `network_mode: host` cho deployment mặc định: publish loopback là
+  đủ, và healthcheck/port rule ở trên giả định bridge network.
+- Telegram long polling không cần mở cổng vào. Bot tắt/sai token không làm
+  container unhealthy.
+- Chưa hỗ trợ: Kubernetes manifests, ký cosign, buildx multi-arch trong Dockerfile
+  (dùng `docker buildx build --platform linux/amd64,linux/arm64` được, nhưng CI
+  chỉ build amd64/arm64 bằng GoReleaser).

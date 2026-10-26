@@ -12,8 +12,8 @@ kiểm SHA256 trước khi chạy. Chưa acceptance trên Windows 10/11 trong ph
   Start Menu: tray + menu. Gỡ cài **không** xóa config/token/data người dùng.
 - **Một dòng (PowerShell):** `irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex`
   — kiểm checksum, cài vào `%LOCALAPPDATA%\Programs\502Drive`, thêm vào PATH, tạo
-  alias `502`.
-- **Installer** cũng có tùy chọn thêm vào PATH (mặc định bật) và cài `502.cmd`. Chưa
+  alias `502d`.
+- **Installer** cũng có tùy chọn thêm vào PATH (mặc định bật) và cài `502d.cmd`. Chưa
   chạy ISCC thật nên phần này chưa được kiểm chứng.
 - **Zip:** giải nén, chạy `502drive.exe setup` trong terminal (config/token file
   private), sau đó `502drive.exe serve` hoặc `502drive-tray.exe`.

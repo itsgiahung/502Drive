@@ -115,9 +115,9 @@ nfpms:
       - deb
     bindir: /usr/bin
     contents:
-      # Short alias: type `502` instead of `502drive`.
+      # Short alias: type `502d` instead of `502drive`.
       - src: /usr/bin/502drive
-        dst: /usr/bin/502
+        dst: /usr/bin/502d
         type: symlink
       - src: packaging/502drive.service
         dst: /usr/lib/systemd/user/502drive.service

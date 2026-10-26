@@ -30,6 +30,7 @@ type setupInput struct {
 	ownerSet          bool
 	port              int
 	portSet           bool
+	container         bool
 
 	oauthJSON []byte
 	tgToken   string
@@ -37,6 +38,10 @@ type setupInput struct {
 }
 
 const maxSecretInput = 64 << 10
+
+// containerListen is the only listener a container config may bind; the host
+// publishes it on loopback only.
+const containerListen = "0.0.0.0:5020"
 
 var telegramTokenRE = regexp.MustCompile(`^[0-9]{3,}:[A-Za-z0-9_-]{10,}$`)
 
@@ -57,7 +62,7 @@ func (a *App) setupCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			in.ownerSet = cmd.Flags().Changed("telegram-owner-id")
 			in.portSet = cmd.Flags().Changed("oauth-callback-port")
-			explicit := in.oauthClientFile != "" || in.telegramTokenFile != "" || in.ownerSet || in.portSet || in.envFile != ""
+			explicit := in.oauthClientFile != "" || in.telegramTokenFile != "" || in.ownerSet || in.portSet || in.envFile != "" || in.container
 			return a.runSetup(&in, a.interactive() && !explicit)
 		}}
 	f := c.Flags()
@@ -67,6 +72,7 @@ func (a *App) setupCmd() *cobra.Command {
 	f.IntVar(&in.port, "oauth-callback-port", 0, "fixed loopback port for the OAuth callback (0 = any free port)")
 	f.StringVar(&in.envFile, "env-file", "", "read keys from this .env file (default: ./.env and <config dir>/.env)")
 	f.BoolVar(&in.noEnv, "no-env", false, "ignore environment variables and .env files")
+	f.BoolVar(&in.container, "container", false, "bind the container's interfaces (listen 0.0.0.0:5020); publish loopback ports only")
 	return c
 }
 
@@ -103,6 +109,10 @@ func (a *App) runSetup(in *setupInput, wizard bool) error {
 	changed, err := a.installSetup(&cfg, in)
 	if err != nil {
 		return err
+	}
+	if in.container && (!cfg.Container || cfg.Listen != containerListen) {
+		cfg.Container, cfg.Listen = true, containerListen
+		changed = true
 	}
 	if changed {
 		if err = config.Save(path, cfg); err != nil {
@@ -392,7 +402,7 @@ func (a *App) printSetup(path string, cfg config.Config, created bool, in *setup
 		b, _ := json.Marshal(map[string]any{"data": map[string]any{"config": path, "created": created, "data_dir": cfg.DataDir,
 			"token_file": cfg.TokenFile, "oauth_client_configured": cfg.OAuthClientFile != "",
 			"telegram_configured": cfg.TelegramTokenFile != "", "telegram_owner_id": cfg.TelegramOwnerID,
-			"oauth_callback_port": cfg.OAuthCallbackPort}, "request_id": ""})
+			"oauth_callback_port": cfg.OAuthCallbackPort, "listen": cfg.Listen, "container": cfg.Container}, "request_id": ""})
 		fmt.Fprintln(a.out(), string(b))
 		return
 	}
@@ -415,12 +425,15 @@ func (a *App) printSetup(path string, cfg config.Config, created bool, in *setup
 	if cfg.OAuthCallbackPort > 0 {
 		fmt.Fprintf(a.out(), "OAuth callback  fixed loopback port %d\n", cfg.OAuthCallbackPort)
 	}
+	if cfg.Container {
+		fmt.Fprintf(a.out(), "Container       listens on %s; publish only 127.0.0.1 ports from the host\n", cfg.Listen)
+	}
 	if cfg.OAuthClientFile == "" {
 		fmt.Fprintln(a.out(), "\nGoogle is not configured yet: run `502drive setup` again in a terminal, put")
 		fmt.Fprintln(a.out(), "GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET in a .env file, or pass")
 		fmt.Fprintln(a.out(), "--oauth-client client_secret.json (see docs/oauth-setup.md).")
 	}
-	fmt.Fprintln(a.out(), "\nStart everything with:  502drive   (or just: 502)")
+	fmt.Fprintln(a.out(), "\nStart everything with:  502drive   (or just: 502d)")
 }
 
 // ---- interactive wizard ----

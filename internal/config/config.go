@@ -21,6 +21,10 @@ type Config struct {
 	TelegramTokenFile string `json:"telegram_token_file,omitempty"`
 	TelegramOwnerID   int64  `json:"telegram_owner_id,omitempty"`
 	OAuthCallbackPort int    `json:"oauth_callback_port,omitempty"`
+	// Container allows listen to bind the container's own interfaces
+	// ("0.0.0.0:PORT") instead of loopback. Only the container image sets it,
+	// and the host must publish loopback-only ports. Setup never enables it.
+	Container bool `json:"container,omitempty"`
 	// CheckUpdates lets the tray ask GitHub once a day whether a newer release
 	// exists. Off by default: nothing contacts the network unasked.
 	CheckUpdates bool `json:"check_updates,omitempty"`
@@ -34,15 +38,27 @@ func DefaultPath() string {
 	return filepath.Join(p, "502drive-next", "config.json")
 }
 func ValidateListen(v string) error {
+	return validateListen(v, false)
+}
+
+// validateListen accepts loopback always, and the unspecified addresses only
+// when container explicitly opts in: there the host publishes 127.0.0.1 only.
+func validateListen(v string, container bool) error {
 	host, port, e := net.SplitHostPort(v)
 	if e != nil || port == "" {
 		return errors.New("listen must be a loopback IP and port")
 	}
 	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return errors.New("only loopback listeners are supported")
+	if ip == nil {
+		return errors.New("listen must be an IP address")
 	}
-	return nil
+	if ip.IsLoopback() {
+		return nil
+	}
+	if container && ip.IsUnspecified() {
+		return nil
+	}
+	return errors.New("only loopback listeners are supported")
 }
 func Load(path string) (Config, error) {
 	var c Config
@@ -59,7 +75,7 @@ func Load(path string) (Config, error) {
 	if e = d.Decode(new(any)); e != io.EOF {
 		return c, errors.New("trailing config data")
 	}
-	if e = ValidateListen(c.Listen); e != nil {
+	if e = validateListen(c.Listen, c.Container); e != nil {
 		return c, e
 	}
 	if c.DataDir == "" || c.TokenFile == "" {
@@ -171,5 +187,5 @@ func (c Config) Validate() error {
 	if c.OAuthCallbackPort < 0 || c.OAuthCallbackPort > 65535 {
 		return errors.New("oauth_callback_port is out of range")
 	}
-	return ValidateListen(c.Listen)
+	return validateListen(c.Listen, c.Container)
 }

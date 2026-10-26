@@ -8,7 +8,7 @@
 #   VERSION=v1.2.3   install this release instead of the latest
 #   PREFIX=DIR       install into DIR/bin (default: $HOME/.local)
 #
-# Installs `502drive` and the short alias `502`. It never uses sudo; for a
+# Installs `502drive` and the short alias `502d`. It never uses sudo; for a
 # system-wide install use the .rpm/.deb package instead.
 set -eu
 
@@ -71,11 +71,11 @@ got="$(sum "$tmp/$name")"
 tar -xzf "$tmp/$name" -C "$tmp" 502drive || die "the archive does not contain 502drive"
 mkdir -p "$prefix/bin"
 install -m 0755 "$tmp/502drive" "$prefix/bin/502drive"
-ln -sf 502drive "$prefix/bin/502"
+ln -sf 502drive "$prefix/bin/502d"
 
-say "Installed $prefix/bin/502drive (and the short alias 502)."
+say "Installed $prefix/bin/502drive (and the short alias 502d)."
 case ":$PATH:" in
   *":$prefix/bin:"*) ;;
   *) say "Add it to your PATH:  export PATH=\"$prefix/bin:\$PATH\"" ;;
 esac
-say "Start with:  502drive      (or just: 502)"
+say "Start with:  502drive      (or just: 502d)"

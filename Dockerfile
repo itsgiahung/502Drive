@@ -54,5 +54,10 @@ ENV DRIVE502_CONFIG=/config/config.json
 # callback (config key oauth_callback_port): bind loopback + publish/forward the
 # OAuth callback port when authorizing in-container, and do not expose a public
 # inbound port by default.
+# distroless has no shell/curl, so the binary is the probe: GET /health/ready
+# with the mounted token, exit 0 only when the daemon answers ready.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD ["/usr/local/bin/502drive", "healthcheck"]
+
 ENTRYPOINT ["/usr/local/bin/502drive"]
 CMD ["serve"]

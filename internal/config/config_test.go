@@ -34,6 +34,30 @@ func TestSetupIsPrivateAndNeverOverwritesIdentity(t *testing.T) {
 		}
 	}
 }
+func TestContainerOptInAllowsBindingOwnInterfaces(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.json")
+	write := func(body string) error {
+		if e := os.WriteFile(p, []byte(body), 0600); e != nil {
+			t.Fatal(e)
+		}
+		_, e := Load(p)
+		return e
+	}
+	ok := `{"listen":"0.0.0.0:5020","container":true,"data_dir":"` + filepath.Dir(p) + `/data","token_file":"` + filepath.Dir(p) + `/token"}`
+	if e := write(ok); e != nil {
+		t.Fatalf("container listen rejected: %v", e)
+	}
+	if e := write(`{"listen":"0.0.0.0:5020","data_dir":"x","token_file":"y"}`); e == nil {
+		t.Fatal("public bind accepted without the container opt-in")
+	}
+	if e := write(`{"listen":"192.0.2.10:5020","container":true,"data_dir":"x","token_file":"y"}`); e == nil {
+		t.Fatal("a specific non-loopback address must stay rejected")
+	}
+	if e := write(`{"listen":"[::]:5020","container":true,"data_dir":"x","token_file":"y"}`); e != nil {
+		t.Fatalf("ipv6 unspecified rejected: %v", e)
+	}
+}
+
 func TestRejectPublicListenerAndUnknownConfig(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.json")
 	if e := os.WriteFile(p, []byte(`{"listen":"0.0.0.0:5020","data_dir":"x","token_file":"y"}`), 0600); e != nil {

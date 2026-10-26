@@ -40,7 +40,7 @@ tự lên.
 ## Bắt đầu nhanh
 
 ```bash
-502drive          # (hoặc chỉ: 502) lần đầu hỏi khóa của bạn, bật mọi thứ, mở TUI
+502drive          # (hoặc chỉ: 502d) lần đầu hỏi khóa của bạn, bật mọi thứ, mở TUI
 ```
 
 Bạn chỉ cần lấy từ Google một lần: OAuth client loại **Desktop**
@@ -81,11 +81,11 @@ curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/in
 irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex            # Windows (PowerShell)
 ```
 
-Cả hai cài `502drive` và alias ngắn **`502`**, nên cài xong chỉ cần gõ `502`.
+Cả hai cài `502drive` và alias ngắn **`502d`** (d là drive), nên cài xong chỉ cần gõ `502d`. Cố ý không chiếm `502` trần để dành cho công cụ khác.
 
 | Nền tảng | Cách cài |
 | --- | --- |
-| Linux (Fedora/RHEL, Debian/Ubuntu) | `.rpm` / `.deb` ở trang release (cài `502drive` và `502`). [Hướng dẫn](docs/install-linux.md) |
+| Linux (Fedora/RHEL, Debian/Ubuntu) | `.rpm` / `.deb` ở trang release (cài `502drive` và `502d`). [Hướng dẫn](docs/install-linux.md) |
 | Windows 10/11 | `.zip`, hoặc bộ cài (chưa ký: SmartScreen sẽ cảnh báo). [Hướng dẫn](docs/install-windows.md) |
 | Docker | [Hướng dẫn](docs/install-docker.md) |
 | Từ mã nguồn | `go install github.com/itsgiahung/502Drive/cmd/502drive@latest` (Go 1.27), hoặc `make build` |
