@@ -23,7 +23,15 @@ không dùng harness `internal/live` (không cần đưa token ra ngoài daemon)
 | `sync stop`, `retire`, `cleanup` | dry-run ✓, sai tên xác nhận bị từ chối ✓, cleanup chỉ đưa gốc vào thùng rác ✓ |
 | `kill -9` daemon giữa lúc copy | 5 mục `unknown_remote_outcome` (thực tế chưa được tạo) → `jobs retry` → 10/10, không trùng |
 
-Chưa chạy trong phiên này: Telegram thật, tray/thông báo bấm tay, Shared Drive,
+| Telegram thật: `/start`, `/status`, dán link, `/find crash` | đều `processed`; dán link → job 10/10 vào đích mặc định; thẻ tiến độ được sửa tới trạng thái cuối |
+| Telegram sau `retry` | **lỗi** → sửa: job báo `blocked` rồi `retry` thành công không có tin thứ hai (`6c87102`) |
+
+Ghi nhận chưa sửa: root đặt tên `X (2)` theo N1 nhưng `collections cleanup
+--confirm-name` vẫn đòi tên gốc `X`; dry-run cleanup không cho biết số mục sẽ vào
+thùng rác; `audit --wait` là duration còn `copy --wait` là cờ; đổi tên thuần một file
+tạo generation mới thay vì đổi tên; sau crash phải `retry` tay các mục chặn.
+
+Chưa chạy trong phiên này: tray/thông báo bấm tay, Shared Drive,
 cây lớn (throttle/AIMD, quota ngày), Windows/macOS, mất mạng/ngủ máy thật.
 
 
