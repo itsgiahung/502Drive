@@ -51,6 +51,8 @@ type Status struct {
 
 // Job is one recent job shown in the tray submenu.
 type Job struct {
+	Bytes         int64
+	Samples       []present.Sample
 	LastErrorCode string
 	QueueAhead    *int
 	QueuePaused   bool
@@ -209,7 +211,7 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 		{ID: ActionQuit, Title: i18n.T(lang, i18n.Quit), Enabled: true, Icon: glyphExit},
 		{ID: ActionStopDaemon, Title: i18n.T(lang, i18n.StopApp), Enabled: online, Icon: glyphStop},
 	}...)
-	return View{State: state, Title: title, StatusLine: line, Tooltip: tooltip(title, line, status, online, lang), Items: items}
+	return View{State: state, Title: title, StatusLine: line, Tooltip: tooltip(title, line, status, online, lang) + progressTooltip(snap, lang), Items: items}
 }
 
 // tooltip is the detail shown on hover: account, counts, progress when the
@@ -243,7 +245,7 @@ func jobItems(snap Snapshot, lang string, result string) []Item {
 		item := Item{ID: fmt.Sprintf("%s:%d", jobSlotID, i), Hidden: true}
 		if i < len(snap.Jobs) {
 			j := snap.Jobs[i]
-			item.Title = jobLine(j, lang)
+			item.Title = truncate(jobLine(j, lang), minRowWidth+4)
 			item.Hidden = false
 		}
 		items = append(items, item)
@@ -259,10 +261,7 @@ func jobLine(j Job, lang string) string {
 	if j.State == "queued" {
 		return plain(j.SourceName) + " · " + present.Queue(j.QueueAhead, j.QueuePaused, lang)
 	}
-	progress := fmt.Sprintf("%d", j.Completed)
-	if j.Total != nil {
-		progress = fmt.Sprintf("%d/%d", j.Completed, *j.Total)
-	}
+	progress := present.RecentProgress(present.Counts{Completed: j.Completed, Total: j.Total, Bytes: j.Bytes}, j.Samples, lang)
 	return i18n.Tf(lang, i18n.JobLine, strings.ToUpper(stateWord(j.State, lang)), plain(truncate(j.SourceName, 22)), progress)
 }
 
@@ -371,4 +370,13 @@ func padRow(s string) string {
 		return s + strings.Repeat("\u00a0", minRowWidth-n)
 	}
 	return s
+}
+
+func progressTooltip(snap Snapshot, lang string) string {
+	for _, j := range snap.Jobs {
+		if j.State == "running" {
+			return "\n" + present.RecentProgress(present.Counts{Completed: j.Completed, Total: j.Total, Bytes: j.Bytes}, j.Samples, lang)
+		}
+	}
+	return ""
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itsgiahung/502Drive/internal/present"
 	"github.com/spf13/cobra"
 )
 
@@ -51,6 +52,7 @@ func (a *App) watchJob(ctx context.Context, ref string, interval time.Duration) 
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	last := ""
+	var samples []present.Sample
 	for {
 		r, err := a.call(ctx, "GET", "/v1/jobs/"+url.PathEscape(id), nil, nil, "")
 		if err != nil {
@@ -60,11 +62,12 @@ func (a *App) watchJob(ctx context.Context, ref string, interval time.Duration) 
 		if err = r.Decode(&j); err != nil {
 			return err
 		}
+		samples = present.AppendSample(samples, present.Sample{At: time.Now(), Completed: j.Counts.Completed})
 		if a.g.json {
 			b, _ := json.Marshal(map[string]any{"data": j, "request_id": r.RequestID})
 			fmt.Fprintln(a.out(), string(b))
 		} else {
-			line := fmt.Sprintf("%s %d/%s %s", strings.ToUpper(j.State), j.Counts.Completed, totalText(j.Counts), Sanitize(j.SourceName))
+			line := strings.ToUpper(j.State) + " " + j.progress(samples) + " " + Sanitize(j.SourceName)
 			if line != last {
 				fmt.Fprintln(a.out(), line)
 				last = line

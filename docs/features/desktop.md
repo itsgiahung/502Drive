@@ -118,3 +118,8 @@ Bubble Tea kể cả khi panic ([run.go](../../internal/tui/run.go)).
 U1: Home displays the Doctor core readiness checklist while first-run setup is
 incomplete. Tray names the first missing prerequisite; Open 502Drive opens Home.
 No client exit stops the daemon. Older servers use the existing Doctor checks.
+
+U4: progress uses one shared 30-second observation window, with at least three
+samples before displaying a rate. Bytes are copied logical bytes, unknown totals
+stay unknown; ETA is explicitly estimated and withheld on stalls/unstable rates.
+Tray keeps the detailed shared progress in its tooltip and bounds menu row width.

@@ -374,3 +374,7 @@ daemon falls back to Doctor. Unknown readiness is reported as unknown.
 U3: human job errors and reports use `present.Explain` (title, explanation,
 next action). Item JSON and failure JSON add `explanation`; codes and existing
 fields remain stable. Unknown codes retain the raw code with generic advice.
+
+U4: watch/wait use shared recent progress (completed/total, copied bytes, sampled
+rate). No rate before three observations; no ETA for unknown/unstable totals.
+JSON counters and exit codes retain their existing meaning.

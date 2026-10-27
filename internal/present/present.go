@@ -150,12 +150,13 @@ func Progress(counts Counts, rate float64, eta time.Duration, lang string) strin
 		parts = append(parts, fmt.Sprintf("%d/%d", counts.Completed, *counts.Total))
 	} else {
 		if isVi {
-			parts = append(parts, fmt.Sprintf("%d mục", counts.Completed))
+			parts = append(parts, fmt.Sprintf("%d mục · chưa biết tổng", counts.Completed))
 		} else {
-			parts = append(parts, fmt.Sprintf("%d items", counts.Completed))
+			parts = append(parts, fmt.Sprintf("%d items · total unknown", counts.Completed))
 		}
 	}
 
+	parts = append(parts, HumanBytes(counts.Bytes))
 	if rate > 0 {
 		if isVi {
 			parts = append(parts, fmt.Sprintf("%.1f/giây", rate))
@@ -164,12 +165,12 @@ func Progress(counts Counts, rate float64, eta time.Duration, lang string) strin
 		}
 	}
 
-	if eta > 0 {
+	if eta > 0 && rate > 0 && counts.Total != nil {
 		durStr := HumanDuration(eta, lang)
 		if isVi {
-			parts = append(parts, fmt.Sprintf("còn %s", durStr))
+			parts = append(parts, fmt.Sprintf("ước tính còn %s", durStr))
 		} else {
-			parts = append(parts, fmt.Sprintf("ETA %s", durStr))
+			parts = append(parts, fmt.Sprintf("estimated %s left", durStr))
 		}
 	}
 

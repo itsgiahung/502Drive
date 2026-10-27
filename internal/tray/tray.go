@@ -14,6 +14,7 @@ import (
 
 	"github.com/itsgiahung/502Drive/internal/autostart"
 	"github.com/itsgiahung/502Drive/internal/i18n"
+	"github.com/itsgiahung/502Drive/internal/present"
 )
 
 // ErrUnsupported is returned on platforms without a tray backend (macOS).
@@ -176,6 +177,19 @@ func (a *agent) refresh(ctx context.Context) (View, bool) {
 	if err == nil {
 		a.mu.Lock()
 		prev, primed := a.snap.Jobs, a.primed
+		for i := range snap.Jobs {
+			j := &snap.Jobs[i]
+			if j.State != "running" {
+				continue
+			}
+			for _, old := range prev {
+				if old.ID == j.ID {
+					j.Samples = old.Samples
+					break
+				}
+			}
+			j.Samples = present.AppendSample(j.Samples, present.Sample{At: snap.At, Completed: j.Completed})
+		}
 		a.snap, a.primed = snap, true
 		lang := a.lang
 		a.mu.Unlock()

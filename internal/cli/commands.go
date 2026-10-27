@@ -654,6 +654,7 @@ func (a *App) waitJob(ctx context.Context, id string, maxWait time.Duration) err
 		deadline = time.Now().Add(maxWait)
 	}
 	last := ""
+	var samples []present.Sample
 	for {
 		r, err := a.call(ctx, "GET", "/v1/jobs/"+url.PathEscape(id), nil, nil, "")
 		if err != nil {
@@ -667,7 +668,8 @@ func (a *App) waitJob(ctx context.Context, id string, maxWait time.Duration) err
 		if err = r.Decode(&j); err != nil {
 			return err
 		}
-		line := fmt.Sprintf("%s %d/%s", strings.ToUpper(j.State), j.Counts.Completed, totalText(j.Counts))
+		samples = present.AppendSample(samples, present.Sample{At: time.Now(), Completed: j.Counts.Completed})
+		line := strings.ToUpper(j.State) + " " + j.progress(samples)
 		if line != last && !a.g.json && !a.g.quiet {
 			fmt.Fprintln(a.errw(), a.style.dim(line))
 			last = line

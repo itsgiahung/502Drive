@@ -227,7 +227,9 @@ func TestSpeedAndETAFollowSuccessiveSnapshots(t *testing.T) {
 	fake := &fakeActions{snap: snap(0)}
 	m := New(fake.Actions(), opt)
 	m = run(t, m, m.fetch())
-	now = now.Add(2 * time.Second)
+	now = now.Add(time.Second)
+	m, _ = update(t, m, snapshotMsg{snap: snap(100)})
+	now = now.Add(time.Second)
 	m, _ = update(t, m, snapshotMsg{snap: snap(200)})
 	perSec, eta, ok := m.speed(m.snap.Jobs[0])
 	if !ok || perSec < 99 || perSec > 101 {
@@ -238,7 +240,7 @@ func TestSpeedAndETAFollowSuccessiveSnapshots(t *testing.T) {
 	}
 	m, _ = update(t, m, key("2"))
 	v := m.View()
-	if !strings.Contains(v, "100 items/s") || !strings.Contains(v, "8s left") {
+	if !strings.Contains(v, "100.0/s") || !strings.Contains(v, "8s left") {
 		t.Fatalf("jobs list lacks speed/eta:\n%s", v)
 	}
 }

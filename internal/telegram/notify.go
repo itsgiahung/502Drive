@@ -67,7 +67,7 @@ func (t *Telegram) deliver(ctx context.Context, m state.Outbox) {
 		return
 	}
 	tx := t.textFor(callCtx, m.Principal)
-	text := jobTextView(tx, job, int(t.now().Unix()/3), t.jobViewFor(callCtx, m.Principal))
+	text := jobTextView(tx, job, int(t.now().Unix()/3), t.progressView(callCtx, m.Principal, job))
 	hash := hashText(text)
 	if m.MessageID != 0 && hash == m.LastHash {
 		// Nothing to say: a repeated edit would only burn the rate budget.
@@ -129,7 +129,7 @@ func (t *Telegram) deliverFinal(ctx context.Context, m state.Outbox) {
 			t.retry(callCtx, m, "unavailable", 30*time.Second)
 			return
 		}
-		text = finalNoticeTextView(tx, job, t.jobViewFor(callCtx, m.Principal))
+		text = finalNoticeTextView(tx, job, t.progressView(callCtx, m.Principal, job))
 	} else if strings.HasPrefix(m.Note, reportNotePrefix) {
 		report, ok := t.reportText(callCtx, m, tx)
 		if !ok {

@@ -371,8 +371,9 @@ func jobText(tx texts, j state.Job) string { return jobTextFrame(tx, j, 0) }
 // jobView is what a job text needs besides the row itself: the clock and the
 // zone of the person who reads it (quota waits are shown as a wall-clock time).
 type jobView struct {
-	now time.Time
-	loc *time.Location
+	samples []present.Sample
+	now     time.Time
+	loc     *time.Location
 }
 
 // jobTextFrame renders the job panel; frame picks the animation step.
@@ -399,12 +400,8 @@ func jobTextView(tx texts, j state.Job, frame int, v jobView) string {
 		}
 	}
 	fmt.Fprintf(&b, "%s: <code>%s</code>\n", tx.jobLabel, escape(j.ID))
-	total := tx.totalUnknown
-	if j.Counts.Total != nil {
-		total = fmt.Sprintf("%d", *j.Counts.Total)
-	}
-	fmt.Fprintf(&b, "%s: %d/%s · %s %d · %s %d\n", tx.itemsLabel, j.Counts.Completed, total,
-		tx.stateLabel(state.JobFailed), j.Counts.Failed, tx.stateLabel(state.JobBlocked), j.Counts.Blocked)
+	c := j.Counts
+	fmt.Fprintln(&b, escape(present.RecentProgress(present.Counts{Completed: c.Completed, Total: c.Total, Bytes: c.Bytes, Failed: c.Failed, Blocked: c.Blocked}, v.samples, string(tx.lang))))
 	if line := skippedLine(g, j.Counts); line != "" {
 		fmt.Fprintf(&b, "%s\n", line)
 	}

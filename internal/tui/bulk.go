@@ -10,15 +10,7 @@ import (
 	"github.com/itsgiahung/502Drive/internal/present"
 )
 
-// rate estimates items per second for one running job with an exponential
-// moving average, so a burst or a stall does not make the number jump.
-type rate struct {
-	completed int
-	at        time.Time
-	perSec    float64
-}
-
-const rateAlpha = .3
+type rate struct{ samples []present.Sample }
 
 // observe updates the speed estimates and notices jobs that just finished.
 func (m *Model) observe(next Snapshot) {
@@ -34,25 +26,12 @@ func (m *Model) observe(next Snapshot) {
 			delete(m.rates, j.ID)
 			continue
 		}
-		r, ok := m.rates[j.ID]
-		if !ok {
-			m.rates[j.ID] = &rate{completed: j.Completed, at: now}
-			continue
+		r := m.rates[j.ID]
+		if r == nil {
+			r = &rate{}
+			m.rates[j.ID] = r
 		}
-		dt := now.Sub(r.at).Seconds()
-		if dt < .2 {
-			continue
-		}
-		inst := float64(j.Completed-r.completed) / dt
-		if inst < 0 {
-			inst = 0
-		}
-		if r.perSec == 0 {
-			r.perSec = inst
-		} else {
-			r.perSec = rateAlpha*inst + (1-rateAlpha)*r.perSec
-		}
-		r.completed, r.at = j.Completed, now
+		r.samples = present.AppendSample(r.samples, present.Sample{At: now, Completed: j.Completed})
 	}
 	for id := range m.prevStates {
 		if !seen[id] {
@@ -65,15 +44,11 @@ func (m *Model) observe(next Snapshot) {
 // speed returns the smoothed rate and the time left, when both are known.
 func (m Model) speed(j Job) (perSec float64, eta time.Duration, ok bool) {
 	r := m.rates[j.ID]
-	if r == nil || r.perSec < .05 {
+	if r == nil {
 		return 0, 0, false
 	}
-	perSec = r.perSec
-	if j.Total != nil && *j.Total > j.Completed {
-		eta = time.Duration(float64(*j.Total-j.Completed) / perSec * float64(time.Second))
-		return perSec, eta, true
-	}
-	return perSec, 0, true
+	perSec, eta = present.Estimate(present.Counts{Total: j.Total, Completed: j.Completed}, r.samples)
+	return perSec, eta, perSec > 0
 }
 
 // humanDuration formats a duration in the model's language with the shared

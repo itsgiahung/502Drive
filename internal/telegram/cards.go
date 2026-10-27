@@ -624,7 +624,7 @@ func refOf(p state.Plan) string {
 
 func (t *Telegram) jobCard(ctx context.Context, p app.Principal, chatID int64, messageID int, j state.Job, fresh bool) (int, error) {
 	tx := t.text(ctx, p)
-	text := jobTextView(tx, j, 0, t.jobViewFor(ctx, p.ID))
+	text := jobTextView(tx, j, 0, t.progressView(ctx, p.ID, j))
 	if fresh {
 		text = tx.copyStarted + "\n" + text
 	}

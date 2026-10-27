@@ -18,6 +18,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/itsgiahung/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/present"
 	"github.com/itsgiahung/502Drive/internal/state"
 )
 
@@ -55,13 +56,15 @@ type Options struct {
 
 // Telegram is one long-polling bot. Create it with New and run it with Run.
 type Telegram struct {
-	svc      *app.Service
-	store    *state.Store
-	ownerID  int64
-	bot      *bot.Bot
-	poll     *pollClient
-	log      *slog.Logger
-	instance string
+	progressMu sync.Mutex
+	progress   map[string][]present.Sample
+	svc        *app.Service
+	store      *state.Store
+	ownerID    int64
+	bot        *bot.Bot
+	poll       *pollClient
+	log        *slog.Logger
+	instance   string
 
 	pollTimeout time.Duration
 	editEvery   time.Duration

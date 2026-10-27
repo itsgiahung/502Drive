@@ -309,14 +309,7 @@ func (m Model) scrollLabel(start, end, n int) string {
 
 // progressRow is the bar plus, for a running job, speed and time left.
 func (m Model) progressRow(j Job, barWidth int) string {
-	text := m.progress(j, barWidth)
-	if perSec, eta, ok := m.speed(j); ok && barWidth >= 10 {
-		text += m.dim(" · " + m.tf(i18n.FilesPerSec, perSec))
-		if eta > 0 {
-			text += m.dim(" · " + m.tf(i18n.ETALeft, m.humanDuration(eta)))
-		}
-	}
-	return text
+	return m.progress(j, barWidth)
 }
 
 func (m Model) jobView() []string {
@@ -580,16 +573,16 @@ func (m Model) footer() string {
 // progress draws a real bar from counts; an unknown total never shows a fake
 // percentage.
 func (m Model) progress(j Job, width int) string {
-	if j.Total == nil || *j.Total <= 0 {
-		return m.dim(i18n.Tf(m.lang, i18n.ItemsUnknown, j.Completed))
+	var samples []present.Sample
+	if r := m.rates[j.ID]; r != nil {
+		samples = r.samples
 	}
-	total := *j.Total
-	done := min(j.Completed, total)
-	if width < 10 {
-		return fmt.Sprintf("%d/%d", done, total)
+	text := present.RecentProgress(present.Counts{Completed: j.Completed, Total: j.Total, Bytes: j.Bytes, Failed: j.Failed, Blocked: j.Blocked}, samples, m.lang)
+	if j.Total != nil && *j.Total > 0 && width >= 10 {
+		frac := float64(min(j.Completed, *j.Total)) / float64(*j.Total)
+		return m.bar(frac, width) + fmt.Sprintf(" %3d%% ", int(frac*100)) + text
 	}
-	frac := float64(done) / float64(total)
-	return m.bar(frac, width) + fmt.Sprintf(" %3d%% %d/%d", int(frac*100), done, total)
+	return text
 }
 
 var partialBlocks = []rune(" ▏▎▍▌▋▊▉")
