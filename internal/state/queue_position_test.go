@@ -48,3 +48,16 @@ func TestFindingPathsStayWithinAuthorizedCollection(t *testing.T) {
 		t.Fatal("path crossed collection scope")
 	}
 }
+
+func TestReadingQueuePositionsDoesNotSignalAWrite(t *testing.T) {
+	s := openStore(t)
+	queueJob(t, s, 1, "")
+	before, _ := s.Version()
+	if _, err := s.QueuePositions(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := s.Version()
+	if after != before {
+		t.Fatal("queue read caused an SSE refresh loop")
+	}
+}

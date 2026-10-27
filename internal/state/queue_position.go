@@ -68,15 +68,17 @@ func queueSchedule(ctx context.Context, q queryer, limit int) ([]string, error) 
 
 func (s *Store) QueuePositions(ctx context.Context) (map[string]int, error) {
 	positions := map[string]int{}
-	err := s.tx(ctx, func(tx *sql.Tx) error {
-		order, err := queueSchedule(ctx, tx, 0)
-		if err != nil {
-			return err
-		}
-		for i, id := range order {
-			positions[id] = i + 1
-		}
-		return nil
-	})
-	return positions, err
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	order, err := queueSchedule(ctx, tx, 0)
+	if err != nil {
+		return nil, err
+	}
+	for i, id := range order {
+		positions[id] = i + 1
+	}
+	return positions, tx.Commit()
 }

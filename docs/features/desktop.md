@@ -137,3 +137,7 @@ or KB/MB/GB/TB. Modified-after and empty-folder settings are preserved. Syntax
 errors appear at the active field. **Ctrl+P** previews matching counts through
 inspect, explicitly top-level scope; **Ctrl+S** saves by collection revision.
 The three presets remain on **b**. Preview creates no copy job.
+
+U8: while SSE is connected, deep preview refreshes with stream-driven snapshots;
+the separate 700ms poll is suppressed. Stream loss resumes the existing fallback.
+Partial scans explicitly show unknown total; completion updates without a keypress.

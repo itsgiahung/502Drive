@@ -526,3 +526,4 @@ probe chạy riêng không `-race`:
 | U5 audit type/cursor navigation, failed dry-run guard, scoped paths, text snapshot | `TestAuditBrowserFiltersAndPages`, `TestFailedDryRunNeverEnablesApply`, `TestFindingPathsStayWithinAuthorizedCollection` | local |
 | U6 filter syntax blocks save, full fields retained, size overflow rejected | `TestFilterEditorValidatesBeforeSavingAndPreservesAllFields`, `TestSizeRejectsOverflow` | local |
 | U7 multiple states/invalid member, cursor/index query, TUI selection/cancel | `TestJobsMultipleStatesAndInvalidMember`, `TestMultiStateUsesIndexAndPreservesOtherStates`, `TestStatePickerCombinesAndCancels` | local |
+| U8 stream-triggered deep refresh, final state, fallback/late replies | `TestStreamSnapshotRefreshesVisibleDeepScan`, existing deep-scan tests | local |

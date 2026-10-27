@@ -1,6 +1,7 @@
 package i18n
 
 const (
+	DeepTotalUnknown       Key = "deep_total_unknown"
 	JobStatesChoose        Key = "job_states_choose"
 	FilterInclude          Key = "filter_include"
 	FilterExclude          Key = "filter_exclude"
@@ -28,8 +29,9 @@ const (
 
 func init() {
 	vi := map[Key]string{
-		JobStatesChoose: "Chọn trạng thái · Space bật/tắt · Enter áp dụng · Esc hủy (không chọn = tất cả)",
-		FilterInclude:   "Bao gồm", FilterExclude: "Loại trừ", FilterMin: "Nhỏ nhất", FilterMax: "Lớn nhất", FilterModified: "Sửa sau (RFC3339)", FilterKeep: "Giữ thư mục rỗng (true/false)",
+		DeepTotalUnknown: "chưa biết tổng",
+		JobStatesChoose:  "Chọn trạng thái · Space bật/tắt · Enter áp dụng · Esc hủy (không chọn = tất cả)",
+		FilterInclude:    "Bao gồm", FilterExclude: "Loại trừ", FilterMin: "Nhỏ nhất", FilterMax: "Lớn nhất", FilterModified: "Sửa sau (RFC3339)", FilterKeep: "Giữ thư mục rỗng (true/false)",
 		FilterEditorHelp:    "Tab đổi ô · luật cách nhau ; (đường dẫn/glob, ext:, class:) · Ctrl+P xem trước · Ctrl+S lưu · Esc về",
 		FilterPreviewCounts: "Khớp %d · loại %d", FilterPreviewScope: "Phạm vi xem trước (không phải tổng cây):",
 		AuditBrowserKeys:       "t lọc loại · n/p trang sau/trước · f xem trước sửa · F áp dụng · esc về nguồn",
@@ -47,8 +49,9 @@ func init() {
 		SetupIncomplete:        "Chưa đủ điều kiện; hoàn thành các bước trong checklist.",
 	}
 	en := map[Key]string{
-		JobStatesChoose: "Choose states · Space toggle · Enter apply · Esc cancel (none = all)",
-		FilterInclude:   "Include", FilterExclude: "Exclude", FilterMin: "Minimum size", FilterMax: "Maximum size", FilterModified: "Modified after (RFC3339)", FilterKeep: "Keep empty folders (true/false)",
+		DeepTotalUnknown: "total unknown",
+		JobStatesChoose:  "Choose states · Space toggle · Enter apply · Esc cancel (none = all)",
+		FilterInclude:    "Include", FilterExclude: "Exclude", FilterMin: "Minimum size", FilterMax: "Maximum size", FilterModified: "Modified after (RFC3339)", FilterKeep: "Keep empty folders (true/false)",
 		FilterEditorHelp:    "Tab next field · separate rules by ; (path/name glob, ext:, class:) · Ctrl+P preview · Ctrl+S save · Esc back",
 		FilterPreviewCounts: "Matched %d · excluded %d", FilterPreviewScope: "Preview scope (not a whole-tree total):",
 		AuditBrowserKeys:       "t filter kind · n/p next/previous · f preview repair · F apply · esc back",

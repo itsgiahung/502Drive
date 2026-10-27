@@ -23,16 +23,17 @@ const (
 // and output name) → start. Every change of destination or name re-runs the
 // preview, so what is shown is exactly what will be created.
 type copyFlow struct {
-	from     screen
-	source   string
-	input    *textinput.Model // set while the source or a custom name is typed
-	typing   string           // "source" or "name"
-	destID   string
-	destName string
-	nameMode int
-	custom   string
-	plan     *Plan
-	planning bool
+	from        screen
+	source      string
+	input       *textinput.Model // set while the source or a custom name is typed
+	typing      string           // "source" or "name"
+	destID      string
+	destName    string
+	nameMode    int
+	custom      string
+	plan        *Plan
+	planning    bool
+	deepLoading bool
 	// submitting is set while the job is being created.
 	submitting bool
 	// sync is the index in afterModes: the sync mode the new collection gets
@@ -277,7 +278,10 @@ func (m Model) planError(err error) string {
 
 const deepEvery = 700 * time.Millisecond
 
-type deepTickMsg struct{ planID string }
+type deepTickMsg struct {
+	planID  string
+	changed bool
+}
 type deepMsg struct {
 	planID string
 	plan   Plan
@@ -292,9 +296,10 @@ func deepTick(planID string) tea.Cmd {
 // scan belongs to the daemon and goes on if the dialog is closed.
 func (m Model) onDeepTick(msg deepTickMsg) (tea.Model, tea.Cmd) {
 	c := m.cp
-	if c == nil || c.plan == nil || c.plan.ID != msg.planID || c.plan.Deep == nil || !c.plan.Deep.Running() || m.acts.GetPlan == nil {
+	if (m.watching && !msg.changed) || c == nil || c.deepLoading || c.plan == nil || c.plan.ID != msg.planID || c.plan.Deep == nil || !c.plan.Deep.Running() || m.acts.GetPlan == nil {
 		return m, nil
 	}
+	c.deepLoading = true
 	acts, ctx, id := m.acts, m.ctx, msg.planID
 	return m, func() tea.Msg {
 		p, err := acts.GetPlan(ctx, id)
@@ -307,6 +312,7 @@ func (m Model) onDeep(msg deepMsg) (tea.Model, tea.Cmd) {
 	if c == nil || c.plan == nil || c.plan.ID != msg.planID {
 		return m, nil
 	}
+	c.deepLoading = false
 	if msg.err != nil {
 		c.err = Sanitize(msg.err.Error())
 		return m, nil
@@ -316,7 +322,7 @@ func (m Model) onDeep(msg deepMsg) (tea.Model, tea.Cmd) {
 		c.plan.Deep = msg.plan.Deep
 		c.plan.Files, c.plan.Folders, c.plan.Complete = msg.plan.Files, msg.plan.Folders, msg.plan.Complete
 	}
-	if c.plan.Deep != nil && c.plan.Deep.Running() {
+	if !m.watching && c.plan.Deep != nil && c.plan.Deep.Running() {
 		return m, deepTick(msg.planID)
 	}
 	return m, nil
@@ -864,7 +870,7 @@ func (m Model) deepLines(p *Plan) []string {
 	lines := []string{"", m.bold(m.t(i18n.DeepTitle))}
 	switch d.State {
 	case "running":
-		lines = append(lines, m.accent(m.spinChar())+" "+m.tf(i18n.DeepRunning, d.Scanned))
+		lines = append(lines, m.accent(m.spinChar())+" "+m.tf(i18n.DeepRunning, d.Scanned)+" · "+m.t(i18n.DeepTotalUnknown))
 	case "complete":
 		lines = append(lines, m.good(m.t(i18n.DeepDone)))
 	case "cancelled":

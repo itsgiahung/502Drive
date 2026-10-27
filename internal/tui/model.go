@@ -408,6 +408,13 @@ func (m Model) onSnapshot(msg snapshotMsg) (tea.Model, tea.Cmd) {
 	}
 	cmds := []tea.Cmd{}
 	if msg.err == nil {
+		if m.watching && m.cp != nil && m.cp.plan != nil {
+			next, cmd := m.onDeepTick(deepTickMsg{planID: m.cp.plan.ID, changed: true})
+			m = next.(Model)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
 		if cmd := m.pollAudits(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -439,8 +446,12 @@ func (m Model) onWatch(msg watchMsg) (tea.Model, tea.Cmd) {
 		m.watching, m.watchCh = false, nil
 		return m, nil
 	}
+	wasWatching := m.watching
 	m.watching = msg.ev.Connected
 	cmds := []tea.Cmd{waitWatch(m.watchCh)}
+	if wasWatching && !m.watching && m.cp != nil && m.cp.plan != nil && m.cp.plan.Deep != nil && m.cp.plan.Deep.Running() {
+		cmds = append(cmds, deepTick(m.cp.plan.ID))
+	}
 	if msg.ev.Changed {
 		if m.fetching {
 			m.dirty = true
