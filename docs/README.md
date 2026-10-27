@@ -7,7 +7,7 @@ tả **cái đang chạy**; phần chưa có ghi rõ "Chưa hỗ trợ".
 
 1. [Kiến trúc](architecture.md) — package thật, luồng job/sync/audit, bất biến.
 2. [HTTP contract](control-contracts.md) — route, quyền, lỗi, idempotency.
-3. [Data contracts](data-contracts.md) — schema `internal/state/migrations` (001–011, 020–025).
+3. [Data contracts](data-contracts.md) — schema `internal/state/migrations` (001–011, 020–026).
 4. Đúng feature bạn chạm trong [features/](features/).
 
 ## Bảng tài liệu
@@ -17,7 +17,7 @@ tả **cái đang chạy**; phần chưa có ghi rõ "Chưa hỗ trợ".
 | [product.md](product.md) | Phạm vi, non-goal, trạng thái từng phần | Khớp code |
 | [architecture.md](architecture.md) | Package, job/sync/audit/lifecycle, bất biến | Khớp code |
 | [control-contracts.md](control-contracts.md) | 58 route (56 dưới `/v1` + 2 health), quyền, lỗi | Khớp router + OpenAPI |
-| [data-contracts.md](data-contracts.md) | Bảng SQLite 001–011, 020–025 | Khớp migrations |
+| [data-contracts.md](data-contracts.md) | Bảng SQLite 001–011, 020–026 | Khớp migrations |
 | [features/clone-jobs.md](features/clone-jobs.md) | Copy, admission, N1/K1/S5/D1, L1/L2, batch/queue, deep preflight, audit | Đã test local |
 | [features/automation.md](features/automation.md) | Sync lịch + realtime, replay, full reconcile, quota, S8 | Đã test local, chưa live |
 | [features/telegram.md](features/telegram.md) | Bot menu, paste-to-copy, thông báo, quiet hours | Đã test fake API |

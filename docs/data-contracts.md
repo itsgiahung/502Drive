@@ -4,7 +4,7 @@ Schema thật nằm ở [internal/state/migrations](../internal/state/migrations
 forward-only khi `state.Open` mở `state-v2.db`; `user_version` = migration cao
 nhất, `application_id=502002`. Không sửa migration đã áp; thêm file mới.
 
-Danh sách hiện có: **001–011 và 020–025** (17 file). Dải 012–019 không tồn tại —
+Danh sách hiện có: **001–011 và 020–026** (18 file). Dải 012–019 không tồn tại —
 số được giữ chỗ cho các đợt trước, đừng tạo lại số cũ.
 
 ## Quy ước
@@ -141,6 +141,14 @@ rowid giữ cursor ổn định.
 `jobs_history(CAST((julianday(json_extract(body,'$.updated_at')) - 2440587.5) * 86400000 AS INTEGER))`
 — export lịch sử theo `(updated_ms,rowid)`, tránh so sánh chuỗi RFC3339 có/không
 phần lẻ giây.
+
+## 026_job_bookkeeping.sql
+
+`job_bookkeeping(job_id PK → jobs ON DELETE CASCADE, created_at)` — dấu ghi cùng
+transaction với trạng thái terminal của job và trạng thái collection
+(`Store.FinishJob`). `RunFinished` xóa dấu khi đã ghi subscription hoặc yêu cầu
+sync sau copy; dấu còn sót (crash giữa hai bước) được phát lại lúc daemon khởi
+động (`FinishPendingBookkeeping`). Job audit/cleanup chưa dùng dấu này.
 
 ## Ownership và vòng đời
 
