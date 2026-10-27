@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"github.com/itsgiahung/502Drive/internal/present"
 	"net/url"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -126,12 +129,25 @@ func (a *App) collectionCleanupCmd() *cobra.Command {
 			if err = r.Decode(&job); err != nil {
 				return err
 			}
+			if job.DryRun && !a.g.json && !a.g.quiet {
+				// A dry run only reads Drive and finishes in moments: show its
+				// plan instead of sending the user to another command.
+				if done, ok := a.pollTerminal(cmd.Context(), job.ID, 30*time.Second); ok {
+					job = done
+				}
+			}
 			a.emit(r, job.ID, func() {
 				mode := "dry-run"
 				if !job.DryRun {
 					mode = "trash"
 				}
 				fmt.Fprintf(a.out(), "%s  %s (%s)\n", a.style.stateColor(job.State), job.ID, mode)
+				if job.DryRun && job.State == "succeeded" && job.Counts.Total != nil {
+					fmt.Fprintf(a.out(), "Would move %q to the Drive trash: %d copied items, %s. Nothing was changed.\n",
+						Sanitize(job.RootName), *job.Counts.Total, present.HumanBytes(job.Counts.Bytes))
+					printKV(a.out(), a.style, []kv{{"next", "502drive collections cleanup " + args[0] + " --dry-run=false --yes --confirm-name '" + Sanitize(job.RootName) + "'"}})
+					return
+				}
 				printKV(a.out(), a.style, []kv{{"next", "502drive jobs get " + job.ID}})
 			})
 			return nil
@@ -167,4 +183,28 @@ func (a *App) collectionOpenCmd() *cobra.Command {
 		}}
 	c.Flags().BoolVar(&dest, "dest", false, "print the destination link instead of the source")
 	return c
+}
+
+// pollTerminal reads a job until it finishes or maxWait passes, quietly (no
+// progress lines). ok is false when it did not finish in time.
+func (a *App) pollTerminal(ctx context.Context, id string, maxWait time.Duration) (jobView, bool) {
+	deadline := time.Now().Add(maxWait)
+	for {
+		r, err := a.call(ctx, "GET", "/v1/jobs/"+url.PathEscape(id), nil, nil, "")
+		if err != nil {
+			return jobView{}, false
+		}
+		var j jobView
+		if r.Decode(&j) == nil && terminalState(j.State) {
+			return j, true
+		}
+		if time.Now().After(deadline) {
+			return jobView{}, false
+		}
+		select {
+		case <-ctx.Done():
+			return jobView{}, false
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
 }

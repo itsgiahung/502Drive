@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/itsgiahung/502Drive/internal/state"
@@ -42,8 +43,19 @@ func (s *Service) CleanupCollection(ctx context.Context, p Principal, key, id st
 	if err != nil {
 		return state.Job{}, err
 	}
-	if !req.DryRun && req.ConfirmName != col.RootName {
-		return state.Job{}, Fail(http.StatusBadRequest, "name_confirmation_mismatch", "Confirmation name does not match collection destination root name.")
+	if !req.DryRun {
+		// The name to type is the one the folder has in Drive; the requested
+		// name stays accepted for collections created before it was recorded.
+		actual, err := s.Store.RootDestName(ctx, col.ID)
+		if err != nil {
+			return state.Job{}, err
+		}
+		if actual == "" {
+			actual = col.RootName
+		}
+		if req.ConfirmName != actual && req.ConfirmName != col.RootName {
+			return state.Job{}, Fail(http.StatusBadRequest, "name_confirmation_mismatch", fmt.Sprintf("Type the destination folder name exactly as it appears in Drive: %q.", actual))
+		}
 	}
 	j, err := s.Store.AdmitCleanup(ctx, p.ID, key, id, req.ExpectedRevision, req.DryRun)
 	if err != nil {

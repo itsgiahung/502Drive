@@ -271,11 +271,21 @@ func (s *Store) CompleteItem(ctx context.Context, it Item, destID string, rootUR
 			return nil
 		}
 		url := rootURL(destID)
+		// The root may have been created under another name than requested
+		// ("Photos (2)" when "Photos" was taken): that is the name the user sees
+		// in Drive, so the job and the collection carry it from now on.
+		var decided string
+		if e = tx.QueryRowContext(ctx, "SELECT dest_name FROM items WHERE collection_id=? AND source_id=?", it.CollectionID, it.SourceID).Scan(&decided); e != nil {
+			return e
+		}
 		j, e := readJob(ctx, tx, "", it.JobID)
 		if e != nil {
 			return e
 		}
 		j.ResultURL = &url
+		if decided != "" {
+			j.RootName = decided
+		}
 		if e = saveJob(ctx, tx, j); e != nil {
 			return e
 		}
@@ -288,6 +298,9 @@ func (s *Store) CompleteItem(ctx context.Context, it Item, destID string, rootUR
 			return e
 		}
 		c.RootID, c.ResultURL = &destID, &url
+		if decided != "" {
+			c.RootName = decided
+		}
 		nb, _ := encode(c)
 		_, e = tx.ExecContext(ctx, "UPDATE collections SET body=? WHERE id=?", nb, it.CollectionID)
 		return e
@@ -519,4 +532,21 @@ func (s *Store) JobItems(ctx context.Context, jobID string, problemsOnly bool, l
 		out = append(out, r.it)
 	}
 	return out, next, nil
+}
+
+// RootDestName is the name the destination root of a collection actually got
+// (the conflict policy may have chosen "Photos (2)"), or "" before it exists.
+func (s *Store) RootDestName(ctx context.Context, collectionID string) (string, error) {
+	var name, decided string
+	err := s.db.QueryRowContext(ctx, "SELECT name, dest_name FROM items WHERE collection_id=? AND parent_source_id='' AND kind IN ('folder','wrapper') LIMIT 1", collectionID).Scan(&name, &decided)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if decided != "" {
+		return decided, nil
+	}
+	return name, nil
 }

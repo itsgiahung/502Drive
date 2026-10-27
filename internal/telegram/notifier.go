@@ -61,6 +61,11 @@ func (n *Notifier) JobFinished(ctx context.Context, jobID string) error {
 	if !ok {
 		return nil
 	}
+	if job.State == state.JobBlocked && !job.AutoRetried && job.LastError != nil && job.LastError.Code == "unknown_remote_outcome" {
+		// The daemon re-checks this once on its own; the user hears about it
+		// only if that re-check cannot settle it (or when it succeeds).
+		return nil
+	}
 	prefs, err := n.store.Preferences(ctx, job.Principal)
 	if err != nil {
 		return err

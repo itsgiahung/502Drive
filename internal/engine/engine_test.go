@@ -450,3 +450,80 @@ func TestAuthFailureBlocksJobAndResumeContinues(t *testing.T) {
 		t.Fatalf("%s %+v", j.State, j.LastError)
 	}
 }
+
+// The daemon re-checks a job blocked by an unknown outcome once on its own: the
+// same reconciliation as a user retry, so a copy is re-sent only after a lookup
+// confirms Drive has none. A job that blocks again waits for the user.
+func TestUnknownOutcomeIsRecheckedAutomaticallyOnce(t *testing.T) {
+	e := newEnv(t)
+	root := e.fake.Folder("Src", "root")
+	e.fake.File("only", root.ID, 3)
+	failing := 2 // the first send and the automatic re-send both fail
+	e.fake.Before = func(op string, f drive.File) error {
+		if op == "copy" && failing > 0 {
+			failing--
+			return &drive.Error{Kind: drive.KindUnavailable}
+		}
+		return nil
+	}
+	ctx := context.Background()
+	job := e.submit(root)
+	if j := e.runUntil(job.ID, terminal); j.State != state.JobBlocked {
+		t.Fatalf("expected blocked, got %s", j.State)
+	}
+	// Too recent: Drive search may still be catching up.
+	if ids, err := e.store.AutoRetryUnknownOutcomes(ctx, time.Now().Add(-time.Hour), 10); err != nil || len(ids) != 0 {
+		t.Fatalf("re-checked too early: %v %v", ids, err)
+	}
+	ids, err := e.store.AutoRetryUnknownOutcomes(ctx, time.Now().Add(time.Hour), 10)
+	if err != nil || len(ids) != 1 || ids[0] != job.ID {
+		t.Fatalf("auto re-check = %v %v", ids, err)
+	}
+	j := e.runUntil(job.ID, terminal)
+	if j.State != state.JobBlocked || !j.AutoRetried {
+		t.Fatalf("second failure must block again: %s auto=%v", j.State, j.AutoRetried)
+	}
+	if ids, _ = e.store.AutoRetryUnknownOutcomes(ctx, time.Now().Add(time.Hour), 10); len(ids) != 0 {
+		t.Fatalf("re-checked twice: %v", ids)
+	}
+	// The user's retry still works, and nothing was ever sent twice blindly.
+	r, err := e.store.Action(ctx, "owner", "r1", job.ID, "retry", j.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j = e.runUntil(r.Job.ID, terminal); j.State != state.JobSucceeded {
+		t.Fatalf("user retry %s", j.State)
+	}
+	if n := len(e.fake.Children(e.fake.Children(e.dest.ID)[0].ID)); n != 1 {
+		t.Fatalf("children %d", n)
+	}
+}
+
+// A block for several matching copies needs a human; it is never re-checked.
+func TestAutoRecheckLeavesOtherBlocksAlone(t *testing.T) {
+	e := newEnv(t)
+	root := e.fake.Folder("Src", "root")
+	e.fake.File("only", root.ID, 3)
+	e.fake.Before = func(op string, f drive.File) error {
+		if op == "copy" {
+			return &drive.Error{Kind: drive.KindUnavailable}
+		}
+		return nil
+	}
+	job := e.submit(root)
+	if j := e.runUntil(job.ID, terminal); j.State != state.JobBlocked {
+		t.Fatalf("expected blocked, got %s", j.State)
+	}
+	items, err := e.store.Items(context.Background(), job.CollectionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range items {
+		if it.State == state.ItemBlocked {
+			e.store.SetItemState(context.Background(), it, state.ItemBlocked, "multiple_matches")
+		}
+	}
+	if ids, err := e.store.AutoRetryUnknownOutcomes(context.Background(), time.Now().Add(time.Hour), 10); err != nil || len(ids) != 0 {
+		t.Fatalf("a multiple-matches block was re-checked: %v %v", ids, err)
+	}
+}

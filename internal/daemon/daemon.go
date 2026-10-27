@@ -50,6 +50,15 @@ type Options struct {
 	Maintenance bool
 }
 
+// autoRetryAfter is how long a job blocked by an unknown remote outcome waits
+// before its one automatic re-check: Drive's search index (used to find a copy
+// by its intent) can lag a write by tens of seconds. autoRetryEvery is how
+// often the daemon looks for such jobs.
+const (
+	autoRetryAfter = 2 * time.Minute
+	autoRetryEvery = 30 * time.Second
+)
+
 // Run serves until ctx is cancelled, then shuts down in order: stop accepting
 // requests, let the engine reach safe points, close state.
 func Run(parent context.Context, cfg config.Config, o Options) error {
@@ -362,6 +371,36 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 		}
 	}()
 
+	// A job blocked only by an unknown remote outcome (a crash or a lost
+	// response) is re-checked once on its own after Drive search has had time
+	// to settle; the same reconciliation as a user retry decides whether the
+	// write happened. It stops with the maintenance context.
+	autoDone := make(chan struct{})
+	if !o.Maintenance {
+		go func() {
+			defer close(autoDone)
+			ticker := time.NewTicker(autoRetryEvery)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-maintCtx.Done():
+					return
+				case <-ticker.C:
+					ids, err := store.AutoRetryUnknownOutcomes(maintCtx, time.Now().Add(-autoRetryAfter), 20)
+					if err != nil {
+						log.Warn("auto-retry: cannot re-check blocked jobs", "err", err)
+					}
+					if len(ids) > 0 {
+						log.Info("auto-retry: re-checking unknown outcomes", "jobs", len(ids))
+						eng.Wake()
+					}
+				}
+			}
+		}()
+	} else {
+		close(autoDone)
+	}
+
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- hs.Serve(ln) }()
 	log.Info("listening", "addr", ln.Addr().String())
@@ -387,6 +426,7 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 	<-telegramDone
 	stopMaint()
 	<-maintDone
+	<-autoDone
 	_ = store.CheckpointTruncate(shutCtx)
 	_ = store.Optimize(shutCtx)
 	if errors.Is(runErr, http.ErrServerClosed) {

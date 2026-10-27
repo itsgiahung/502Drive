@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -89,5 +90,33 @@ func TestCollectionLifecycleRoutes(t *testing.T) {
 	h.conform("POST", "/v1/collections/{collection_id}/forget", r)
 	if g := h.do("GET", base, nil, "", true); g.status != 404 {
 		t.Fatalf("forgotten collection still readable: %d", g.status)
+	}
+}
+
+// When the destination already holds a folder with the source's name, the copy
+// root becomes "Name (2)". The collection then carries that name, and cleanup
+// asks for it (the requested name stays accepted for older collections).
+func TestCleanupConfirmsTheNameTheRootHasInDrive(t *testing.T) {
+	h := newHarness(t, true)
+	dest := h.setup()
+	h.fake.Folder("Taken", dest["folder_id"].(string))
+	coll, _ := h.copiedFolder("Taken")
+	base := "/v1/collections/" + coll
+
+	got := h.data(h.do("GET", base, nil, "", true))
+	if got["root_name"] != "Taken (2)" {
+		t.Fatalf("root_name = %v, want the name the root has in Drive", got["root_name"])
+	}
+	if r := h.retireNow(coll, "retire-taken"); r.status != 200 {
+		t.Fatalf("retire = %d %s", r.status, r.body)
+	}
+	rev := h.collectionRevision(coll)
+	r := h.do("POST", base+"/cleanup", map[string]any{"expected_revision": rev, "dry_run": false, "confirm_name": "wrong"}, "clean-wrong", true)
+	if r.status != 400 || !strings.Contains(string(r.body), "Taken (2)") {
+		t.Fatalf("a wrong name must be refused and say which name to type: %d %s", r.status, r.body)
+	}
+	r = h.do("POST", base+"/cleanup", map[string]any{"expected_revision": rev, "dry_run": false, "confirm_name": "Taken (2)"}, "clean-ok", true)
+	if r.status != 202 {
+		t.Fatalf("cleanup with the Drive name = %d %s", r.status, r.body)
 	}
 }

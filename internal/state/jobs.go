@@ -121,7 +121,9 @@ func appendEvent(ctx context.Context, q queryer, j Job, kind string, data map[st
 }
 
 func saveJob(ctx context.Context, q queryer, j Job) error {
-	j.Counts = Counts{} // counts are derived from items on read
+	if j.Kind != JobKindCleanup {
+		j.Counts = Counts{} // counts are derived from items on read
+	}
 	b, err := json.Marshal(j)
 	if err != nil {
 		return err
@@ -147,6 +149,11 @@ func readJob(ctx context.Context, q queryer, principal, id string) (Job, error) 
 }
 
 func fillCounts(ctx context.Context, q queryer, j *Job) error {
+	if j.Kind == JobKindCleanup {
+		// A cleanup owns no items: its counts are the plan it recorded (how
+		// many copied items and bytes the trash move covers), not a recount.
+		return nil
+	}
 	var observed, done, failed, blocked, skipped, listing int
 	var bytes int64
 	err := q.QueryRowContext(ctx, `SELECT
@@ -384,6 +391,72 @@ func (s *Store) ActionAs(ctx context.Context, actor, owner, key, id, action stri
 	}
 	return Result{Job: j, Replayed: replayed}, nil
 }
+
+// AutoRetryUnknownOutcomes re-checks, once, the jobs that blocked only because
+// a write's outcome was unknown (a crash or a lost response) and have stayed
+// blocked since before settledBefore. It applies exactly what a user retry does:
+// the blocked items go back through reconciliation and are re-sent only after a
+// lookup confirms Drive has no copy with their intent. Jobs with any other
+// blocked reason (several matches, reconnect, quota) are left to the user, and a
+// job that blocks again after its automatic re-check stays blocked.
+func (s *Store) AutoRetryUnknownOutcomes(ctx context.Context, settledBefore time.Time, limit int) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM jobs WHERE state='blocked'
+		AND json_extract(body,'$.last_error.code')='unknown_remote_outcome'
+		AND coalesce(json_extract(body,'$.auto_retried'),0)=0
+		AND NOT EXISTS (SELECT 1 FROM items WHERE items.job_id=jobs.id AND items.state='blocked' AND items.error_code<>'unknown_remote_outcome')
+		ORDER BY rowid LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	var done []string
+	for _, id := range ids {
+		err := s.tx(ctx, func(tx *sql.Tx) error {
+			j, e := readJob(ctx, tx, "", id)
+			if e != nil {
+				return e
+			}
+			// Re-check inside the transaction: a user action may have won.
+			if j.State != JobBlocked || j.AutoRetried || j.LastError == nil || j.LastError.Code != "unknown_remote_outcome" || !j.UpdatedAt.Before(settledBefore) {
+				return errSkip
+			}
+			if e = resetForRetry(ctx, tx, j); e != nil {
+				return e
+			}
+			j.State, j.DesiredState, j.LastError, j.Phase = JobQueued, "run", nil, nil
+			j.AutoRetried = true
+			j.Revision++
+			j.UpdatedAt = time.Now().UTC()
+			if e = saveJob(ctx, tx, j); e != nil {
+				return e
+			}
+			return appendEvent(ctx, tx, j, "auto_retry", nil)
+		})
+		if errors.Is(err, errSkip) {
+			continue
+		}
+		if err != nil {
+			return done, err
+		}
+		done = append(done, id)
+	}
+	return done, nil
+}
+
+// errSkip leaves a transaction without changes and without an error.
+var errSkip = errors.New("skip")
 
 // resetForRetry re-arms only the items that did not finish: failed ones are
 // retried, blocked ones go back through reconciliation, failed listings resume

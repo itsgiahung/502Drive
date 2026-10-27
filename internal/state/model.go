@@ -200,6 +200,9 @@ type Job struct {
 	// QueuePaused marks a job that the global queue pause moved to pausing or
 	// paused; only the queue resume (not a user action) may resume it.
 	QueuePaused bool `json:"queue_paused,omitempty"`
+	// AutoRetried marks a job the daemon already re-checked once on its own
+	// after an unknown remote outcome; a second block waits for the user.
+	AutoRetried bool `json:"auto_retried,omitempty"`
 	// AfterCopySync asks for a sync subscription on the collection this job
 	// creates, once the initial copy succeeds (S8). Empty means "use the
 	// principal's preference"; "off" means never.

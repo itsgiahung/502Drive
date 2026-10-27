@@ -47,20 +47,24 @@ var findingKinds = []string{
 // --repair, fixes what is safe. The repair defaults to a dry run; --apply
 // performs the (reversible, intent-checked) fixes.
 func (a *App) auditCmd() *cobra.Command {
-	var repair, dryRun, apply bool
-	var wait time.Duration
-	c := &cobra.Command{Use: "audit COLLECTION", Short: "Compare a copied source with its destination and report (or fix) the differences", Args: cobra.ExactArgs(1),
+	var repair, dryRun, apply, wait bool
+	var waitTimeout time.Duration
+	c := &cobra.Command{Use: "audit COLLECTION", Short: "Compare a copied source with its destination and report (or fix) the differences", Args: auditArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if apply && dryRun {
 				return usage("choose --apply or --dry-run, not both")
 			}
-			return a.runAudit(cmd.Context(), args[0], repair, repair && !apply, wait)
+			if !wait && repair {
+				return usage("--repair needs the audit report: drop --wait=false")
+			}
+			return a.runAudit(cmd.Context(), args[0], repair, repair && !apply, wait, waitTimeout)
 		}}
 	f := c.Flags()
 	f.BoolVar(&repair, "repair", false, "after the audit, plan the safe fixes (dry run unless --apply)")
 	f.BoolVar(&dryRun, "dry-run", false, "with --repair: plan only, change nothing (the default)")
 	f.BoolVar(&apply, "apply", false, "with --repair: perform the planned fixes (only our own tagged objects are touched; nothing is deleted)")
-	f.DurationVar(&wait, "wait", 10*time.Minute, "how long to watch each job")
+	f.BoolVar(&wait, "wait", true, "follow the audit and print its report (--wait=false only starts it)")
+	f.DurationVar(&waitTimeout, "wait-timeout", 10*time.Minute, "stop waiting after this long (the job keeps running)")
 
 	var kind string
 	var limit int
@@ -76,7 +80,18 @@ func (a *App) auditCmd() *cobra.Command {
 	return c
 }
 
-func (a *App) runAudit(ctx context.Context, collection string, repair, dry bool, wait time.Duration) error {
+// auditArgs takes exactly one collection. `--wait` used to take a duration;
+// "audit C --wait 5m" now leaves "5m" as an argument, so say what changed.
+func auditArgs(cmd *cobra.Command, args []string) error {
+	if len(args) == 2 {
+		if _, err := time.ParseDuration(args[1]); err == nil {
+			return usage("--wait no longer takes a duration (it matches `copy --wait`): use --wait-timeout %s", args[1])
+		}
+	}
+	return cobra.ExactArgs(1)(cmd, args)
+}
+
+func (a *App) runAudit(ctx context.Context, collection string, repair, dry, wait bool, waitTimeout time.Duration) error {
 	// A new key per invocation: a key derived from the collection alone would
 	// replay the first audit forever. Retries inside this call reuse it.
 	key := NewKey()
@@ -91,7 +106,13 @@ func (a *App) runAudit(ctx context.Context, collection string, repair, dry bool,
 	if !a.g.quiet {
 		fmt.Fprintf(a.errw(), "Audit %s started as job %s.\n", av.ID, av.JobID)
 	}
-	if err := a.waitJob(ctx, av.JobID, wait); err != nil {
+	if !wait {
+		a.emit(r, av.ID, func() {
+			printKV(a.out(), a.style, []kv{{"audit", Sanitize(av.ID)}, {"job", Sanitize(av.JobID)}, {"next", "502drive audit show " + Sanitize(av.ID)}})
+		})
+		return nil
+	}
+	if err := a.waitJob(ctx, av.JobID, waitTimeout); err != nil {
 		return err
 	}
 	out, _, err := a.fetchAudit(ctx, av.ID, "", true)
@@ -117,7 +138,7 @@ func (a *App) runAudit(ctx context.Context, collection string, repair, dry bool,
 			}
 			fmt.Fprintf(a.errw(), "Repair %s started as job %s.\n", word, j.ID)
 		}
-		if err := a.waitJob(ctx, j.ID, wait); err != nil {
+		if err := a.waitJob(ctx, j.ID, waitTimeout); err != nil {
 			return err
 		}
 		out2, _, err := a.fetchAudit(ctx, av.ID, "", true)

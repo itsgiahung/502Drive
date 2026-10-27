@@ -70,7 +70,7 @@ test với schema. Danh sách route dưới đây lấy từ `rg 'route\("' inte
 | `POST /v1/collections/{id}/retire` | auth | `200`; `409 collection_busy` khi còn job chạy |
 | `POST /v1/collections/{id}/resume` | auth | `200`; đưa retired → ready |
 | `POST /v1/collections/{id}/forget` | auth | `204`; chỉ khi đã retired (`409 collection_not_retired`) |
-| `POST /v1/collections/{id}/cleanup` | auth | `202 + Location`; job `kind=cleanup`; body `expected_revision`, `dry_run`, `confirm_name`; `dry_run` vắng = false nên phải khớp `confirm_name`, CLI mặc định dry-run; `400 name_confirmation_mismatch` |
+| `POST /v1/collections/{id}/cleanup` | auth | `202 + Location`; job `kind=cleanup`; body `expected_revision`, `dry_run`, `confirm_name`; `dry_run` vắng = false nên phải khớp `confirm_name` (tên thư mục gốc trong Drive, ví dụ `Photos (2)`; tên yêu cầu ban đầu vẫn được nhận cho collection cũ), CLI mặc định dry-run; `400 name_confirmation_mismatch` nêu tên cần gõ; `counts` của job cleanup là kế hoạch (số mục, byte) |
 | `PUT /v1/collections/{id}/sync` | auth | `200`; cần `expected_revision` + `expected_subscription_revision`; `503 maintenance` |
 | `POST /v1/collections/{id}/sync/pause\|resume\|stop` | auth | `202`; revision-guarded |
 | `POST /v1/collections/{id}/runs` | auth | `202 + Location`; coalesce với run đang chạy |

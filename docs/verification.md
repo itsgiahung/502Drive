@@ -26,10 +26,9 @@ không dùng harness `internal/live` (không cần đưa token ra ngoài daemon)
 | Telegram thật: `/start`, `/status`, dán link, `/find crash` | đều `processed`; dán link → job 10/10 vào đích mặc định; thẻ tiến độ được sửa tới trạng thái cuối |
 | Telegram sau `retry` | **lỗi** → sửa: job báo `blocked` rồi `retry` thành công không có tin thứ hai (`6c87102`) |
 
-Ghi nhận chưa sửa: root đặt tên `X (2)` theo N1 nhưng `collections cleanup
---confirm-name` vẫn đòi tên gốc `X`; dry-run cleanup không cho biết số mục sẽ vào
-thùng rác; `audit --wait` là duration còn `copy --wait` là cờ; đổi tên thuần một file
-tạo generation mới thay vì đổi tên; sau crash phải `retry` tay các mục chặn.
+Năm điểm UX ghi nhận trong phiên (tên xác nhận cleanup, dry-run cleanup không báo
+số mục, `--wait` không thống nhất, đổi tên thuần tạo bản mới, phải `retry` tay sau
+crash) đã được sửa sau phiên; xem `docs/acceptance.md` (dòng "Live 2026-10-28").
 
 Chưa chạy trong phiên này: tray/thông báo bấm tay, Shared Drive,
 cây lớn (throttle/AIMD, quota ngày), Windows/macOS, mất mạng/ngủ máy thật.

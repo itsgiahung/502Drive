@@ -46,7 +46,7 @@ Test: [cli_test.go](../../internal/cli/cli_test.go), [drive_test.go](../../inter
 502drive                       # trong TTY: tạo config lần đầu, bật daemon + tray (tách khỏi terminal), mở TUI
 502drive up                    # như trên nhưng không mở UI (dùng cho autostart)
 502drive stop [--yes]          # dừng daemon graceful qua HTTP; còn job thì hỏi (ngoài TTY cần --yes)
-502drive audit COLLECTION [--repair [--apply|--dry-run]] [--json]   # đối chiếu nguồn↔đích; repair mặc định dry-run
+502drive audit COLLECTION [--repair [--apply|--dry-run]] [--wait=false] [--wait-timeout 10m] [--json]   # đối chiếu nguồn↔đích; repair mặc định dry-run; --wait là cờ như copy
 502drive audit show AUDIT_ID [--kind K] [--all] [--json]            # xem lại báo cáo + findings
 502drive menu                  # chỉ mở TUI, line menu khi plain/dumb/NO_COLOR
 502drive logs [-n N] [-f] [--tray]
@@ -386,3 +386,11 @@ TUI keeps **f** for single-state cycling; **F**, Space, Enter selects several.
 U13: `502drive tui --job ID` (alias of `menu --job ID`) opens that job directly,
 resolving aliases and fetching jobs outside the first page. In a plain TTY it
 prints the target job's details. Non-TTY/`--no-input` still never opens an input UI.
+
+Phiên kiểm thật 2026-10-28: `audit --wait` là cờ (mặc định bật) giống `copy --wait`;
+thời lượng chờ là `--wait-timeout`. Cách viết cũ `audit C --wait 5m` bị từ chối (exit 2)
+kèm gợi ý `--wait-timeout 5m`. `audit --wait=false` chỉ khởi chạy và in id (không dùng
+được với `--repair`). Mỗi lần `audit` là một audit mới (khóa idempotency riêng mỗi lần
+gọi). `collections cleanup` ở chế độ dry-run (mặc định, không `--json`) chờ job xong
+và in kế hoạch: tên thư mục gốc, số mục đã copy, dung lượng, và lệnh chạy thật với
+đúng `--confirm-name`; job cleanup giữ `counts.total_items`/`logical_bytes` của kế hoạch.

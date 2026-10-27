@@ -191,6 +191,16 @@ Chi tiết: [design/s5-selective-sync.md](../design/s5-selective-sync.md).
 - Nhiều link trong một lệnh tạo nhiều job cùng `batch_id` (xem dưới), nhưng **không**
   gộp nhiều nguồn vào một job; không watch/push.
 - Unknown outcome chỉ reconcile bằng query; repair thủ công chỉ qua audit/repair (S1).
+- Job chỉ bị chặn vì `unknown_remote_outcome` (crash, mất phản hồi) được daemon tự
+  kiểm lại **một lần** sau 2 phút (chỉ mục tìm kiếm của Drive có thể trễ): đúng đường
+  của `jobs retry` — mục được gửi lại chỉ khi truy vấn xác nhận Drive không có bản nào
+  mang intent của nó. Job có lý do chặn khác (`multiple_matches`, đăng nhập lại,
+  quota) không được tự thử; chặn lần hai thì chờ người dùng (`auto_retried=true`).
+  Telegram không báo lần chặn đầu, chỉ báo khi lần tự kiểm không giải quyết được hoặc
+  khi job xong.
+- Thư mục gốc được đặt tên khác do trùng (`Photos (2)`): job và collection mang tên
+  thật đó (`root_name`), nên mọi giao diện và `cleanup --confirm-name` dùng đúng tên
+  người dùng thấy trong Drive.
 
 ## Lô (batch), hàng đợi và tạm dừng (S6)
 

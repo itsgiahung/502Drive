@@ -53,9 +53,9 @@ func (r *run) executeCleanup(ctx context.Context, job state.Job) {
 		return
 	}
 
-	if job.DryRun {
-		// Dry-run: calculate plan counts and finish as succeeded
-		items, _ := r.e.Store.Items(r.db, col.ID)
+	// Both runs record what the trash move covers: the copied items and bytes
+	// below the root. A dry run stops there; a real run then trashes the root.
+	if items, err := r.e.Store.Items(r.db, col.ID); err == nil {
 		var totalBytes int64
 		var count int
 		for _, it := range items {
@@ -71,6 +71,8 @@ func (r *run) executeCleanup(ctx context.Context, job state.Job) {
 			j.Counts.Total, j.Counts.Bytes = &total, totalBytes
 			return "plan", true
 		})
+	}
+	if job.DryRun {
 		r.finishCleanup(state.JobSucceeded, "", "")
 		return
 	}

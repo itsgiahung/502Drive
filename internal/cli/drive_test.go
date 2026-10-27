@@ -431,9 +431,54 @@ func TestAuditStartsANewAuditEachTime(t *testing.T) {
 		reply(w, 200, map[string]any{"id": "aud_1", "collection_id": "col_1", "job_id": "job_1", "state": "completed", "revision": 1})
 	})
 	for range 2 {
-		driveCLI(t, h, "audit", "col_1", "--wait", "0s", "--json")
+		driveCLI(t, h, "audit", "col_1", "--json")
 	}
 	if len(keys) != 2 || keys[0] == "" || keys[0] == keys[1] {
 		t.Fatalf("audit idempotency keys = %q", keys)
+	}
+}
+
+// A dry-run cleanup prints what it would move instead of only a job id.
+func TestCleanupDryRunPrintsItsPlan(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/v1/collections/"):
+			reply(w, 200, map[string]any{"id": "col_1", "revision": 4, "state": "retired"})
+		case r.Method == "POST":
+			reply(w, 202, map[string]any{"id": "job_c", "state": "queued", "dry_run": true, "root_name": "Photos (2)"})
+		default:
+			reply(w, 200, map[string]any{"id": "job_c", "state": "succeeded", "dry_run": true, "root_name": "Photos (2)",
+				"counts": map[string]any{"total_items": 8, "logical_bytes": 150}})
+		}
+	})
+	code, out, errOut := driveCLI(t, h, "collections", "cleanup", "col_1")
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, `Would move "Photos (2)" to the Drive trash: 8 copied items`) || !strings.Contains(out, "--confirm-name 'Photos (2)'") {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+// audit --wait is a switch like copy --wait; the old duration form explains
+// the change, and --wait=false only starts the audit.
+func TestAuditWaitFlagMatchesCopy(t *testing.T) {
+	posts := 0
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			posts++
+		}
+		reply(w, 202, map[string]any{"id": "aud_1", "collection_id": "col_1", "job_id": "job_1", "state": "running", "revision": 1})
+	})
+	code, _, errOut := driveCLI(t, h, "audit", "col_1", "--wait", "5m")
+	if code != ExitUsage || !strings.Contains(errOut, "--wait-timeout 5m") || posts != 0 {
+		t.Fatalf("old --wait form: exit %d posts %d err %q", code, posts, errOut)
+	}
+	code, out, errOut := driveCLI(t, h, "audit", "col_1", "--wait=false")
+	if code != ExitOK || !strings.Contains(out, "aud_1") || posts != 1 {
+		t.Fatalf("--wait=false: exit %d out %q err %q", code, out, errOut)
+	}
+	if code, _, _ = driveCLI(t, h, "audit", "col_1", "--wait=false", "--repair"); code != ExitUsage {
+		t.Fatalf("--repair without waiting must be refused, exit %d", code)
 	}
 }

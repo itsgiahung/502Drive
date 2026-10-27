@@ -350,7 +350,7 @@ func TestNotifierAnnouncesTheOutcomeAfterARetry(t *testing.T) {
 	h := newHarness(t, 42)
 	n := NewNotifier(NotifierOptions{Service: h.svc, OwnerID: 42, Now: h.clock})
 	job := admit(t, h.store, "owner", "Crash copy")
-	finish(t, h.store, job.ID, state.JobBlocked, "unknown_remote_outcome")
+	finish(t, h.store, job.ID, state.JobBlocked, "multiple_matches")
 	if err := n.JobFinished(context.Background(), job.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -363,5 +363,32 @@ func TestNotifierAnnouncesTheOutcomeAfterARetry(t *testing.T) {
 	rows := pendingFinal(t, h.store)
 	if len(rows) != 2 || !strings.HasPrefix(rows[0].Note, state.JobBlocked) || !strings.HasPrefix(rows[1].Note, state.JobSucceeded) {
 		t.Fatalf("notices = %+v, want blocked then succeeded", rows)
+	}
+}
+
+// A first block on an unknown outcome is re-checked by the daemon on its own;
+// only a block after that automatic re-check is announced.
+func TestNotifierWaitsForTheAutomaticRecheck(t *testing.T) {
+	h := newHarness(t, 42)
+	n := NewNotifier(NotifierOptions{Service: h.svc, OwnerID: 42, Now: h.clock})
+	job := admit(t, h.store, "owner", "Crash copy")
+	finish(t, h.store, job.ID, state.JobBlocked, "unknown_remote_outcome")
+	if err := n.JobFinished(context.Background(), job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if rows := pendingFinal(t, h.store); len(rows) != 0 {
+		t.Fatalf("announced before the automatic re-check: %+v", rows)
+	}
+	if _, err := h.store.UpdateJob(context.Background(), job.ID, func(j *state.Job) (string, bool) {
+		j.AutoRetried = true
+		return "", true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := n.JobFinished(context.Background(), job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if rows := pendingFinal(t, h.store); len(rows) != 1 {
+		t.Fatalf("a block after the re-check must be announced, got %d", len(rows))
 	}
 }

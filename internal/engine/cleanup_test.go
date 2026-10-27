@@ -30,6 +30,14 @@ func TestCleanupDryRunDoesNotTrash(t *testing.T) {
 	if finished.State != state.JobSucceeded {
 		t.Fatalf("cleanup job state = %s, want succeeded", finished.State)
 	}
+	// The plan says what the trash move covers, and it survives a re-read.
+	got, err := e.store.GetJob(context.Background(), "owner", cleanJob.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Counts.Total == nil || *got.Counts.Total < 7 || got.Counts.Bytes != 150 {
+		t.Fatalf("dry-run plan counts = %+v, want the copied items and 150 bytes", got.Counts)
+	}
 
 	// Verify root folder is still NOT trashed
 	f, err := e.fake.GetFile(context.Background(), *col.RootID, "")
