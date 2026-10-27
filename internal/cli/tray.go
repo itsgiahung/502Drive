@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/itsgiahung/502Drive/internal/state"
 	"github.com/itsgiahung/502Drive/internal/tray"
 )
 
@@ -73,6 +75,7 @@ func (a *App) runTray(ctx context.Context) error {
 		Jobs:        a.trayJobs,
 		Copy:        a.trayCopy,
 		Language:    a.trayLanguage,
+		Quiet:       a.trayQuiet,
 		StartDaemon: a.startDaemonAction,
 		StopDaemon:  a.stopDaemon,
 		Log:         slog.New(slog.NewTextHandler(a.errw(), &slog.HandlerOptions{Level: slog.LevelWarn})),
@@ -146,6 +149,19 @@ func (a *App) trayCopy(ctx context.Context, link string) (string, error) {
 
 // trayLanguage reads the preference fresh, so a change in settings shows up in
 // the tray without a restart.
+// trayQuiet reports whether the saved quiet hours cover the current time.
+func (a *App) trayQuiet(ctx context.Context) (bool, error) {
+	r, err := a.call(ctx, "GET", "/v1/preferences", nil, nil, "")
+	if err != nil {
+		return false, err
+	}
+	var prefs state.Preferences
+	if err = r.Decode(&prefs); err != nil {
+		return false, err
+	}
+	return prefs.InQuietHours(time.Now()), nil
+}
+
 func (a *App) trayLanguage(ctx context.Context) (string, error) {
 	r, err := a.call(ctx, "GET", "/v1/preferences", nil, nil, "")
 	if err != nil {

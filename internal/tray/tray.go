@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itsgiahung/502Drive/internal/autostart"
 	"github.com/itsgiahung/502Drive/internal/i18n"
 )
 
@@ -44,8 +45,13 @@ type Options struct {
 	NoNotify bool
 	// Language reads the UI language preference (vi/en); nil means English.
 	Language func(ctx context.Context) (string, error)
-	Log      *slog.Logger
-	Now      func() time.Time
+	// Quiet reports whether desktop notifications are suppressed right now
+	// (quiet hours). Nil means never quiet.
+	Quiet func(ctx context.Context) (bool, error)
+	// AutostartToggle flips autostart. If nil, autostart.Toggle is used.
+	AutostartToggle func() (bool, error)
+	Log             *slog.Logger
+	Now             func() time.Time
 }
 
 func (o Options) now() time.Time {
@@ -301,6 +307,21 @@ func (a *agent) action(ctx context.Context, id string) {
 		}
 		if err == nil {
 			a.setNote(out)
+		}
+	case ActionAutostart:
+		toggleFn := autostart.Toggle
+		if a.o.AutostartToggle != nil {
+			toggleFn = a.o.AutostartToggle
+		}
+		on, aerr := toggleFn()
+		if aerr != nil {
+			err = aerr
+		} else {
+			if on {
+				a.setNote(i18n.T(a.language(), i18n.Autostart) + " ✓")
+			} else {
+				a.setNote(i18n.T(a.language(), i18n.Autostart))
+			}
 		}
 	default:
 		return

@@ -6,6 +6,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/itsgiahung/502Drive/internal/autostart"
 	"github.com/itsgiahung/502Drive/internal/i18n"
 )
 
@@ -18,6 +19,7 @@ const (
 	// ActionStopDaemon is the confirmed "Stop 502Drive…" item: a graceful
 	// POST /v1/shutdown, distinct from ActionQuit (which only leaves the tray).
 	ActionStopDaemon = "stop-daemon"
+	ActionAutostart  = "autostart"
 	ActionQuit       = "quit"
 	// Job slots are informational menu rows, addressed by index.
 	jobSlotID = "job"
@@ -128,10 +130,20 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 		{Separator: true},
 		{ID: ActionDaemon, Title: i18n.T(lang, i18n.StartDaemon), Enabled: !online},
 		{ID: ActionStopDaemon, Title: i18n.T(lang, i18n.StopApp), Enabled: online},
+		{ID: ActionAutostart, Title: autostartTitle(lang), Enabled: true},
 		{Separator: true},
 		{ID: ActionQuit, Title: i18n.T(lang, i18n.Quit), Enabled: true},
 	}
 	return View{State: state, Title: title, StatusLine: line, Items: items}
+}
+
+func autostartTitle(lang string) string {
+	on, _ := autostart.Status()
+	title := i18n.T(lang, i18n.Autostart)
+	if on {
+		title += " ✓"
+	}
+	return title
 }
 
 // jobItems fills the fixed job slots with the last snapshot, which is kept

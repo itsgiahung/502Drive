@@ -144,9 +144,18 @@ func prefsDTO(p state.Preferences) map[string]any {
 	if p.DestinationRevision != nil {
 		rev = *p.DestinationRevision
 	}
+	var qStart, qEnd any
+	if p.QuietHoursStart != nil {
+		qStart = *p.QuietHoursStart
+	}
+	if p.QuietHoursEnd != nil {
+		qEnd = *p.QuietHoursEnd
+	}
 	return map[string]any{"language": p.Language, "timezone": p.Timezone, "auto_copy": p.AutoCopy, "destination_id": dest, "destination_revision": rev,
 		"notify_completed": p.NotifyCompleted, "notify_failed": p.NotifyFailed, "notify_action_required": p.NotifyActionRequired,
-		"after_copy_sync_mode": p.AfterCopySyncMode, "after_copy_schedule": nil}
+		"after_copy_sync_mode": p.AfterCopySyncMode, "after_copy_schedule": nil,
+		"quiet_hours_start": qStart, "quiet_hours_end": qEnd,
+		"retention_days": p.RetentionDays}
 }
 
 func operatorDTO(o state.Operator) map[string]any {

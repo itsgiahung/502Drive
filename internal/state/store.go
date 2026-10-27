@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofrs/flock"
 	_ "modernc.org/sqlite"
@@ -24,8 +25,20 @@ const applicationID = 502002
 
 // Store is the single writer for a data directory.
 type Store struct {
-	db   *dbConn
-	lock *flock.Flock
+	dir            string
+	db             *dbConn
+	lock           *flock.Flock
+	lastCheckpoint time.Time
+}
+
+// DataDir returns the path to the store's data directory.
+func (s *Store) DataDir() string {
+	return s.dir
+}
+
+// LastCheckpoint returns the timestamp of the last checkpoint execution.
+func (s *Store) LastCheckpoint() time.Time {
+	return s.lastCheckpoint
 }
 
 type migration struct {
@@ -159,7 +172,7 @@ func Open(dir string) (s *Store, err error) {
 			return nil, err
 		}
 	}
-	return &Store{db: &dbConn{DB: db, c: newChanges()}, lock: l}, nil
+	return &Store{dir: dir, db: &dbConn{DB: db, c: newChanges()}, lock: l, lastCheckpoint: time.Now()}, nil
 }
 
 func (s *Store) Close() error { return errors.Join(s.db.Close(), s.lock.Unlock()) }

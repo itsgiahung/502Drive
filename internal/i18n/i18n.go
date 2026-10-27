@@ -6,6 +6,7 @@ package i18n
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Key identifies one label. Keys are stable identifiers, not user text.
@@ -227,6 +228,7 @@ const (
 	CopiedSrcs      Key = "copied_sources"
 	NothingCopy     Key = "nothing_copied"
 	WhyOff          Key = "why_off"
+	Autostart       Key = "autostart"
 )
 
 // VI is the Vietnamese table (the default language).
@@ -377,6 +379,7 @@ var VI = map[Key]string{
 	LoginHint: "Kết nối lại Google (in ra link)", Revoke: "Ngắt kết nối và thu hồi quyền",
 	SettingsHead: "Cài đặt (ngôn ngữ hiện tại: %s)", LangVI: "Ngôn ngữ: Tiếng Việt", LangEN: "Ngôn ngữ: English",
 	CopiedSrcs: "Nguồn đã copy", NothingCopy: "Chưa copy gì.", WhyOff: "Đồng bộ đang tắt",
+	Autostart: "Khởi động cùng hệ thống",
 }
 
 // EN is the English table.
@@ -527,14 +530,75 @@ var EN = map[Key]string{
 	LoginHint: "Connect / reconnect Google (prints a link)", Revoke: "Disconnect and revoke",
 	SettingsHead: "Settings (current language: %s)", LangVI: "Language: Tiếng Việt", LangEN: "Language: English",
 	CopiedSrcs: "Copied sources", NothingCopy: "Nothing copied yet.", WhyOff: "Sync is off",
+	Autostart: "Start on login",
+}
+
+var osLocaleHook func() string
+
+// OSLocale returns the current operating system locale string.
+func OSLocale() string {
+	if osLocaleHook != nil {
+		return osLocaleHook()
+	}
+	return defaultOSLocale()
+}
+
+// Resolve maps a language preference ("auto", "vi", "en", or custom locale)
+// to "vi" or "en".
+// "auto" or empty inspects the OS locale: only "vi*" maps to "vi", everything else maps to "en".
+func Resolve(lang string) string {
+	l := strings.ToLower(strings.TrimSpace(lang))
+	if l == "" || l == "auto" {
+		loc := strings.ToLower(OSLocale())
+		if strings.HasPrefix(loc, "vi") {
+			return "vi"
+		}
+		return "en"
+	}
+	if strings.HasPrefix(l, "vi") {
+		return "vi"
+	}
+	return "en"
 }
 
 // For returns the table for a language code; unknown codes fall back to English.
 func For(lang string) map[Key]string {
-	if strings.HasPrefix(strings.ToLower(lang), "vi") {
+	if Resolve(lang) == "vi" {
 		return VI
 	}
 	return EN
+}
+
+// FormatTime formats a timestamp according to locale and timezone.
+// For Vietnamese: "02/01/2006 15:04".
+// For English/default: "2006-01-02 15:04".
+func FormatTime(t time.Time, loc *time.Location, lang string) string {
+	if t.IsZero() {
+		return ""
+	}
+	if loc != nil {
+		t = t.In(loc)
+	}
+	if Resolve(lang) == "vi" {
+		return t.Format("02/01/2006 15:04")
+	}
+	return t.Format("2006-01-02 15:04")
+}
+
+// FormatDate formats a date according to locale and timezone.
+// For Vietnamese: "02/01/2006".
+// For English/default: "2006-01-02".
+func FormatDate(t time.Time, loc *time.Location, lang string) string {
+	if t.IsZero() {
+		return ""
+	}
+	if loc != nil {
+		t = t.In(loc)
+	}
+	if Resolve(lang) == "vi" {
+		return t.Format("02/01/2006")
+	}
+	return t.Format("2006-01-02")
 }
 
 // T returns the label for key, falling back to English, then to the key.
@@ -564,7 +628,7 @@ func Keys() []Key {
 
 // HelpLines is the key map shown on the TUI help screen.
 func HelpLines(lang string) []string {
-	if strings.HasPrefix(strings.ToLower(lang), "vi") {
+	if Resolve(lang) == "vi" {
 		return []string{
 			"1..6     chuyển màn (Trang chính, Công việc, Thư viện, Đích, Tài khoản, Cài đặt)",
 			"↑↓ / j k di chuyển lựa chọn",

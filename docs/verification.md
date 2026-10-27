@@ -205,3 +205,12 @@ SEARCH items USING INDEX items_collection_kind_state (collection_id=? AND kind=?
 CORRELATED SCALAR SUBQUERY 1
 SEARCH c USING INDEX items_parent (collection_id=? AND parent_source_id=?)
 ```
+## Đợt B (T3, T5, S11, R1) — đo S11 nhàn rỗi
+
+- Binary build từ nhánh `batch-b`, daemon chạy `serve --maintenance` với data dir tạm
+  (dữ liệu tổng hợp, không có Drive/token thật), đo 30 s sau khi lắng nghe:
+  - CPU: 0 tick (0 ms) trong 30 s nhàn rỗi (đọc `/proc/<pid>/stat`).
+  - RSS: 26872 kB (≈ 26.9 MB), 11 thread; không tăng giữa hai lần đo.
+- **Chưa đo**: copy 10k file (cần Drive thật), `scripts/soak.sh` (chỉ kiểm `bash -n`).
+- `systemd-analyze verify packaging/502drive.service`: không lỗi cú pháp; chỉ cảnh báo
+  `/usr/bin/502drive` chưa được cài.

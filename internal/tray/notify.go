@@ -60,6 +60,11 @@ func (a *agent) notify(ctx context.Context, notices []Notice) {
 	if len(notices) == 0 || a.o.NoNotify || a.o.Host.GOOS != "linux" || !commandExists(a.o.Host, "notify-send") {
 		return
 	}
+	if a.o.Quiet != nil {
+		if quiet, err := a.o.Quiet(ctx); err == nil && quiet {
+			return
+		}
+	}
 	for _, n := range notices {
 		runHost(ctx, a.o.Host, notifyArgv(n))
 	}

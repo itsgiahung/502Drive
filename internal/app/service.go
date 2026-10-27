@@ -42,8 +42,13 @@ type Service struct {
 	FullReconcileEvery *time.Duration
 	// Throttle reports the account-wide concurrency/pacing state; nil means
 	// "not wired" (tests) and reports the default worker count.
-	Throttle func() ThrottleStatus
-	Now      func() time.Time
+	Throttle  func() ThrottleStatus
+	Now       func() time.Time
+	ConfigDir string
+
+	// Hooks for doctor checks (nil uses system defaults)
+	DiskSpaceFn func(path string) (freeBytes uint64, totalBytes uint64, err error)
+	FDLimitFn   func() (cur uint64, max uint64, err error)
 }
 
 func (s *Service) now() time.Time {
