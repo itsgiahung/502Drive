@@ -44,6 +44,18 @@ func (a *App) tuiActions() tui.Actions {
 		ShowRetired:           func(on bool) { a.showRetired.Store(on) },
 		SetPreference:         a.tuiSetPreference,
 		SetAutostart:          a.tuiSetAutostart,
+		SubmitOpts:            a.tuiSubmitOpts,
+		SubmitBatch:           a.tuiSubmitBatch,
+		GetPlan:               a.tuiGetPlan,
+		CancelPreflight:       a.tuiCancelPreflight,
+		GetBatch:              a.tuiGetBatch,
+		QueuePause:            a.tuiQueuePause,
+		MoveJob:               a.tuiMoveJob,
+		SetJobQuery:           a.tuiSetJobQuery,
+		Report:                a.tuiReport,
+		ExportCSV:             a.tuiExportCSV,
+		Search:                a.tuiSearch,
+		LatestAudit:           a.tuiLatestAudit,
 	}
 }
 
@@ -275,6 +287,9 @@ func (a *App) tuiSnapshot(ctx context.Context) (tui.Snapshot, error) {
 		Account struct {
 			Status string `json:"status"`
 		} `json:"account"`
+		Queue struct {
+			Paused bool `json:"paused"`
+		} `json:"queue"`
 	}
 	if err = r.Decode(&st); err != nil {
 		return snap, err
@@ -282,7 +297,8 @@ func (a *App) tuiSnapshot(ctx context.Context) (tui.Snapshot, error) {
 	snap.Status = tui.Status{Version: st.Version, Ready: st.Ready, Running: st.Running, Queued: st.Queued,
 		Blocked: st.Blocked, AccountStatus: st.Account.Status, BotState: st.Bot,
 		Workers: st.Throttle.Workers, Throttled5m: st.Throttle.Throttled,
-		Lifecycle: st.Lifecycle.State, LifecycleOnline: st.Lifecycle.Online, GapSeconds: st.Lifecycle.Gap}
+		Lifecycle: st.Lifecycle.State, LifecycleOnline: st.Lifecycle.Online, GapSeconds: st.Lifecycle.Gap,
+		QueuePaused: st.Queue.Paused}
 	if st.Throttle.RetryAt != nil {
 		snap.Status.RetryAt = *st.Throttle.RetryAt
 	}
@@ -302,6 +318,8 @@ type slowCache struct {
 	dest []tui.Destination
 	acc  tui.Account
 	pref tui.Prefs
+	// jq is the Jobs filter the TUI asked for; the next snapshots read it.
+	jq tui.JobQuery
 }
 
 const slowTTL = 30 * time.Second
@@ -328,57 +346,62 @@ func (a *App) forgetSlow() {
 	a.slow.mu.Unlock()
 }
 
+// maxJobPages bounds how far "load more" reads (20 jobs a page).
+const maxJobPages = 10
+
+// tuiJobs reads the Jobs list with the server-side filter the TUI chose
+// (state, collection) and as many cursor pages as it asked for. The cursor of
+// the page after the last one read goes to the snapshot, so the TUI knows
+// whether there is more.
 func (a *App) tuiJobs(ctx context.Context, snap *tui.Snapshot) {
-	r, err := a.call(ctx, "GET", "/v1/jobs", url.Values{"limit": {"20"}}, nil, "")
-	if err != nil {
-		return
-	}
-	var page struct {
-		Items []jobView `json:"items"`
-	}
-	if r.Decode(&page) != nil {
-		return
-	}
-	for _, j := range page.Items {
-		job := tui.Job{ID: j.ID, CollectionID: j.CollectionID, SourceName: j.SourceName, State: j.State,
-			Desired: j.Desired, Revision: j.Revision, Completed: j.Counts.Completed, Failed: j.Counts.Failed,
-			Blocked: j.Counts.Blocked, Skipped: j.Counts.Skipped, Total: j.Counts.Total,
-			Kind: j.Kind, SkippedByCode: j.Counts.SkippedByCode, Bytes: j.Counts.Bytes}
-		if j.ResumeAfter != nil {
-			job.ResumeAfter = parseTime(j.ResumeAfter)
+	q := a.tuiJobQuery()
+	cursor := ""
+	for page := 0; page < min(max(1, q.Pages), maxJobPages); page++ {
+		vals := url.Values{"limit": {"20"}}
+		if q.State != "" {
+			vals.Set("state", q.State)
 		}
-		if j.Phase != nil {
-			job.Phase = *j.Phase
+		if q.CollectionID != "" {
+			vals.Set("collection_id", q.CollectionID)
 		}
-		if j.ResultURL != nil {
-			job.ResultURL = *j.ResultURL
+		if cursor != "" {
+			vals.Set("cursor", cursor)
 		}
-		if j.LastError != nil {
-			job.LastError = j.LastError.Message
+		r, err := a.call(ctx, "GET", "/v1/jobs", vals, nil, "")
+		if err != nil {
+			return
 		}
-		snap.Jobs = append(snap.Jobs, job)
+		var body struct {
+			Items []tuiJobView `json:"items"`
+			Next  *string      `json:"next_cursor"`
+		}
+		if r.Decode(&body) != nil {
+			return
+		}
+		for _, j := range body.Items {
+			snap.Jobs = append(snap.Jobs, j.job())
+		}
+		cursor = ""
+		if body.Next != nil {
+			cursor = *body.Next
+		}
+		if cursor == "" {
+			break
+		}
 	}
+	snap.JobsNext = cursor
 }
 
 func (a *App) tuiCollections(ctx context.Context, snap *tui.Snapshot) {
-	items, ok := a.collectionItems(ctx, nil)
+	var q url.Values
+	if a.showRetired.Load() {
+		// include_retired lists the retired sources of this principal beside
+		// the live ones, without other principals' copies.
+		q = url.Values{"include_retired": {"true"}}
+	}
+	items, ok := a.collectionItems(ctx, q)
 	if !ok {
 		return
-	}
-	if a.showRetired.Load() {
-		// "all" would also list other principals' live copies; only the
-		// retired ones are wanted on top of the usual list.
-		if all, ok := a.collectionItems(ctx, url.Values{"all": {"true"}}); ok {
-			seen := map[string]bool{}
-			for _, c := range items {
-				seen[c.ID] = true
-			}
-			for _, c := range all {
-				if c.State == "retired" && !seen[c.ID] {
-					items = append(items, c)
-				}
-			}
-		}
 	}
 	for _, c := range items {
 		coll := tui.Collection{ID: c.ID, SourceName: c.SourceName, State: c.State, Revision: c.Revision, RootName: c.RootName,
@@ -475,13 +498,14 @@ func (a *App) tuiPrefs(ctx context.Context, snap *tui.Snapshot) {
 		QuietStart      *string `json:"quiet_hours_start"`
 		QuietEnd        *string `json:"quiet_hours_end"`
 		RetentionDays   int     `json:"retention_days"`
+		AfterCopySync   string  `json:"after_copy_sync_mode"`
 	}
 	if r.Decode(&prefs) != nil {
 		return
 	}
 	snap.Prefs = tui.Prefs{Language: prefs.Language, Timezone: prefs.Timezone,
 		NotifyCompleted: prefs.NotifyCompleted, NotifyFailed: prefs.NotifyFailed, NotifyAction: prefs.NotifyAction,
-		RetentionDays: prefs.RetentionDays}
+		RetentionDays: prefs.RetentionDays, AfterCopySync: prefs.AfterCopySync}
 	if prefs.QuietStart != nil && prefs.QuietEnd != nil {
 		snap.Prefs.QuietStart, snap.Prefs.QuietEnd = *prefs.QuietStart, *prefs.QuietEnd
 	}

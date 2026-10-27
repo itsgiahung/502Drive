@@ -315,11 +315,14 @@ func TestLongFoldersAreWindowedAndLoadMorePages(t *testing.T) {
 	}
 }
 
-func TestCopySyncOptionEnablesTheChosenSchedule(t *testing.T) {
+func TestCopySyncOptionSendsTheChosenModeWithTheJob(t *testing.T) {
 	d := newDriveFake()
-	var preset, collection string
+	var got SubmitOptions
 	acts := d.acts()
-	acts.SyncPreset = func(_ context.Context, col, p string) error { collection, preset = col, p; return nil }
+	acts.SubmitOpts = func(_ context.Context, _ Plan, o SubmitOptions) (string, string, error) {
+		got = o
+		return "job_new", "col_new", nil
+	}
 	m := New(acts, Options{Width: 100, Height: 30, Language: "en", Now: func() time.Time { return time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC) }})
 	m = run(t, m, m.fetch())
 	m, _ = update(t, m, tea.WindowSizeMsg{Width: 100, Height: 30})
@@ -327,26 +330,31 @@ func TestCopySyncOptionEnablesTheChosenSchedule(t *testing.T) {
 	m = typeText(t, m, "SRC1")
 	m, cmd := update(t, m, key("enter"))
 	m = run(t, m, cmd)
+	m, _ = update(t, m, key("s")) // realtime
 	m, _ = update(t, m, key("s")) // hourly
+	m, _ = update(t, m, key("s")) // 6 hours
 	m, _ = update(t, m, key("s")) // daily
-	if v := m.View(); !strings.Contains(v, "● Daily at 22:00") {
-		t.Fatalf("the chosen schedule should be marked:\n%s", v)
+	if v := m.View(); !strings.Contains(v, "● daily") {
+		t.Fatalf("the chosen mode should be marked:\n%s", v)
 	}
 	m, cmd = update(t, m, key("enter"))
 	m = run(t, m, cmd)
-	if preset != presetDaily || collection != "col_new" {
-		t.Fatalf("sync preset = %q on %q, want daily on col_new", preset, collection)
+	if got.AfterSync != afterDaily {
+		t.Fatalf("after-copy sync = %q, want daily", got.AfterSync)
 	}
 	if m.screen != screenJobs {
 		t.Fatalf("screen = %v", m.screen)
 	}
 }
 
-func TestNoSyncByDefaultAndASyncFailureDoesNotHideTheCopy(t *testing.T) {
+func TestNoSyncChoiceByDefaultLeavesItToThePreference(t *testing.T) {
 	d := newDriveFake()
-	called := false
+	var got SubmitOptions
 	acts := d.acts()
-	acts.SyncPreset = func(context.Context, string, string) error { called = true; return errors.New("sync is not available") }
+	acts.SubmitOpts = func(_ context.Context, _ Plan, o SubmitOptions) (string, string, error) {
+		got = o
+		return "job_new", "col_new", nil
+	}
 	m := New(acts, Options{Width: 100, Height: 30, Language: "en"})
 	m = run(t, m, m.fetch())
 	m, _ = update(t, m, key("c"))
@@ -355,31 +363,12 @@ func TestNoSyncByDefaultAndASyncFailureDoesNotHideTheCopy(t *testing.T) {
 	m = run(t, m, cmd)
 	m, cmd = update(t, m, key("enter"))
 	m = run(t, m, cmd)
-	if called {
-		t.Fatal("sync must be off unless the user turned it on")
+	if got.AfterSync != "" {
+		t.Fatalf("an untouched choice must send nothing, got %q", got.AfterSync)
 	}
-	_, _ = update(t, m, key("1"))
-	m = homeModelFromJobs(t, d)
-	_ = m
-}
-
-func homeModelFromJobs(t *testing.T, d *driveFake) Model {
-	t.Helper()
-	acts := d.acts()
-	acts.SyncPreset = func(context.Context, string, string) error { return errors.New("sync is not available") }
-	m := New(acts, Options{Width: 100, Height: 30, Language: "en"})
-	m = run(t, m, m.fetch())
-	m, _ = update(t, m, key("c"))
-	m = typeText(t, m, "SRC1")
-	m, cmd := update(t, m, key("enter"))
-	m = run(t, m, cmd)
-	m, _ = update(t, m, key("s"))
-	m, cmd = update(t, m, key("enter"))
-	m = run(t, m, cmd)
-	if !strings.Contains(m.status, "job_new") || !strings.Contains(m.status, "sync is not available") {
-		t.Fatalf("the copy must be reported together with the schedule problem: %q", m.status)
+	if !strings.Contains(m.status, "job_new") {
+		t.Fatalf("the copy must be reported: %q", m.status)
 	}
-	return m
 }
 
 func TestSettingsChangeLanguageAtOnce(t *testing.T) {

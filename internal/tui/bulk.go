@@ -200,6 +200,9 @@ func (m Model) collectionRows() []Collection {
 }
 
 func (m Model) jobsKey(key string) (tea.Model, tea.Cmd) {
+	if next, cmd, handled := m.jobsKeyIT(key); handled {
+		return next, cmd
+	}
 	actions := map[string]string{"p": "pause", "u": "resume", "c": "cancel", "t": "retry"}
 	action, ok := actions[key]
 	if !ok || m.acts.JobAction == nil {

@@ -82,6 +82,14 @@ func (m Model) accountWord(status string) string {
 }
 
 func (m Model) body() []string {
+	lines := m.screenBody()
+	if m.exp != nil && m.screen != screenJobs && m.screen != screenReport {
+		lines = append(lines, m.exportLines()...)
+	}
+	return lines
+}
+
+func (m Model) screenBody() []string {
 	switch m.screen {
 	case screenJobs:
 		return m.jobsView()
@@ -103,6 +111,8 @@ func (m Model) body() []string {
 		return m.driveView()
 	case screenCopy:
 		return m.copyView()
+	case screenReport:
+		return m.reportScreen()
 	}
 	return m.homeView()
 }
@@ -121,6 +131,9 @@ func (m Model) homeView() []string {
 			m.t(i18n.Destination)+"   5 "+m.t(i18n.Account)+"   6 "+m.t(i18n.Settings)+"   7 "+m.t(i18n.Drive)+"   c "+m.t(i18n.CopyTitle)+"   ? "+m.t(i18n.Help))
 	if m.snap.Status.BotState != "" && m.snap.Status.BotState != "disabled" {
 		lines = append(lines, "", m.dim(m.t(i18n.Telegram)+": "+Sanitize(m.snap.Status.BotState)))
+	}
+	if m.snap.Status.QueuePaused {
+		lines = append(lines, "", m.warn(m.t(i18n.QueuePausedBanner)))
 	}
 	return lines
 }
@@ -207,12 +220,20 @@ func mascotArt(mood string, ascii bool) []string {
 
 func (m Model) jobsView() []string {
 	if len(m.snap.Jobs) == 0 {
-		return append(append([]string{""}, m.lifeBanner()...), m.bold(m.t(i18n.Jobs)), "", m.dim(m.t(i18n.NoJobs)))
+		empty := m.t(i18n.NoJobs)
+		if m.filterLine() != "" {
+			empty = m.t(i18n.JobsNoMatch)
+		}
+		lines := append(append([]string{""}, m.lifeBanner()...), m.bold(m.t(i18n.Jobs)))
+		lines = append(lines, m.jobsHeadLines()...)
+		lines = append(lines, "", m.dim(empty))
+		return append(lines, m.exportLines()...)
 	}
 	start, end := m.window()
 	lines := append([]string{""}, m.jobsBanner()...)
 	lines = append(lines, m.lifeBanner()...)
 	lines = append(lines, m.bold(m.t(i18n.Jobs))+" "+m.dim(m.scrollLabel(start, end, len(m.snap.Jobs))))
+	lines = append(lines, m.jobsHeadLines()...)
 	barWidth := min(36, m.width-49)
 	for i := start; i < end; i++ {
 		j := m.snap.Jobs[i]
@@ -222,13 +243,31 @@ func (m Model) jobsView() []string {
 			row += " " + m.spinChar()
 		}
 		lines = append(lines, row)
-		if m.waitingForQuota(j) {
+		switch {
+		case m.waitingForQuota(j):
 			lines = append(lines, "            "+m.warn(m.quotaText(j))) // no bar and no retry: it resumes by itself
-			continue
+		case j.State == "queued":
+			lines = append(lines, "            "+m.queueLine(j))
+		default:
+			row := m.progressRow(j, barWidth)
+			if j.BatchID != "" && m.width >= 56 {
+				row += m.dim(" · " + m.batchChip(j.BatchID))
+			}
+			lines = append(lines, "            "+row)
 		}
-		lines = append(lines, "            "+m.progressRow(j, barWidth))
 	}
-	return lines
+	if m.snap.JobsNext != "" && end == len(m.snap.Jobs) {
+		lines = append(lines, m.dim(m.t(i18n.JobsMoreRows)))
+	}
+	return append(lines, m.exportLines()...)
+}
+
+// jobsMoreLines is the line that says the daemon has more jobs than are shown.
+func (m Model) jobsMoreLines() int {
+	if m.snap.JobsNext != "" {
+		return 1
+	}
+	return 0
 }
 
 // marker is the cursor and selection column of a list row.
@@ -278,6 +317,15 @@ func (m Model) jobView() []string {
 	if j.Phase != "" {
 		lines = append(lines, m.kv(m.t(i18n.Phase), Sanitize(j.Phase)))
 	}
+	if j.State == "queued" {
+		if pos := m.queuePosition(j); pos > 0 {
+			lines = append(lines, m.kv(m.t(i18n.State), m.dim(m.tf(i18n.QueuePos, pos))))
+		}
+	}
+	if j.Priority != 0 {
+		lines = append(lines, m.kv(m.t(i18n.PriorityLabel), signed(j.Priority)))
+	}
+	lines = append(lines, m.batchDetail(j)...)
 	lines = append(lines, m.kv(m.t(i18n.Progress), m.progress(j, max(10, min(32, m.width-36)))))
 	lines = append(lines, m.kv(m.t(i18n.Counts), fmt.Sprintf("%d · %d · %d · %d",
 		j.Completed, j.Failed, j.Blocked, j.Skipped)))
@@ -320,7 +368,11 @@ func (m Model) libraryView() []string {
 			lines = append(lines, "            "+m.dim(m.t(i18n.LibRetiredTag)))
 			continue
 		}
-		lines = append(lines, "            "+m.syncLine(c))
+		line := m.syncLine(c)
+		if chip := m.auditChip(c); chip != "" {
+			line = chip + m.dim(" · ") + line
+		}
+		lines = append(lines, "            "+line)
 	}
 	return lines
 }
@@ -471,6 +523,11 @@ func (m Model) footer() string {
 		}
 	case screenJobs:
 		keys = m.t(i18n.FooterList)
+		if m.hasJobsExt() {
+			keys = m.t(i18n.JobsKeysIt)
+		}
+	case screenReport:
+		keys = m.t(i18n.ReportKeys)
 	case screenLibrary:
 		keys = m.t(i18n.FooterLib)
 		if m.acts.ShowRetired != nil {
@@ -481,8 +538,14 @@ func (m Model) footer() string {
 		if m.drv != nil && m.drv.pick {
 			keys = m.t(i18n.FooterPick)
 		}
+		if m.drv != nil && m.drv.query != "" {
+			keys = m.t(i18n.SearchKeys)
+		}
 	case screenCopy:
 		keys = m.t(i18n.FooterCopyPlan)
+		if m.cp != nil && m.cp.isBatch() {
+			keys = m.t(i18n.BatchKeys)
+		}
 		if m.cp != nil && m.cp.input != nil {
 			keys = m.t(i18n.FooterCopySrc)
 		}

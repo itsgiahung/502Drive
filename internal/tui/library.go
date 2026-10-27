@@ -24,7 +24,10 @@ type auditState struct {
 	repairDry bool
 	planned   bool // a repair plan (dry run) exists for this report
 	detail    bool // show the findings, not only the counts
-	err       string
+	// fromLatest marks a report read from GET .../audits/latest, not started
+	// here; a scan started here replaces it.
+	fromLatest bool
+	err        string
 }
 
 // cleanupFlow is the two-step cleanup of a retired collection: a dry-run plan
@@ -204,7 +207,7 @@ func (m Model) startAudit(c Collection) (tea.Model, tea.Cmd) {
 	if a.starting || (a.report != nil && a.report.State == "running") {
 		return m, nil // one scan at a time; the screen already says "scanning"
 	}
-	a.starting, a.err, a.planned = true, "", false
+	a.starting, a.err, a.planned, a.fromLatest = true, "", false, false
 	acts, ctx, id := m.acts, m.ctx, c.ID
 	return m, func() tea.Msg {
 		rep, err := acts.StartAudit(ctx, id)
@@ -521,7 +524,11 @@ func (m Model) auditLines(c Collection) []string {
 		return nil
 	}
 	a := m.audits[c.ID]
-	lines := []string{"", m.bold(m.t(i18n.AuditTitle))}
+	title := i18n.AuditTitle
+	if a != nil && a.fromLatest {
+		title = i18n.LastAuditTitle
+	}
+	lines := []string{"", m.bold(m.t(title))}
 	switch {
 	case a == nil || (a.report == nil && !a.starting):
 		return append(lines, "  "+m.dim(m.t(i18n.AuditNone)))

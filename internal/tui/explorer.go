@@ -24,6 +24,12 @@ type explorer struct {
 	prompt  *textinput.Model // set while a new folder name is typed
 	req     int
 	focus   string // item to put the cursor on after the next load
+	// query is the search whose results are listed ("" in a folder); before
+	// is the folder page the search began in; psearch marks the open prompt as
+	// a search, not a new folder name.
+	query   string
+	before  *FolderPage
+	psearch bool
 }
 
 type browseMsg struct {
@@ -133,6 +139,7 @@ func (m Model) onBrowse(msg browseMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	m.cache.pages[msg.page.Folder.ID] = cachedFolder{page: msg.page, at: m.opt.now()}
+	d.query, d.before = "", nil
 	d.page, d.loaded = msg.page, true
 	if keep != "" {
 		d.focus = keep
@@ -165,7 +172,14 @@ func (m Model) driveKey(key string) (tea.Model, tea.Cmd) {
 			}
 			d.info = !d.info
 		}
+	case "/":
+		if m.acts.Search != nil {
+			return m.openSearch("")
+		}
 	case "left", "backspace", "h":
+		if d.query != "" {
+			return m.leaveSearch()
+		}
 		if n := len(d.page.Path); n >= 2 {
 			d.focus = d.page.Path[n-1].ID
 			return m, m.loadFolder(d.page.Path[n-2].ID, "", false)
@@ -174,6 +188,9 @@ func (m Model) driveKey(key string) (tea.Model, tea.Cmd) {
 		d.info = !d.info
 		m.fixTop()
 	case "r":
+		if d.query != "" {
+			return m, m.runSearch(d.query)
+		}
 		return m, m.loadFolder(d.page.Folder.ID, "", false)
 	case "n":
 		if d.page.Folder.CanWrite {
@@ -232,7 +249,7 @@ func (m Model) onDest(msg destMsg) (tea.Model, tea.Cmd) {
 		m.cp.destID, m.cp.destName = msg.dest.ID, msg.dest.Name
 		m.screen = screenCopy
 		m.drv = nil
-		return m, m.replan()
+		return m, m.beginPreview()
 	}
 	return m, nil
 }
@@ -261,12 +278,17 @@ func (m Model) typing() bool {
 		return true
 	case m.screen == screenSettings && m.setInput != nil:
 		return true
+	case m.exp != nil:
+		return true
 	}
 	return false
 }
 
 // typingKey sends keys to the active text field; Enter and Esc finish it.
 func (m Model) typingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.exp != nil {
+		return m.exportTyping(msg)
+	}
 	if m.screen == screenCopy {
 		return m.copyTyping(msg)
 	}
@@ -279,10 +301,17 @@ func (m Model) typingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	d := m.drv
 	switch msg.Type {
 	case tea.KeyEsc:
-		d.prompt = nil
+		d.prompt, d.psearch = nil, false
 		return m, nil
 	case tea.KeyEnter:
 		name := strings.TrimSpace(d.prompt.Value())
+		if d.psearch {
+			if name == "" {
+				d.prompt, d.psearch = nil, false
+				return m, nil
+			}
+			return m, m.runSearch(name)
+		}
 		d.prompt = nil
 		if name == "" || m.acts.Mkdir == nil {
 			return m, nil
@@ -310,6 +339,9 @@ func (m Model) driveView() []string {
 		lines[0] = m.warn(m.t(i18n.PickHint))
 	}
 	crumb := m.breadcrumb()
+	if d.query != "" {
+		crumb = m.bold(cut(m.tf(i18n.SearchTitle, Sanitize(d.query)), max(10, m.width-4)))
+	}
 	if d.loading && d.loaded && !m.opt.NoMotion {
 		crumb += " " + m.accent(m.spinChar())
 	}
@@ -319,6 +351,8 @@ func (m Model) driveView() []string {
 		return append(lines, "", m.accent(m.spinChar())+" "+m.dim(m.t(i18n.Loading)))
 	case d.err != "" && !d.loaded:
 		return append(lines, "", m.bad(d.err))
+	case len(d.page.Items) == 0 && d.query != "":
+		lines = append(lines, "", m.dim(m.t(i18n.SearchNone)))
 	case len(d.page.Items) == 0:
 		lines = append(lines, "", m.dim(m.t(i18n.DriveEmpty)))
 	default:
@@ -329,6 +363,7 @@ func (m Model) driveView() []string {
 		if d.page.Next != "" && end == len(d.page.Items) {
 			lines = append(lines, m.dim(m.t(i18n.MoreBelow)))
 		}
+		lines = append(lines, m.searchNote()...)
 	}
 	if it, ok := m.driveItem(); ok && d.info {
 		lines = append(lines, m.driveInfo(it)...)
@@ -337,7 +372,11 @@ func (m Model) driveView() []string {
 		lines = append(lines, m.bad(d.err))
 	}
 	if d.prompt != nil {
-		lines = append(lines, "", m.accent(m.t(i18n.NewFolderPrompt)), d.prompt.View())
+		prompt := m.t(i18n.NewFolderPrompt)
+		if d.psearch {
+			prompt = m.t(i18n.SearchPrompt)
+		}
+		lines = append(lines, "", m.accent(prompt), d.prompt.View())
 	}
 	return lines
 }

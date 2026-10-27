@@ -107,7 +107,7 @@ func TestTUISnapshotOldDaemonWithoutNewFieldsStillWorks(t *testing.T) {
 	}
 }
 
-func TestTUIListsRetiredCollectionsOnlyWhenAskedAndNotOtherPeoplesLiveOnes(t *testing.T) {
+func TestTUIListsRetiredCollectionsOnlyWhenAskedWithIncludeRetired(t *testing.T) {
 	var mu sync.Mutex
 	var queries []string
 	a := driveApp(t, func(w http.ResponseWriter, r *http.Request) {
@@ -119,10 +119,9 @@ func TestTUIListsRetiredCollectionsOnlyWhenAskedAndNotOtherPeoplesLiveOnes(t *te
 		queries = append(queries, r.URL.RawQuery)
 		mu.Unlock()
 		own := map[string]any{"id": "col_own", "source_name": "Own", "state": "ready", "revision": 1}
-		if r.URL.Query().Get("all") == "true" {
+		if r.URL.Query().Get("include_retired") == "true" {
 			reply(w, 200, map[string]any{"items": []any{own,
-				map[string]any{"id": "col_old", "source_name": "Old", "state": "retired", "revision": 3},
-				map[string]any{"id": "col_other", "source_name": "Someone else", "state": "ready", "revision": 1}}})
+				map[string]any{"id": "col_old", "source_name": "Old", "state": "retired", "revision": 3}}})
 			return
 		}
 		reply(w, 200, map[string]any{"items": []any{own}})
@@ -140,7 +139,10 @@ func TestTUIListsRetiredCollectionsOnlyWhenAskedAndNotOtherPeoplesLiveOnes(t *te
 		ids = append(ids, c.ID)
 	}
 	if strings.Join(ids, ",") != "col_own,col_old" {
-		t.Fatalf("retired ones are added, other people's live ones are not: %v", ids)
+		t.Fatalf("retired ones are added: %v", ids)
+	}
+	if strings.Join(queries, "|") != "|include_retired=true" { // the default read, then one read with the flag
+		t.Fatalf("one read with include_retired, never all=true: %v", queries)
 	}
 }
 

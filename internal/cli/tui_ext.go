@@ -35,15 +35,20 @@ func (a *App) tuiInspectWith(ctx context.Context, source, destinationID, rootNam
 	if err != nil {
 		return tui.Plan{}, err
 	}
-	po := planOpts{Shortcuts: opt.Shortcuts, OnConflict: opt.OnConflict, Filter: spec}
+	po := planOpts{Shortcuts: opt.Shortcuts, OnConflict: opt.OnConflict, Filter: spec, Deep: opt.Deep}
 	if err = po.validate(); err != nil {
 		return tui.Plan{}, err
 	}
 	po.Filter = spec // validate re-reads the (unset) filter flags
 	plan, _, err := a.makePlan(ctx, source, destinationID, rootName, NewKey(), po)
 	if err != nil {
-		return tui.Plan{}, err
+		return tui.Plan{}, codedPlanError(err)
 	}
+	return tuiPlan(plan), nil
+}
+
+// tuiPlan converts the daemon's plan, with its filter preview and deep scan.
+func tuiPlan(plan planView) tui.Plan {
 	out := tui.Plan{ID: plan.ID, Revision: plan.Revision, SourceID: plan.SourceID, SourceName: plan.SourceName, SourceKind: plan.SourceKind,
 		DestinationID: plan.Destination, RootName: plan.RootName, Files: plan.Preview.Files, Folders: plan.Preview.Folders,
 		Complete: plan.Preview.Complete, Warnings: plan.Warnings}
@@ -51,7 +56,22 @@ func (a *App) tuiInspectWith(ctx context.Context, source, destinationID, rootNam
 		out.Filter = &tui.PlanFilter{Included: f.Included, Excluded: f.Excluded, IncludedSamples: f.IncludedSamples,
 			ExcludedSamples: f.ExcludedSamples, Scope: f.Scope}
 	}
-	return out, nil
+	if d := plan.Preview.Deep; d != nil {
+		out.Deep = &tui.DeepScan{State: d.State, Complete: d.Complete, Folders: d.Folders, Files: d.Files, Bytes: d.Bytes,
+			Native: d.Native, Shortcuts: d.Shortcuts, CannotCopy: d.CannotCopy, Unreadable: d.Unreadable, Scanned: d.Scanned,
+			EstimateSeconds: d.EstimateSecs, Warnings: d.Warnings}
+	}
+	return out
+}
+
+// codedPlanError keeps the stable code of the refusals the TUI words itself
+// (a destination the account cannot write to).
+func codedPlanError(err error) error {
+	var ae *APIError
+	if errors.As(err, &ae) && (ae.Code == "destination_not_writable" || ae.Code == "destination_unverifiable") {
+		return &tui.CodedError{Code: ae.Code, Message: ae.Message}
+	}
+	return err
 }
 
 // tuiSubmitMode starts the job; mode answers an existing copy (L2). A 409
@@ -207,6 +227,12 @@ func (a *App) tuiSetPreference(ctx context.Context, field string, value any) err
 			return localErr(ExitUsage, "invalid_request", field+" must be true or false")
 		}
 		body[field] = b
+	case "after_copy_sync_mode":
+		mode, ok := value.(string)
+		if !ok || mode == "" || validateSyncMode(mode) != nil {
+			return localErr(ExitUsage, "invalid_request", "after_copy_sync_mode must be off, realtime, hourly, six_hourly or daily")
+		}
+		body[field] = mode
 	case "retention_days":
 		n, ok := value.(int)
 		if !ok || n < 0 {

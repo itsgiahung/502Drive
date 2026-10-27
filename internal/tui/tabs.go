@@ -145,6 +145,9 @@ func (m Model) statusChip() string {
 	if st.Blocked > 0 {
 		chip += " " + m.warn(fmt.Sprintf("⚠%d", st.Blocked))
 	}
+	if st.QueuePaused {
+		chip += " " + m.warn("||") // the queue is paused
+	}
 	if st.AccountStatus != "" && st.AccountStatus != "connected" {
 		chip += " " + m.warn("G!")
 	}
