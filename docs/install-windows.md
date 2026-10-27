@@ -25,7 +25,7 @@ Xác minh: `Get-FileHash .\502drive-setup.exe -Algorithm SHA256` so với file
 
 ## Cấu hình
 
-- `502drive setup` tạo config JSON (`%AppData%\502drive-next\config.json`) và
+- `502drive setup` tạo config JSON (`%AppData%\502drive\config.json`; bản cài trước 0.3 tiếp tục dùng `%AppData%\502drive-next`) và
   API token 0600-tương đương (ACL user). Data dir mặc định cạnh config
   (`data-v2\state-v2.db`, `secrets\`).
 - `502drive setup --oauth-client client_secret.json`,

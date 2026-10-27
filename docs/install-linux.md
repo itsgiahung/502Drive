@@ -35,7 +35,7 @@ sudo dpkg -i 502drive_<ver>_linux_amd64.deb     # Debian/Ubuntu
 ## Thiết lập lần đầu
 
 ```bash
-502drive setup                                  # ~/.config/502drive-next/config.json
+502drive setup                                  # ~/.config/502drive/config.json
 502drive setup --oauth-client ~/client_secret.json
 502drive setup --telegram-token-file ~/bot-token --telegram-owner-id 123456789
 systemctl --user start 502drive                 # unit không có [Install] ⇒ không tự bật
@@ -45,7 +45,7 @@ systemctl --user start 502drive                 # unit không có [Install] ⇒ 
 ```
 
 Data mặc định nằm cạnh config (`data-v2`); unit cho phép ghi
-`%h/.config/502drive-next` và `%h/.local/share/502drive`, đọc-only phần còn lại
+`%h/.config/502drive` (hoặc `%h/.config/502drive-next` của bản trước 0.3) và `%h/.local/share/502drive`, đọc-only phần còn lại
 của home (`ProtectHome=read-only`). Data dir khác cần drop-in thêm
 `ReadWritePaths=`.
 
@@ -77,3 +77,10 @@ Bảo trì khi daemon dừng: `502drive prune --older-than 90d` (dry-run trướ
 
 Gỡ: `sudo rpm -e 502drive` / `sudo dpkg -r 502drive`. Config/token/data trong
 home **không** bị xóa. Chưa có gói cho armhf, AppImage, flatpak, snap.
+
+## Nâng cấp từ bản trước 0.3
+
+Bản trước 0.3 lưu cấu hình ở `~/.config/502drive-next/`. Bản 0.3 vẫn tìm và dùng
+thư mục đó khi `~/.config/502drive/` chưa có `config.json`, nên **không cần làm gì**;
+`502drive doctor` ghi chú đang dùng tên cũ. `config.json` cũ chứa đường dẫn tuyệt
+đối vào thư mục cũ, nên đừng chỉ đổi tên thư mục bằng tay.

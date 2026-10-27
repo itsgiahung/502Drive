@@ -14,7 +14,7 @@ không có web frontend tải font/asset từ bên thứ ba trong code hiện t�
 
 | Dữ liệu | Vị trí | Ghi chú |
 | --- | --- | --- |
-| Config JSON | `config.json` (mặc định `~/.config/502drive-next/config.json`; Windows `%AppData%`) | Đường dẫn listen/data/token; **không** chứa secret |
+| Config JSON | `config.json` (mặc định `~/.config/502drive/config.json`, hoặc `~/.config/502drive-next/` của bản trước 0.3 nếu đã có; Windows `%AppData%`) | Đường dẫn listen/data/token; **không** chứa secret |
 | API bearer token | `token_file`, ví dụ `api-token` (0600) | Client CLI/tray đọc file này |
 | Google OAuth client JSON | đường dẫn bạn chỉ định khi `setup --oauth-client` | Giữ tại chỗ, không copy vào DB |
 | Google token | `data/secrets/google-token.enc` | AES-256-GCM; key `data/secrets/master.key` (0600, không lưu keyring) |

@@ -112,12 +112,40 @@ func (c Config) FullReconcileEveryDuration() (time.Duration, error) {
 	return d, nil
 }
 
+// AppDirName is the per-user folder that holds config.json, the API token and
+// the secrets. LegacyAppDirName is the folder used before v0.3.0: an existing
+// setup there keeps working as it is. Its config.json names absolute paths
+// inside that folder, so it is never moved behind the user's back.
+const (
+	AppDirName       = "502drive"
+	LegacyAppDirName = "502drive-next"
+)
+
+// DefaultPath is <user config dir>/502drive/config.json, or the pre-0.3
+// <user config dir>/502drive-next/config.json when only that one exists.
 func DefaultPath() string {
 	p, e := os.UserConfigDir()
 	if e != nil {
 		return "config.json"
 	}
-	return filepath.Join(p, "502drive-next", "config.json")
+	return defaultPathIn(p)
+}
+
+func defaultPathIn(base string) string {
+	current := filepath.Join(base, AppDirName, "config.json")
+	if _, err := os.Stat(current); err == nil {
+		return current
+	}
+	legacy := filepath.Join(base, LegacyAppDirName, "config.json")
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy
+	}
+	return current
+}
+
+// IsLegacyDir reports whether dir is a pre-0.3 config folder.
+func IsLegacyDir(dir string) bool {
+	return filepath.Base(filepath.Clean(dir)) == LegacyAppDirName
 }
 func ValidateListen(v string) error {
 	return validateListen(v, false)

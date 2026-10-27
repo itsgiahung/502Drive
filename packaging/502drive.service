@@ -23,14 +23,15 @@ MemoryHigh=512M
 TasksMax=64
 # The daemon binds loopback only; nothing listens on a public address.
 # Basic hardening. The data directory and config must stay writable:
-# the default v2 locations are under %h/.config/502drive-next and
-# %h/.local/share/502drive. A custom data_dir needs a drop-in with
-# an extra ReadWritePaths= entry.
+# the default locations are %h/.config/502drive (or the pre-0.3
+# %h/.config/502drive-next, which keeps working) and
+# %h/.local/share/502drive. A "-" prefix skips a path that does not exist.
+# A custom data_dir needs a drop-in with an extra ReadWritePaths= entry.
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=%h/.config/502drive-next %h/.local/share/502drive
+ReadWritePaths=-%h/.config/502drive -%h/.config/502drive-next -%h/.local/share/502drive
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictNamespaces=yes
 LockPersonality=yes

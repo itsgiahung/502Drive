@@ -124,3 +124,36 @@ func TestActiveJobsDefaultsToTwoAndValidatesRange(t *testing.T) {
 		t.Fatal("negative max_active_jobs accepted")
 	}
 }
+
+// A fresh install uses "502drive"; an existing pre-0.3 setup in "502drive-next"
+// keeps being found (its config.json holds absolute paths inside that folder),
+// and once "502drive" has a config it wins.
+func TestDefaultPathKeepsALegacySetup(t *testing.T) {
+	base := t.TempDir()
+	fresh := filepath.Join(base, AppDirName, "config.json")
+	if got := defaultPathIn(base); got != fresh {
+		t.Fatalf("fresh install = %s, want %s", got, fresh)
+	}
+	legacy := filepath.Join(base, LegacyAppDirName, "config.json")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := defaultPathIn(base); got != legacy {
+		t.Fatalf("legacy setup = %s, want %s", got, legacy)
+	}
+	if !IsLegacyDir(filepath.Dir(legacy)) || IsLegacyDir(filepath.Dir(fresh)) {
+		t.Fatal("IsLegacyDir misclassifies")
+	}
+	if err := os.MkdirAll(filepath.Dir(fresh), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fresh, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := defaultPathIn(base); got != fresh {
+		t.Fatalf("both present = %s, want the new one", got)
+	}
+}

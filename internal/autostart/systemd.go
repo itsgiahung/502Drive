@@ -45,7 +45,7 @@ func systemdPath(p string) string {
 // paths and an [Install] section, because only the user enables this one.
 func SystemdUnitText(exe, dataDir, configDir string) string {
 	if configDir == "" {
-		configDir = "%h/.config/502drive-next"
+		configDir = "%h/.config/502drive"
 	}
 	if dataDir == "" {
 		dataDir = "%h/.local/share/502drive"

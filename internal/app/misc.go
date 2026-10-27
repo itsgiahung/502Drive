@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itsgiahung/502Drive/internal/config"
 	"github.com/itsgiahung/502Drive/internal/drive"
 	"github.com/itsgiahung/502Drive/internal/state"
 )
@@ -462,7 +463,11 @@ func (s *Service) Doctor(ctx context.Context, p Principal, online bool) ([]Check
 	// Config directory presence: a missing one hides the OAuth secrets.
 	if s.ConfigDir != "" {
 		fi, err := os.Stat(s.ConfigDir)
-		add("config_dir", err == nil && fi.IsDir(), "The config directory exists.", "The config directory is missing: "+s.ConfigDir+".")
+		pass := "The config directory exists."
+		if config.IsLegacyDir(s.ConfigDir) {
+			pass = "The config directory exists (" + s.ConfigDir + ", the pre-0.3 name; it keeps working and needs no change)."
+		}
+		add("config_dir", err == nil && fi.IsDir(), pass, "The config directory is missing: "+s.ConfigDir+".")
 	}
 
 	// Secret permissions check
