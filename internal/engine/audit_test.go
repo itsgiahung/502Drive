@@ -539,3 +539,33 @@ func TestAuditAcceptsTheNameTheConflictPolicyChose(t *testing.T) {
 		t.Fatalf("repair renamed a conflict-resolved copy: %v", d)
 	}
 }
+
+// Under versioned_copy the older generations are the user's history. A repair
+// with nothing to fix must not trash them; it may only trash what its own
+// re-copies replaced (or every old copy under replace_copy).
+func TestRepairKeepsVersionHistoryUnderVersionedCopy(t *testing.T) {
+	e := newEnv(t)
+	src := e.fake.Folder("Hist", "root")
+	f := e.fake.File("edit.txt", src.ID, 10)
+	base, root := e.baseline(src)
+	e.fake.Mutate(f.ID, func(x *drive.File) { x.Version = "2"; x.MD5 = "changed" })
+	if j := e.runUntil(e.runNow(base.CollectionID).ID, terminal); j.State != state.JobSucceeded {
+		t.Fatalf("delta %s", j.State)
+	}
+	if got := find(e.fake, root, "edit.txt"); len(got) != 2 {
+		t.Fatalf("versioned_copy keeps both generations, got %d", len(got))
+	}
+	col, err := e.store.GetCollection(context.Background(), "owner", base.CollectionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := e.runAudit(col)
+	before := e.snapshotWrites()
+	e.runRepair(a, false)
+	if d := before.diff(e.snapshotWrites()); d["trash"] != 0 {
+		t.Fatalf("a repair with nothing to fix trashed the version history: %v", d)
+	}
+	if got := find(e.fake, root, "edit.txt"); len(got) != 2 {
+		t.Fatalf("history lost: %d copies left", len(got))
+	}
+}

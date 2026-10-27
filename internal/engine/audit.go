@@ -528,14 +528,30 @@ func (r *run) applyRepair(ctx context.Context, col state.Collection, plan []repa
 	// Superseded versions are durable: a crashed repair finds them again on
 	// the next run. They carry an older intent of ours, so any 502drive
 	// intent is accepted here; the id itself comes from our own records.
+	// Under versioned_copy the older generations are the user's history: only
+	// the copies this repair's own re-copies replaced are trashed. replace_copy
+	// trashes every superseded copy, as a sync run would.
 	sups, err := r.e.Store.SupersededVersions(r.db, col.ID)
 	if err != nil {
 		r.cleanupFailures++
 		return err
 	}
+	replace := false
+	if sub, e := r.e.Store.GetSubscription(r.db, col.ID); e == nil && sub.ContentPolicy == state.PolicyReplace {
+		replace = true
+	}
+	mine := map[string]bool{}
+	r.mu.Lock()
+	for _, id := range r.superseded {
+		mine[id] = true
+	}
+	r.mu.Unlock()
 	for _, v := range sups {
 		if ctx.Err() != nil || r.control() != "run" {
 			return errStopped
+		}
+		if !replace && !mine[v.DestID] {
+			continue
 		}
 		before := r.cleanupFailures
 		r.trashOwned(ctx, v.DestID, "")
