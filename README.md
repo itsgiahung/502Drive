@@ -3,49 +3,42 @@
 
 # 502Drive
 
-**Copy Google Drive files server-side. Manage the copy from your terminal.**
+**Copy and sync Google Drive folders without downloading them.**
 
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 ![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)
 ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS%20CLI-lightgrey)
 
-English · [Vietnamese](README_VI.md)
+English · [Tiếng Việt](README_VI.md)
 </div>
 
-502Drive is a self-hosted Google Drive copy and synchronization tool. One Go
-daemon owns the database, credentials, queue and workers. The CLI, terminal UI,
-system tray and optional Telegram bot control that same service.
+Paste a Google Drive link and 502Drive copies the whole folder into your Drive,
+keeping its folders and file names. The copy happens **inside Google**: nothing is
+downloaded to your computer or uploaded again, so a 50 GB folder uses almost none
+of your bandwidth. If your laptop sleeps or goes offline, the copy picks up where it
+left off. Later 502Drive can keep that copy in sync with the original.
 
-File contents stay inside Google Drive: 502Drive requests server-side copies
-rather than downloading and uploading files through your machine. Metadata
-requests still use your connection, and Google's permissions and quotas apply.
+It runs on your own machine with your own Google login. There is no 502Drive
+server and no account to create.
 
-## What you can do
+## Why use it
 
-- Copy a file or folder by link, preserving its tree within Google's copy rules.
-- Preview work, filter by path/type/size, submit several links and manage a fair queue.
-- Keep a collection in sync on a schedule or through Drive Changes polling.
-- Audit a copy and preview repairs before applying them.
-- Enable **mirror** per collection to remove owned destination copies when their
-  sources disappear. It is off by default and never permanently deletes files.
-- Capture **snapshots**, pin restore points and preview a restore before applying it.
-  Automatic snapshots are off by default. Retained copies consume Drive storage.
-- Use Vietnamese or English in the application; scripts receive JSON and stable exit codes.
+- **Big folders, small connection.** Google does the copying; your machine only
+  sends instructions.
+- **Safe to interrupt.** Close the lid, lose Wi-Fi, restart: jobs resume where they
+  stopped, and 502Drive checks Drive before sending a copy again, so an
+  interruption does not leave duplicates.
+- **Stays in sync.** Re-check a copy on a schedule (daily, every few hours) or
+  almost in real time when the original changes.
+- **Never deletes your files.** Cleaning up only moves 502Drive's own copies to the
+  Drive trash, and only after you confirm.
+- **Use it your way:** a terminal app with a cat, plain commands for scripts, a
+  tray icon, or a Telegram bot.
 
-## Install
+## Quick start
 
-Download the package for your platform from [Releases](https://github.com/itsgiahung/502Drive/releases)
-and verify its SHA-256 checksum.
-
-| Platform | Packages and instructions |
-| --- | --- |
-| Linux | RPM, DEB or archive; [Linux guide](docs/install-linux.md) |
-| Windows | ZIP or unsigned Inno Setup installer; [Windows guide](docs/install-windows.md) |
-| macOS | CLI/daemon archive; no native tray |
-| Docker / Podman | Build from this repository; [container guide](docs/install-docker.md) |
-| Source | Go 1.27; `go install github.com/itsgiahung/502Drive/cmd/502drive@latest` |
-
-The installer scripts verify release checksums and install the `502d` shortcut:
+**1. Install.** Download your package from
+[Releases](https://github.com/itsgiahung/502Drive/releases), or:
 
 ```sh
 # Linux or macOS
@@ -53,109 +46,117 @@ curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/in
 ```
 
 ```powershell
-# Windows
+# Windows (PowerShell)
 irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex
 ```
 
-## First copy
+Both scripts check the download against the published checksums.
 
-You need a Google account and your own **Desktop app OAuth client** with the Drive
-API enabled. Follow the [OAuth setup guide](docs/oauth-setup.md); credentials stay
-on your machine. There is no shared project server or Google account.
+**2. Make a Google key (once, about five minutes).** Google requires every app
+that copies Drive files to have a key. You create your own in Google Cloud, so
+your files are never shared with anyone else's project:
+[step-by-step guide](docs/oauth-setup.md). You end up with a small
+`client_secret….json` file.
+
+**3. Run the setup guide.**
 
 ```sh
-502drive setup --oauth-client /path/to/client_secret.json
-502drive up
-502drive account login
-502drive destinations add 'https://drive.google.com/drive/folders/DESTINATION_ID'
-502drive destinations list
-502drive destinations default DESTINATION_ID_FROM_LIST
-502drive copy 'https://drive.google.com/drive/folders/SOURCE_ID' --wait
+502drive onboard
 ```
 
-Use the destination's **502Drive ID** returned by `destinations add/list` for
-`destinations default`; it is different from the Google folder ID.
+It asks for that JSON file (you can drag it into the terminal), starts 502Drive in
+the background, opens the Google sign-in page, and asks where copies should go
+(press Enter for My Drive). When it prints **Ready**, you are done.
 
-Run `502drive` for the interactive launcher, or `502drive onboard` for a guided
-readiness check. The TUI shows setup steps when configuration is incomplete.
-
-## Everyday commands
+**4. Copy something.**
 
 ```sh
-502drive jobs list
-502drive wait JOB_ID
-502drive jobs report JOB_ID --format csv
-502drive sync enable COLLECTION_ID --daily 22:00
-502drive sync run COLLECTION_ID
-502drive audit COLLECTION_ID
-502drive pause
-502drive resume
-502drive doctor
-502drive logs -f
+502d 'https://drive.google.com/drive/folders/SOURCE_ID' --wait
 ```
 
-Inspect before copying with `inspect LINK --deep`. Run `COMMAND --help` for flags;
-see the [CLI reference](docs/features/cli.md) for JSON, exit codes and maintenance.
+Or just run `502drive` to open the app and paste the link there.
 
-Mirror and snapshots are explicit collection options:
+## Everyday use
+
+| I want to… | Command |
+| --- | --- |
+| Open the app | `502drive` |
+| Copy a link and wait for it | `502d LINK --wait` |
+| See what a link contains first | `502drive inspect LINK --deep` |
+| Copy several links at once | `502d LINK1 LINK2 LINK3` |
+| See my jobs | `502drive jobs list` |
+| Get a list of files that failed | `502drive jobs report JOB_ID --format csv` |
+| See my copies | `502drive collections list` |
+| Refresh a copy now | `502drive sync run COPY_ID` |
+| Refresh it every night at 22:00 | `502drive sync enable COPY_ID --daily 22:00` |
+| Check a copy matches the original | `502drive audit COPY_ID` |
+| Pause or resume everything | `502drive pause` · `502drive resume` |
+| Check that everything is set up | `502drive doctor` |
+| Stop 502Drive | `502drive stop` |
+
+`COPY_ID` comes from `collections list`. Every command has `--help`, and
+`--json` for scripts. The full list is in the [CLI reference](docs/features/cli.md).
+
+### In the app
+
+Number keys `1`–`7` switch tabs, arrows move, `Enter` opens, `←` or `Esc` goes
+back, and `q` closes the app. Closing the app does not stop copies: 502Drive keeps
+working in the background until you run `502drive stop` or choose **Stop 502Drive…**
+in the tray.
+
+### Telegram (optional)
+
+Send a Drive link to your own bot to start a copy and get a message when it
+finishes. Only the chats you allow can use it. See the
+[Telegram guide](docs/features/telegram.md).
+
+## What happens to files
+
+- **When the original changes**, the next refresh copies new and edited files,
+  moves and renames what was moved or renamed, and keeps the older version of an
+  edited file unless you ask it to replace them.
+- **When a file is deleted from the original**, your copy keeps it. If you want the
+  copy to follow deletions too, turn on *mirror* for that copy; deleted files then
+  go to the Drive trash, never permanently.
+- **When you delete something from your copy yourself**, 502Drive does not put it
+  back on its own. `502drive audit COPY_ID` lists what is missing, and
+  `audit COPY_ID --repair` shows what it would restore before you apply it.
+- **Restore points** (*snapshots*) can keep earlier versions of a copy and roll it
+  back. They are off by default and use Drive storage. See
+  [mirror and snapshots](docs/features/protection.md).
+- To remove a copy entirely: `502drive collections retire COPY_ID`, then
+  `502drive collections cleanup COPY_ID` shows what would go to the trash and the
+  exact command to confirm it.
+
+## Good to know
+
+- Copies get new file IDs and you become their owner. Sharing settings, comments
+  and version history are not copied; Google decides what can be copied.
+- Google's daily copy limit still applies. When it is reached, the job waits and
+  continues by itself when Google allows it.
+- Your Google login is stored encrypted on your machine. Backups made with
+  `502drive backup` contain it, so keep them private.
+- 502Drive talks to your Google account and, if you set it up, Telegram. Nothing
+  else: no telemetry, no automatic updates, no public sharing links.
+
+**Tested so far:** copying, syncing, crash recovery, audit and Telegram on Linux
+with a real Google account. **Not yet tested for real:** Windows and macOS
+installs, Shared Drives, very large folders, and mirror and snapshots. Details:
+[verification](docs/verification.md).
+
+## For developers
+
+Start with the [documentation index](docs/README.md) and
+[architecture](docs/architecture.md). Contributions: [CONTRIBUTING](CONTRIBUTING.md).
 
 ```sh
-502drive sync options COLLECTION_ID --snapshots=true --keep-days 30 --keep-count 10
-502drive snapshots create COLLECTION_ID
-502drive sync options COLLECTION_ID --mirror=true
-502drive snapshots restore SNAPSHOT_ID             # preview only
-502drive snapshots restore SNAPSHOT_ID --apply     # applies and pauses sync
-```
-
-Read [protection options](docs/features/protection.md) before enabling mirror or
-restoring. A snapshot retains physical copies; it cannot recover a file someone
-permanently deletes or guarantee recovery after an external content edit.
-
-## Terminal UI and background service
-
-`1`–`7` select tabs. Use `↑↓` to select rows, `Enter` to open and `←` or `Esc` to
-return from detail views. On a collection, select **Sync** and press `Enter` to
-choose a schedule or action. Letter shortcuts remain available. In text fields,
-arrows edit the text; in the Drive browser, `←` opens the parent folder.
-
-`q` exits the TUI while the daemon keeps running. Only `502drive stop` or the
-tray's **Stop 502Drive…** action stops the detached daemon. Tray startup and
-system autostart are optional; foreground `serve` ends with its process.
-
-Telegram is optional. It supports private chats, an allowlist, owner/operator
-permissions and expiring one-shot callbacks. See the [Telegram guide](docs/features/telegram.md).
-
-## Safety and limitations
-
-- Copies have different IDs and may have different owners and permissions.
-  Sharing settings and revision history are not replicated.
-- Source removals preserve destination files by default; mirror changes that
-  policy only for the selected collection's owned copies.
-- Remote writes record durable intent. Unknown outcomes are reconciled; the
-  daemon blocks when it cannot establish a safe result.
-- The API uses loopback HTTP with a private bearer token. Use SSH forwarding for
-  remote access. Google tokens are encrypted at rest; backups contain secrets.
-- No automatic public links, quota bypass, telemetry or automatic software updates.
-
-Core copy/sync/recovery and Telegram flows have a recorded live Linux smoke test.
-Mirror/snapshots currently have local fixture coverage, not live Google acceptance.
-Windows installer, Shared Drives and large-tree acceptance remain outstanding.
-See [verification](docs/verification.md) for the precise scope.
-
-## Documentation and development
-
-Start with the [documentation index](docs/README.md). Maintainers should read
-[architecture](docs/architecture.md), [HTTP/OpenAPI](docs/control-contracts.md),
-[data contracts](docs/data-contracts.md) and [CONTRIBUTING](CONTRIBUTING.md).
-
-```sh
-make check           # formatting, vet, race tests
-make docs            # documentation links, OpenAPI JSON, whitespace
-make release-local   # local release build; publishes nothing
+make check           # format, vet and race tests
+make docs            # documentation links and API schema
+make release-local   # build release packages locally; publishes nothing
 ```
 
 [Changelog](CHANGELOG.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md) ·
 [Third-party notices](THIRD_PARTY_NOTICES.md)
 
-502Drive is independent of Google and is not endorsed by Google. Google Drive is
+502Drive is an independent project, not made or endorsed by Google. Google Drive is
 a trademark of Google LLC. Licensed under [GPL-3.0-only](LICENSE).
