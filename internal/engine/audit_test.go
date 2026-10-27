@@ -510,3 +510,32 @@ func TestAuditHonorsPauseAndCancel(t *testing.T) {
 		t.Fatalf("audit after resume = %+v err=%v", got, err)
 	}
 }
+
+// Two source files with the same name are copied as "dup.txt" and
+// "dup (2).txt" (N1 rename). That name is a decision, not drift: the audit must
+// not report it and a repair must not rename it back into a duplicate.
+func TestAuditAcceptsTheNameTheConflictPolicyChose(t *testing.T) {
+	e := newEnv(t)
+	src := e.fake.Folder("Dups", "root")
+	e.fake.File("dup.txt", src.ID, 10)
+	e.fake.File("dup.txt", src.ID, 20)
+	job := e.submit(src)
+	if got := e.runUntil(job.ID, terminal); got.State != state.JobSucceeded {
+		t.Fatalf("baseline = %s", got.State)
+	}
+	col, err := e.store.GetCollection(context.Background(), "owner", job.CollectionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, fs := e.runAudit(col)
+	for _, f := range fs {
+		if f.Kind == state.FindingName {
+			t.Fatalf("the N1 name was reported as drift: %+v", f)
+		}
+	}
+	before := e.snapshotWrites()
+	e.runRepair(a, false)
+	if d := before.diff(e.snapshotWrites()); d["rename"] != 0 {
+		t.Fatalf("repair renamed a conflict-resolved copy: %v", d)
+	}
+}

@@ -156,7 +156,7 @@ func (r *run) scanAudit(ctx context.Context, col state.Collection, counts map[st
 			continue
 		}
 		ours := it.IntentKey != "" && dst.AppProperties[drive.IntentProperty] == it.IntentKey
-		if dst.Name != it.Name {
+		if dst.Name != it.TargetName() {
 			add(state.FindingName, it.SourceID, it.DestID, ours, fmt.Sprintf("destination is named %q", dst.Name))
 		}
 		if len(dst.Parents) > 0 && dst.Parents[0] != it.DestParentID {
@@ -359,7 +359,7 @@ func (r *run) executeRepair(ctx context.Context, job state.Job) {
 				unverified++
 				continue
 			}
-			fixed := (f.Kind == state.FindingName && cur.Name == it.Name) ||
+			fixed := (f.Kind == state.FindingName && cur.Name == it.TargetName()) ||
 				(f.Kind == state.FindingParent && atMappedFolder(cur, it))
 			if fixed {
 				alreadyFixed = append(alreadyFixed, f)

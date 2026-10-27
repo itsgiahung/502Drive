@@ -301,3 +301,13 @@ type Item struct {
 	// stored: the filter decides during discovery, before the item is written.
 	Modified time.Time
 }
+
+// TargetName is the name the copy should carry at the destination: the name the
+// conflict policy decided (for example "a (2).txt"), or the source name when no
+// decision was needed.
+func (it Item) TargetName() string {
+	if it.DestName != "" {
+		return it.DestName
+	}
+	return it.Name
+}

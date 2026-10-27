@@ -1177,8 +1177,8 @@ func (r *run) align(ctx context.Context, it state.Item) {
 			return
 		}
 	}
-	if err == nil && cur.Name != it.Name {
-		err = r.p.RenameFile(ctx, it.DestID, it.Name)
+	if err == nil && cur.Name != it.TargetName() {
+		err = r.p.RenameFile(ctx, it.DestID, it.TargetName())
 	}
 	if err == nil && len(cur.Parents) > 0 && cur.Parents[0] != it.DestParentID {
 		err = r.p.MoveFile(ctx, it.DestID, cur.Parents[0], it.DestParentID)
