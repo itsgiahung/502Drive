@@ -1,42 +1,40 @@
-# Threat model (hiện tại)
+# Threat model
 
-Code Go, một daemon; CLI/TUI/tray/Telegram là client. Không còn webview, không
-Rust/Tauri/React trong repo (đã gỡ 2026-10-26).
+502Drive has one daemon and local clients. There is no web frontend or browser
+session authentication. Google and Telegram remain external trust boundaries.
 
-## Tài sản
+## Assets
 
-| Tài sản | Nơi lưu |
+| Asset | Location |
 | --- | --- |
-| Google refresh/access token | `secrets/google-token.enc`, AES-GCM, key `secrets/master.key` (0600) |
-| Bearer token API | `token_file` 0600, chỉ đọc bởi daemon và CLI |
-| Bot token Telegram | `telegram_token_file` 0600 |
-| Metadata Drive (tên, ID, resource key) | `state-v2.db` (0600), response HTTP |
-| Job/state/idempotency/mapping | `state-v2.db` |
-| Backup | thư mục 0700 + file 0600, chứa cả key + token mã hoá |
+| Google access/refresh tokens | AES-GCM encrypted file; separate private master key |
+| API bearer token and Telegram bot token | Private local files |
+| Drive names, IDs and resource keys | Private SQLite database and authorized responses |
+| Jobs, intents, mappings and callbacks | SQLite database |
+| Backups | Private directories containing database and credential material |
+| Retained Drive copies | The user's destination/archive folders |
 
-## Ranh giới tin cậy và biện pháp
+## Controls
 
-| Ranh giới | Rủi ro | Biện pháp |
+| Boundary | Main risks | Controls |
 | --- | --- | --- |
-| HTTP API | truy cập trái phép, actor giả | bind loopback, bearer bắt buộc, hash + constant-time, principal suy server-side |
-| Telegram | người lạ, chat nhóm, callback cũ | chỉ private chat, owner id/operator enabled, callback one-shot + TTL + chat/revision, không shell |
-| Drive | tên độc hại, lỗi provider | tên chỉ để hiển thị (Sanitize/escape); lỗi phân loại, không log body |
-| CLI/TUI/tray | terminal injection, argv injection | `Sanitize`/`i18n`, argv cố định, clipboard chỉ qua `drive.Parse`, URL chỉ https + host Drive |
-| Maintenance | xóa/ghi đè dữ liệu | kiểm `instance.lock`, đích mới/trống, sha256/integrity/FK, không symlink, không ra ngoài data dir |
-| Packaging | installer chưa ký | checksum trong release, ghi rõ SmartScreen; không hứa publisher tin cậy |
-| Config | secret rò qua log/argv/JSON | private file 0600, không in token, redact endpoint, JSON không chứa secret |
+| HTTP | Unauthorized access and forged actors | Loopback, bearer authentication, constant-time comparison, server-side principal |
+| Telegram | Strangers, group chats, stale callbacks | Private chat, allowlist, owner/operator scope, expiring one-shot revision-bound callbacks |
+| Drive | Malicious names, provider failures, ambiguous writes | Sanitized presentation, classified errors, durable intents and reconciliation |
+| Terminal/tray | Escape sequences and command injection | Sanitization, fixed argument vectors, parsed Drive references |
+| Maintenance | Overwrite, traversal, incomplete backups | Writer lock, empty target, integrity/hash/FK checks, symlink restrictions |
+| Configuration | Secrets in logs or responses | Private files, redaction, secret-free DTOs |
+| Installer | Unknown publisher or tampered binaries | Published checksums; explicit unsigned-installer notice |
+| Mirror/restore | Removing unrelated data | Exact ownership, complete scan/preflight, ordered durable actions, empty-folder checks |
 
-## Ngoài phạm vi (không hứa)
+## Limits
 
-- Kẻ tấn công có quyền root/user trên máy (đọc file 0600, D-Bus session).
-- Thay đổi phía Google (share/permission/quota) — provider là authority.
-- Website độc hại: sản phẩm không có web UI, không nhận CORS/browser session.
-- Supply-chain của dependency: pin version; chưa có SBOM/attestation.
-- Bảo vệ output trên Drive: 502Drive không đặt public link, nhưng owner có thể
-  chia sẻ sau đó — ngoài tầm kiểm soát.
+- A compromised OS user or root account can access local credentials and session APIs.
+- Google decides permissions, copy eligibility, quotas and object availability.
+- A user may share or edit destination files outside 502Drive. Snapshots retain
+  physical copies and do not make independent immutable byte backups.
+- Pinned dependencies reduce drift but do not establish supply-chain attestation.
+- Checksums do not provide code signing or proof of a trusted publisher.
 
-## Ghi chú vận hành
-
-- Nếu nghi lộ token: `account revoke` (Google), đổi bot token + chạy lại `setup`,
-  xoay bearer token bằng `setup` (tạo file mới), backup mới, kiểm log.
-- Backup chứa key giải mã token ⇒ bảo vệ như secret; không upload lên nơi công khai.
+If a credential is exposed, follow [Security](../SECURITY.md), create a fresh backup
+and treat existing backups as secrets. See [Privacy](../PRIVACY.md).

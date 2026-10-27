@@ -1,119 +1,83 @@
-# Chạy bằng Docker / Podman
+# Docker and Podman
 
-Dockerfile: 2 tầng — `golang:1.27-bookworm` build (`CGO_ENABLED=0`) →
-`gcr.io/distroless/static-debian12:nonroot`. Image chỉ có binary + CA + tzdata;
-không shell, không curl. `HEALTHCHECK` chạy chính binary (`502drive healthcheck`).
+The [Dockerfile](../Dockerfile) builds a static Go binary and copies it into a
+non-root distroless image. There is no shell or curl in the runtime image;
+`502drive healthcheck` supplies the health check.
 
-## Chạy nhanh
+## Configure and start
 
-```bash
-cp .env.example .env                              # TZ + đường dẫn config; giá trị mẫu là giả
+```sh
+cp .env.example .env
 502drive setup --config ./config/config.json --container
-sudo chown -R 65532:65532 ./config                # container chạy bằng nonroot (Podman: podman unshare chown …)
+sudo chown -R 65532:65532 ./config
 docker compose up -d --build
 ```
 
-Không dùng compose:
+For rootless Podman, use `podman unshare chown -R 65532:65532 ./config` instead
+of host `sudo chown`. The non-root container user must be able to read its private
+configuration and token files. On SELinux hosts use the volume labels in the
+compose file, or `:z` / `:Z` on equivalent mounts.
 
-```bash
+Container mode binds the API inside the container. Published ports must remain on
+**host loopback**, including the OAuth callback:
+
+```sh
 docker run -d --name 502drive --restart unless-stopped --stop-timeout 30 \
   -v "$PWD/config:/config:z" -v 502drive-data:/data \
   -p 127.0.0.1:5020:5020 -p 127.0.0.1:50200:50200 \
-  -e TZ=Asia/Ho_Chi_Minh 502drive:latest
+  -e TZ=UTC 502drive:latest
 ```
 
-- `--container` đặt `"container": true` và `listen: "0.0.0.0:5020"` **chỉ** trong
-  config của container; `docker-compose.yml` publish hai cổng **loopback trên
-  host**: `127.0.0.1:5020` (API) và `127.0.0.1:50200` (callback OAuth). Không
-  publish cổng nào ra ngoài; đừng bỏ tiền tố `127.0.0.1:`.
-- Dữ liệu nằm trong volume `502drive-data` (`state-v2.db`, `secrets/`,
-  `instance.lock`); config/token/key nằm trong `./config` (0600). Recreate
-  container không mất state.
-- **Quyền file**: container chạy bằng user `nonroot` = uid 65532, nên `./config`
-  phải đọc được bởi uid đó. Docker: `sudo chown -R 65532:65532 ./config`.
-  Podman rootless: `podman unshare chown -R 65532:65532 ./config`. Không chown
-  được thì container thoát với `config unavailable`.
-- **SELinux** (Fedora/RHEL): compose đã gắn `:z`; nếu tự chạy `podman run`, thêm
-  `:Z`/`:z` sau mount, nếu không daemon không đọc được config dù quyền đúng.
-- `container: true` là ngoại lệ duy nhất của luật "chỉ nghe loopback": nếu bạn
-  sửa config về `127.0.0.1:5020` trong container thì cổng publish sẽ không tới
-  được daemon (Docker DNAT vào địa chỉ mạng của container).
+Container mode is the explicit exception to the daemon's ordinary loopback-only
+bind. Binding to container loopback prevents bridge-network published ports from
+reaching it. Do not publish the API to all host interfaces.
 
-## Kiểm tra
+## Health and authorization
 
-```bash
-docker compose ps                    # health: starting -> healthy
-docker compose exec -it 502drive 502drive healthcheck   # exit 0 = ready
+```sh
+docker compose ps
+docker compose exec 502drive 502drive healthcheck
 docker compose logs -f 502drive
-docker compose exec -it 502drive 502drive --config /config/config.json status
-docker compose exec -it 502drive 502drive --config /config/config.json doctor
-```
-
-Từ host: `502drive --endpoint http://127.0.0.1:5020 --token-file ./config/api-token status`
-(hoặc `DRIVE502_ENDPOINT=http://127.0.0.1:5020`).
-
-## Đăng nhập Google trong container
-
-```bash
 docker compose exec -it 502drive 502drive account login
 ```
 
-Link hiện ra mở trên máy bạn; callback quay về `127.0.0.1:50200` đã publish sẵn.
-`secrets/google-token.enc` nằm trong volume `/data`, không nằm trong image.
+Open the printed OAuth link on your machine; its callback must reach the published
+loopback port. See [OAuth setup](oauth-setup.md). The token is stored in `/data`,
+not an image layer. Host CLI access can use `--endpoint http://127.0.0.1:5020`
+and `--token-file ./config/api-token`.
 
-## Backup volume
+## Backup and upgrade
 
-`backup` từ chối chạy khi daemon đang giữ `instance.lock`, nên dừng dịch vụ trước:
+Stop the service before offline maintenance; preserve the configuration mount
+and data volume across container replacement.
 
-```bash
+```sh
 docker compose stop
-docker compose run --rm 502drive backup /data/backups/$(date +%F)
+docker compose run --rm 502drive backup /data/backups/backup-new
 docker compose up -d
 ```
 
-`backup` tạo thư mục mới 0700 (DB `VACUUM INTO`, `master.key`,
-`secrets/google-token.enc`, `config.json`, `MANIFEST.json`). Copy thư mục đó ra
-khỏi volume (`docker cp`/`rsync`) để có bản ngoài máy. Khôi phục:
+Copy backups outside the volume as well. They contain secrets. To validate a
+restore, stop the daemon and restore to a **new empty** path:
 
-```bash
-docker compose stop
-docker compose run --rm 502drive restore /data/backups/2026-10-27 --to /data/restored
-# kiểm xong: đổi volume/config trỏ vào /data/restored, hoặc giữ nguyên và chỉ thử
-docker compose up -d
+```sh
+docker compose run --rm 502drive restore /data/backups/backup-new --to /data/restored
 ```
 
-## Cập nhật image
+Inspect it before pointing configuration/volumes at the restored directory.
+For upgrades: stop, back up, build/pull the desired version, recreate, then check
+health and Doctor. Migrations are forward-only; a previous binary may not open
+an upgraded database. Restoring local state does not undo Google Drive operations.
 
-```bash
-# backup trước khi migration mới (migration chỉ tiến, không lùi được)
-docker compose stop
-docker compose run --rm 502drive backup /data/backups/$(date +%F)
-git pull
-docker compose build --pull
-docker compose up -d                    # recreate; migration tự chạy, chỉ tiến
-docker compose exec -it 502drive 502drive healthcheck
-docker compose exec -it 502drive 502drive doctor
-```
+## Operational limits
 
-Rollback: `docker tag 502drive:latest 502drive:previous` trước khi build, hoặc
-chạy lại tag cũ. Không hạ schema: bản cũ hơn sẽ từ chối DB mới (`schema_version`).
-
-## Ghi chú vận hành
-
-- Podman: cần provider compose (`podman compose` dùng `docker-compose` hoặc
-  `podman-compose`; máy không có thì chạy `podman build -t 502drive:latest .` rồi
-  `podman run` như ví dụ trên). Podman mặc định build định dạng **OCI** nên bỏ qua
-  `HEALTHCHECK`; muốn podman theo dõi health: `podman build --format docker ...`
-  hoặc định kỳ `podman exec 502drive /usr/local/bin/502drive healthcheck`.
-- Đã chạy trong phiên 2026-10-27: `podman build` (image distroless, ~27 MB binary),
-  `podman run` với config `container: true`, `podman exec … healthcheck` → exit 0,
-  `GET /v1/status` từ host qua `127.0.0.1:15020` (map tạm) trả `ready:true`;
-  daemon log `listening addr=[::]:5020`. Chưa chạy `docker compose` (máy chỉ có
-  podman, không có compose provider).
-- Không dùng `network_mode: host` cho deployment mặc định: publish loopback là
-  đủ, và healthcheck/port rule ở trên giả định bridge network.
-- Telegram long polling không cần mở cổng vào. Bot tắt/sai token không làm
-  container unhealthy.
-- Chưa hỗ trợ: Kubernetes manifests, ký cosign, buildx multi-arch trong Dockerfile
-  (dùng `docker buildx build --platform linux/amd64,linux/arm64` được, nhưng CI
-  chỉ build amd64/arm64 bằng GoReleaser).
+- Podman needs a compose provider for `podman compose`; otherwise use build/run.
+- Podman's OCI image format may ignore Docker `HEALTHCHECK`. Use Docker format or
+  invoke `podman exec 502drive /usr/local/bin/502drive healthcheck` explicitly.
+- Telegram long polling needs no inbound port. A bot error does not make core
+  readiness fail.
+- Prefer the documented bridge-network ports over host networking.
+- A Podman image/health/API smoke test was recorded on 2026-10-27. That record does
+  not establish Docker Compose, live OAuth or every volume configuration.
+- No bundled Kubernetes manifests, signed-image attestation or complete native
+  multi-platform deployment acceptance. See [verification](verification.md).

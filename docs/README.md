@@ -1,62 +1,61 @@
-# 502Drive — bản đồ tài liệu
+# Documentation
 
-Go 1.27, một module (bản Rust/Tauri cũ đã gỡ ngày 2026-10-26). Tài liệu này mô
-tả **cái đang chạy**; phần chưa có ghi rõ "Chưa hỗ trợ".
+502Drive is one Go 1.27 module. The application supports English and Vietnamese;
+public documentation is English except for the [Vietnamese README](../README_VI.md).
 
-## Đọc trước
+## Start here
 
-1. [Kiến trúc](architecture.md) — package thật, luồng job/sync/audit, bất biến.
-2. [HTTP contract](control-contracts.md) — route, quyền, lỗi, idempotency.
-3. [Data contracts](data-contracts.md) — schema `internal/state/migrations` (001–011, 020–026).
-4. Đúng feature bạn chạm trong [features/](features/).
+| Goal | Document |
+| --- | --- |
+| Install and make a first copy | [Project README](../README.md) |
+| Linux packages, systemd and tray | [Linux](install-linux.md) |
+| Windows ZIP and installer | [Windows](install-windows.md) |
+| Container deployment | [Docker / Podman](install-docker.md) |
+| Configure Google access | [OAuth setup](oauth-setup.md) |
+| Diagnose an issue | [Troubleshooting](troubleshooting.md) |
+| Backup, restore or upgrade | [Operations runbook](runbooks.md) |
 
-## Bảng tài liệu
+## Features
 
-| Tài liệu | Nội dung | Trạng thái |
-| --- | --- | --- |
-| [product.md](product.md) | Phạm vi, non-goal, trạng thái từng phần | Khớp code |
-| [architecture.md](architecture.md) | Package, job/sync/audit/lifecycle, bất biến | Khớp code |
-| [control-contracts.md](control-contracts.md) | 58 route (56 dưới `/v1` + 2 health), quyền, lỗi | Khớp router + OpenAPI |
-| [data-contracts.md](data-contracts.md) | Bảng SQLite 001–011, 020–026 | Khớp migrations |
-| [features/clone-jobs.md](features/clone-jobs.md) | Copy, admission, N1/K1/S5/D1, L1/L2, batch/queue, deep preflight, audit | Đã test local |
-| [features/automation.md](features/automation.md) | Sync lịch + realtime, replay, full reconcile, quota, S8 | Đã test local, chưa live |
-| [features/telegram.md](features/telegram.md) | Bot menu, paste-to-copy, thông báo, quiet hours | Đã test fake API |
-| [features/cli.md](features/cli.md) | Command tree, TUI, exit code, JSON | Đã test local |
-| [features/identity-control.md](features/identity-control.md) | Principal, token, operator, quyền owner/admin | Một phần (chưa có `api_tokens`) |
-| [features/desktop.md](features/desktop.md) | Tray, TUI, autostart/systemd, đóng gói | Đã test local |
-| [acceptance.md](acceptance.md) | Gate H/C/L/T/S/O/I + test tương ứng | Có cột trạng thái |
-| [verification.md](verification.md) | Lệnh đã chạy, kết quả, việc chưa làm | Cập nhật 2026-10-27 |
-| [runbooks.md](runbooks.md) | Vận hành: serve, backup, prune/vacuum, nâng cấp, sự cố | Khớp code |
-| [oauth-setup.md](oauth-setup.md) | Login Google, callback, SSH forward, Docker | Khớp code |
-| [install-linux.md](install-linux.md) | rpm/deb, systemd user, tray, autostart | Cần acceptance máy thật |
-| [install-windows.md](install-windows.md) | zip + installer, không ký code | Cần acceptance máy thật |
-| [install-docker.md](install-docker.md) | Image distroless, volume, nâng cấp | Cần acceptance máy thật |
-| [threat-model.md](threat-model.md) | Ranh giới tin cậy hiện tại | Khớp code |
-| [troubleshooting.md](troubleshooting.md) | Triệu chứng → kiểm tra | Khớp code |
-| [design/](design/) | Quyết định cho từng slice (S1, S2, S3, S5, S6, S7, N1, K1, L1, L2, T1–T5, H1–H6, Q1, R1) | Lịch sử thiết kế |
+| Document | Scope |
+| --- | --- |
+| [Copy jobs](features/clone-jobs.md) | Fidelity, conflicts, filters, queue, audit and lifecycle |
+| [Automation](features/automation.md) | Scheduled/realtime sync, replay, quota and throttling |
+| [Protection](features/protection.md) | Opt-in mirror, snapshots, pinning and restore |
+| [CLI](features/cli.md) | Commands, JSON, standard streams and exit codes |
+| [Desktop](features/desktop.md) | TUI navigation, tray, notifications and autostart |
+| [Telegram](features/telegram.md) | Bot setup, private chats, callbacks and notifications |
+| [Identity](features/identity-control.md) | Owner/operator boundaries and credentials |
 
-## Trạng thái tổng quan (2026-10-27)
+## Maintainers
 
-- **Đã implement + test local:** copy/admission/retry/reconcile, N1 trùng tên, K1
-  skipped, S5 lọc, D1 Shared Drive (fake), L1/L2 lifecycle + copy lại, audit/repair,
-  batch + hàng đợi fair + pause queue, deep preflight, HTTP contract, CLI/JSON,
-  report/history export, TUI, tray/autostart/systemd, Telegram (fake Bot API),
-  scheduled + realtime sync (replay/full reconcile), quota ledger, backup/restore/
-  cleanup/prune/vacuum, đóng gói rpm/deb/zip/installer.
-- **Cần acceptance máy thật:** Google Drive/Telegram thật, tray trên KDE/GNOME,
-  Windows 10/11, installer SmartScreen, Docker volume/OAuth callback.
-- **Chưa hỗ trợ:** xem danh sách ở từng feature và [acceptance](acceptance.md).
+Read [AGENTS.md](../AGENTS.md), then architecture and the contract you are changing.
 
-## Kiểm chứng
+| Document | Scope |
+| --- | --- |
+| [Architecture](architecture.md) | Packages, worker flow and invariants |
+| [HTTP contract](control-contracts.md) | Routes, authorization, idempotency and SSE |
+| [OpenAPI](contracts/openapi.json) | Machine-readable API schema; 70 operations |
+| [Data contracts](data-contracts.md) | SQLite migrations 001–011 and 020–027 |
+| [Threat model](threat-model.md) | Assets, trust boundaries and limitations |
+| [Acceptance](acceptance.md) | Coverage and remaining release checks |
+| [Verification](verification.md) | Evidence, commands and live-test boundaries |
+| [Design notes](design/) | Technical decisions for individual features |
 
-```bash
+Local handoffs, credentials, runtime data, test reports and build outputs are not
+public product documentation and must remain outside Git.
+
+## Checks
+
+```sh
 gofmt -l cmd internal
 go vet ./...
 staticcheck ./...
-go test -race -count=1 ./...
+go test -race -count=1 -timeout 900s ./...
 python3 scripts/check-docs-links.py .
-python3 -c "import json;json.load(open('docs/contracts/openapi.json'))"
+python3 -c "import json; json.load(open('docs/contracts/openapi.json'))"
 git diff --check
 ```
 
-Kết quả lần chạy gần nhất và phần chưa làm: [verification](verification.md).
+Fake-provider tests establish local behavior; they do not establish Google,
+Telegram or native desktop behavior. See [verification](verification.md).

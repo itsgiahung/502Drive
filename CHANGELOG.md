@@ -4,6 +4,27 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
+## Unreleased
+
+### Added
+
+- Per-collection opt-in mirror and automatic snapshots, manual capture, retention,
+  pinning and durable preview-first restore through the service, HTTP API and CLI.
+  Both automatic options default off. Restore apply pauses sync and never deletes
+  Drive objects permanently. Schema 027 is forward-only; back up before upgrade.
+- Reusable Windows Inno Setup build/checksum and isolated install/uninstall smoke
+  scripts; an optional desktop shortcut. Native installer acceptance is pending.
+
+### Changed
+
+- Collection detail arrows select rows in the open collection; Sync opens a
+  keyboard-selectable action menu. Job details scroll rather than select another job.
+- Left returns from nested views. Live refresh and returning from reports/filter
+  editors preserve object identity instead of reusing a stale list position.
+- Public Markdown is English with one Vietnamese introduction, `README_VI.md`.
+  Documentation now separates user guides, technical contracts and verification;
+  private handoffs and local collaboration settings are ignored.
+
 ## 0.3.0 — 2026-10-28
 
 The first release of the Go rewrite: one daemon (copy engine, sync, database and

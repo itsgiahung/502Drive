@@ -29,6 +29,10 @@ Go 1.27 is required. The SQLite driver is pure Go, so `CGO_ENABLED=0` builds wor
   not obvious.
 - User-visible text is Vietnamese and English; do not hard-code one language in a
   new adapter surface.
+- Public Markdown is English; `README_VI.md` is the Vietnamese introduction.
+  Keep commands aligned with code and distinguish local fixtures from live evidence.
+  Private handoffs, worker assignments, runtime logs and credentials stay out of Git.
+  Update the generator as well when changing generated documentation.
 
 ## Pull requests
 

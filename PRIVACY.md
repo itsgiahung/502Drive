@@ -1,50 +1,57 @@
-# Privacy Policy — 502Drive
+# Privacy policy
 
-**Last updated:** 2026-10-26. Tài liệu này mô tả runtime Go hiện tại; đối chiếu
-[HTTP contract](docs/control-contracts.md), [identity](docs/features/identity-control.md)
-và [threat model](docs/threat-model.md).
+Last updated: 2026-10-28.
 
-## 1. Tóm tắt
+502Drive is self-hosted software. You run its daemon on your machine or server;
+there is no hosted 502Drive service, analytics pipeline or telemetry endpoint.
 
-502Drive là daemon cục bộ: bạn chạy `502drive serve` trên máy của mình, dữ liệu
-nằm trong data dir bạn chọn. Không có dịch vụ hosted, không analytics/telemetry,
-không có web frontend tải font/asset từ bên thứ ba trong code hiện tại.
+## Data stored locally
 
-## 2. Dữ liệu lưu trên máy bạn
+| Data | Storage and purpose |
+| --- | --- |
+| Configuration | Private `config.json`; paths and preferences |
+| API bearer token | Private `token_file`, read by the daemon and local clients |
+| Google OAuth client | Private copy created by setup under the configuration directory |
+| Google access/refresh tokens | AES-GCM encrypted `secrets/google-token.enc`; key in `secrets/master.key` |
+| Telegram bot token | Private file referenced by configuration, when enabled |
+| Drive and job metadata | SQLite `state-v2.db`: names, IDs, resource keys, mappings, events and sync state |
+| Telegram state | Local inbox, callbacks and outbox for replay and delivery |
+| Snapshots | Metadata and references to retained physical files in your Google Drive |
+| Backups | User-selected directories containing database, configuration and token/key material |
 
-| Dữ liệu | Vị trí | Ghi chú |
-| --- | --- | --- |
-| Config JSON | `config.json` (mặc định `~/.config/502drive/config.json`, hoặc `~/.config/502drive-next/` của bản trước 0.3 nếu đã có; Windows `%AppData%`) | Đường dẫn listen/data/token; **không** chứa secret |
-| API bearer token | `token_file`, ví dụ `api-token` (0600) | Client CLI/tray đọc file này |
-| Google OAuth client JSON | đường dẫn bạn chỉ định khi `setup --oauth-client` | Giữ tại chỗ, không copy vào DB |
-| Google token | `data/secrets/google-token.enc` | AES-256-GCM; key `data/secrets/master.key` (0600, không lưu keyring) |
-| Telegram bot token | file bạn chỉ định (`--telegram-token-file`) | Chỉ daemon đọc |
-| Job/metadata | `data/state-v2.db` (SQLite, 0600) | Tên/ID/size/kết quả job, mapping, events, idempotency, subscription, inbox/outbox Telegram |
-| Backup | thư mục bạn tạo bằng `502drive backup PATH` | Chứa cả key + token mã hoá ⇒ bảo vệ như secret |
+Private files use mode 0600 and directories 0700, or the corresponding user
+access restrictions on Windows. Existing installations may retain the earlier
+`502drive-next` configuration directory. File contents are never downloaded to
+relay a copy, and Google passwords are not stored.
 
-Không lưu mật khẩu Google, không lưu nội dung file Drive.
+## Network destinations
 
-## 3. Dữ liệu đi đâu
+- Google: OAuth authorization, metadata, server-side copies and other explicitly
+  requested Drive operations.
+- Telegram: only when configured; commands, cards, file names and job notifications.
+- GitHub: release checks when you run `502drive update` or enable tray checks.
+- Loopback: the CLI, TUI and tray communicate with your daemon over local HTTP.
 
-- **Google Drive API:** request metadata và thao tác copy server-side; OAuth
-  consent qua browser của bạn. Token chỉ dùng để gọi Drive.
-- **Telegram (nếu bạn cấu hình bot):** lệnh, nút bấm, tên/ID file hiển thị trong
-  menu/card, thông báo job. Không gửi token/resource key.
-- **Máy bạn:** CLI/TUI/tray nói chuyện với daemon qua loopback HTTP.
-- Không gửi dữ liệu tới dịch vụ của dự án; không có telemetry ngầm. Log daemon
-  redact token/secret; tên file có thể xuất hiện trong log tuỳ mức log bạn cấu hình.
+Tokens and resource keys are not intentionally exposed in logs or notification
+URLs. Logs may contain operational metadata and file names; treat them as private.
+There is no project-operated recipient for your job data.
 
-## 4. Lưu giữ và xoá
+## Retention and removal
 
-- Job/event/idempotency/mapping được giữ mặc định (phục vụ replay/đối chiếu);
-  chưa có auto-prune. `502drive cleanup` chỉ xoá file tạm.
-- Xoá dữ liệu: dừng daemon rồi xoá data dir (và backup liên quan). Xoá
-  `master.key` làm token đã mã hoá không đọc được.
-- Thu hồi quyền Google: `502drive account revoke` (xoá cục bộ + gọi Google revoke)
-  hoặc tại <https://myaccount.google.com/permissions>.
+Job state and mappings support retries and reconciliation. Eligible historical
+records can be pruned by maintenance, including the daemon's default daily policy.
+Current retention-settings boundaries are documented in the runbook. Use documented
+maintenance and retention commands rather than removing database files while the
+daemon runs. Snapshot retention removes metadata; it does not automatically remove
+archived Drive copies. See [protection](docs/features/protection.md).
 
-## 5. Trẻ em và liên hệ
+Stop the daemon before removing local state. Removing `master.key` prevents the
+stored token from being decrypted. Backups contain decryption material and must be
+protected like credentials. Revoking Google access is separate from deleting local
+files: use `502drive account revoke` or your Google account permissions page.
 
-Sản phẩm tự host, không thu thập dữ liệu người dùng qua Internet. Câu hỏi riêng
-tư: mở issue trên repository (không kèm secret) hoặc dùng kênh bảo mật ở
-[SECURITY.md](SECURITY.md).
+## Contact
+
+For privacy questions, open a repository issue without credentials or private
+metadata. Report security concerns privately as described in [Security](SECURITY.md).
+See the [threat model](docs/threat-model.md) for trust boundaries.

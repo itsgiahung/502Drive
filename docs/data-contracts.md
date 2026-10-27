@@ -1,170 +1,166 @@
-# Data contracts (SQLite v2)
+# SQLite data contracts
 
-Schema thật nằm ở [internal/state/migrations](../internal/state/migrations), áp
-forward-only khi `state.Open` mở `state-v2.db`; `user_version` = migration cao
-nhất, `application_id=502002`. Không sửa migration đã áp; thêm file mới.
+The authoritative schema is [internal/state/migrations](../internal/state/migrations).
+`state.Open` applies migrations forward-only to `state-v2.db`. `user_version` is
+the latest migration and `application_id=502002` identifies this database format.
+Never modify an applied migration; add a new one.
 
-Danh sách hiện có: **001–011 và 020–026** (18 file). Dải 012–019 không tồn tại —
-số được giữ chỗ cho các đợt trước, đừng tạo lại số cũ.
+There are 19 migration files: **001–011 and 020–027**. Numbers 012–019 are absent
+and must not be reused casually as though they were new migrations.
 
-## Quy ước
+## Storage conventions
 
-- ID là string opaque (`state.ID(prefix)`), thời gian lưu epoch milliseconds
-  (trừ `jobs.body.updated_at` dạng RFC3339 và `copy_ledger.hour` epoch giờ).
-- Body phức tạp lưu JSON trong cột `body`; cột sinh (`GENERATED ... VIRTUAL`)
-  chỉ đọc, không ghi.
-- Một write connection (`MaxOpenConns=1`), WAL, `foreign_keys=1`,
-  `busy_timeout=5000`.
-- Revision tăng khi resource đổi; adapter phải gửi `expected_revision`.
-- Unknown là NULL, không dùng 0 thay "chưa rõ".
+- Opaque string IDs; database timestamps normally epoch milliseconds. JSON times
+  use protocol timestamps and the copy ledger uses epoch hours.
+- Complex resource bodies are JSON. Generated virtual columns are read-only views
+  of that body, not a second source of truth.
+- One write connection, WAL, foreign keys enabled and 5-second busy timeout.
+- Revisions protect concurrent edits. Unknown values remain NULL, not invented zeroes.
+- Only the daemon writes runtime state. Offline maintenance enforces the writer lock.
 
-## 001_core.sql
+## Migration inventory
 
-| Bảng | Cột chính | Ghi chú |
-| --- | --- | --- |
-| `plans` | `id`, `principal`, `body`, `consumed_job` | Plan TTL 10 phút, một job/plan |
-| `collections` | `id`, `principal`, `plan_id`, `body` | Bộ nguồn đã copy, sống qua nhiều run; `retired_at` thêm ở 020 |
-| `jobs` | `id`, `principal`, `collection_id`, `state`, `body` | Hàng đợi chính. `jobs_state` cho list; partial unique `one_active_run` chặn hai run active/collection |
-| `events` | `sequence`, `job_id`, `body` | Append-only, dùng cho `events`/NDJSON; `events_job(job_id,sequence)` |
-| `idempotency` | `(principal,path,key)`, `hash`, `body` | Replay/mismatch theo key |
+### 001_core.sql
 
-## 002_engine.sql
+`plans` stores principal, preview body and consumed job; plan TTL is ten minutes.
+`collections` persists copied sources across runs. `jobs` stores principal,
+collection, state and body; `one_active_run` excludes concurrent writers per
+collection. `events` is append-only by sequence. `idempotency` is keyed by
+principal/path/key and stores request hash and replay body.
 
-| Bảng | Cột chính | Ghi chú |
-| --- | --- | --- |
-| `settings` | `key`, `value` | Default destination, preferences (`prefs:<principal>`), báo cáo Telegram (`tg_report:*`), `queue_paused` |
-| `destinations` | `id`, `folder_id`, `resource_key`, `drive_id`, `name`, `revision`, `created_at` | Đích đã validate, không unique theo tên |
-| `items` | PK `(collection_id,source_id)`, `job_id`, `kind` wrapper/folder/file/shortcut, `state`, `generation`, `intent_key`, `dest_parent_id`, `dest_id`, `attempts`, `next_attempt_at`, `error_code`, `list_state`, `page_token`, `op` create/align, `seen_job`, `scan_job`, `old_dest_id` | Item = mapping + write intent. State (CHECK): pending/executing/reconciling/done/retry_wait/blocked/failed/skipped/cancelled; code hiện chỉ ghi pending/executing/reconciling/done/blocked/failed/skipped/cancelled (`internal/state/model.go`). Index `items_job_state`, `items_parent` |
-| `sync_subscriptions` | `collection_id` PK, `id`, `mode`, `state`, `schedule`, `schedule_revision`, `content_policy`, `revision`, `next_due`, `next_key`, `cursor`, `rerun_requested`, `next_poll_at`, `last_*` | Một subscription/collection; state waiting_for_baseline…error |
-| `item_versions` | `(collection_id,source_id,generation)`, `dest_id`, `fingerprint`, `state` current/superseded/trashed | Lịch sử version cho `replace_copy`/repair |
-| `sync_occurrences` | `(collection_id,schedule_revision,occurrence_key)`, `job_id` | Claim slot một lần |
+### 002_engine.sql
 
-## 003_principals.sql
-
-| Bảng | Cột chính | Ghi chú |
-| --- | --- | --- |
-| `principals` | `id`, `(kind,external_id)` UNIQUE, `role` owner/operator, `enabled`, `created_at` | Owner là principal tổng hợp `owner`; operator Telegram có `external_id` = user id |
-
-## 004_telegram.sql
-
-| Bảng | Cột chính | Ghi chú |
-| --- | --- | --- |
-| `telegram_meta` | `id=1`, `instance`, `next_update` | Offset chỉ tiến sau khi update đã ghi |
-| `telegram_inbox` | `(bot,update_id)`, `body`, `state`, `attempts`, `error_code`, `received_at` | Raw update tối thiểu; replay sau restart; index `telegram_inbox_state` |
-| `callback_states` | `id`, `principal`, `chat_id`, `message_id`, `action`, `object`, `revision`, `payload`, `expires_at`, `consumed` | Nút ghi là one-shot, TTL 15 phút; index hết hạn |
-| `notification_outbox` | `id`, `kind` progress/final, `principal`, `job_id`, `chat_id`, `state`, `attempts`, `next_send`, `last_hash`, `last_state`, `error_code`, `coalesce_key`, `note` | Coalesce theo `coalesce_key`; `note` là mã lỗi/state khi gửi |
-
-## 005_notify.sql
-
-| Bảng | Cột chính | Ghi chú |
-| --- | --- | --- |
-| `notify_markers` | `(principal,subject)`, `code`, `updated_at` | Lỗi lặp của một subscription chỉ báo một lần tới khi code đổi hoặc run thành công (xóa marker) |
-
-`ALTER notification_outbox ADD note` (cùng file).
-
-## 006_audit.sql
-
-| Bảng | Cột chính | Ghi chú |
-| --- | --- | --- |
-| `audits` | `id`, `collection_id`, `job_id`, `state` running/completed/failed, `counts` JSON, `plan` JSON, `scanned`, `revision`, `started_at`, `finished_at` | Một job audit/repair tương ứng một dòng; revision bảo vệ `POST /repair`; index `audits_collection` |
-| `audit_findings` | PK `(audit_id,kind,source_id,dest_id)`, `repairable`, `repaired`, `detail` | Upsert theo PK nên quét lại (restart) không nhân đôi; index `audit_findings_kind` |
-
-`jobs` không thêm cột: `kind` (`audit`/`repair`/`cleanup`), `audit_id`, `dry_run`
-là trường mới trong body JSON, `omitempty`.
-
-## 007_sync_replay.sql
-
-| Bảng / thay đổi | Ghi chú |
+| Table | Purpose and key fields |
 | --- | --- |
-| `sync_pending_changes(collection_id,seq)`, `cursor_after`, `change_json` | Page feed lưu thô trong lúc bootstrapping; xoá khi replay/overflow |
-| `sync_subscriptions` +`full_reconcile_every` (giây, mặc định 604800), `next_full_reconcile_at`, `replay_overflow` | Slot full reconcile định kỳ |
+| `settings` | Preferences, default destination, durable queue pause and notification markers |
+| `destinations` | Folder/resource/drive IDs, name, revision and creation time |
+| `items` | PK collection/source; mapping, generation, intent, destination/parent, attempts, next attempt, error, list/page checkpoints, create/align operation and seen/scan jobs |
+| `sync_subscriptions` | One per collection; mode/state/schedule, schedule revision, due slot, cursor, rerun request, poll time and last outcome |
+| `item_versions` | PK collection/source/generation; destination, fingerprint and current/superseded/trashed state |
+| `sync_occurrences` | Unique collection/schedule revision/slot admission |
 
-## 008_copy_ledger.sql
+Item states include pending, executing, reconciling, done, blocked, failed, skipped
+and cancelled; the historical CHECK also admits retry_wait. Runtime success is
+`done` for items and `succeeded` for jobs. Indexes support job state and parent lookup.
 
-| Bảng | Ghi chú |
+### 003_principals.sql
+
+`principals` stores kind/external ID, role owner/operator, enabled flag and creation
+time. Kind/external ID is unique. HTTP owner is synthetic; Telegram operators use
+numeric external user IDs.
+
+### 004_telegram.sql
+
+`telegram_meta` persists bot instance and next update offset. `telegram_inbox`
+records updates before the offset advances. `callback_states` binds random IDs to
+principal/chat/message/action/object/revision/payload, expiry and consumed state.
+`notification_outbox` stores durable/coalesced delivery state, attempts, send time,
+last hash/state and error. Callback mutation lifetime is bounded and one-shot.
+
+### 005_notify.sql
+
+`notify_markers(principal,subject)` suppresses repeated subscription errors until
+code change or success. Adds the outbox notification note field.
+
+### 006_audit.sql
+
+`audits` stores collection/job, running/completed/failed state, counts/plan JSON,
+revision, scan count and timestamps. `audit_findings` upserts on
+`(audit_id,kind,source_id,dest_id)` with repairable/repaired/detail fields.
+Job kind, audit ID and dry-run flags are additive JSON body fields.
+
+### 007_sync_replay.sql
+
+`sync_pending_changes(collection_id,seq)` buffers raw Changes pages and cursor-after
+checkpoints during bootstrap. Subscription fields add periodic full reconciliation
+(default 604800 seconds), next reconcile time and replay overflow.
+
+### 008_copy_ledger.sql
+
+`copy_ledger(principal,hour)` records confirmed logical bytes per hour. Completion
+and ledger increment commit together; reads sum a rolling 24-hour window. It does
+not measure Google's authoritative quota cap.
+
+### 009_hot_queries.sql
+
+Adds indexes `items_job_list`, `items_scan_list`, `sync_due_poll`, `sync_due_full`.
+Subscription `replay_count`/`replay_bytes` are backfilled and maintained rather than
+counting the buffer on every poll.
+
+### 010_conflict_policy.sql
+
+Adds `items.conflict_action` and `dest_name`, with `items_dest_name` lookup/reservation.
+Existing mapped items retain their resolved names across retries.
+
+### 011_selective_sync.sql
+
+Adds `items.rel_path`, backfilled once through an indexed temporary table and
+recursive traversal. `items_collection_kind_state` supports filtered empty-folder work.
+
+### 020_collection_lifecycle.sql
+
+Adds nullable collection `retired_at`, retirement index and indexed source/destination
+lookup scoped by principal. Retirement is distinct from deleting remote files.
+
+### 021_queue.sql
+
+Generated job fields: `batch_id`, `queue_priority`, `queue_order`, `fair_group`.
+`saveJob` remains the body source of truth. Indexes `jobs_batch`, `jobs_queue` and
+`jobs_fair` support batch queries and fair priority admission.
+
+### 022_h_api.sql
+
+Adds repairable-finding and collection/state/job-list indexes. Newest-first keyset
+pagination uses index row order rather than temporary sort trees.
+
+### 023_after_copy_sync.sql
+
+`after_copy_sync` is keyed by collection and stores principal, requested mode,
+pending/retry state, attempts, next attempt, error/warning and timestamps. Initial
+success and its pending request commit together; failures retry without changing
+the completed copy's result.
+
+### 024_report.sql
+
+Ensures the job/state item index supports failed/blocked/skipped report paging.
+
+### 025_history.sql
+
+`jobs_history` indexes JSON `updated_at` converted to epoch milliseconds. History
+keysets use `(updated_ms,rowid)`, avoiding lexical RFC3339 fractional-time issues.
+
+### 026_job_bookkeeping.sql
+
+`job_bookkeeping(job_id,created_at)` references jobs with cascade. Terminal job and
+collection state commit with this marker. `RunFinished` clears it after subscription/
+after-copy bookkeeping; startup replays unfinished markers. Non-initial audit/repair/
+cleanup jobs do not overwrite the collection's baseline state.
+
+### 027_protection.sql
+
+| Table | Purpose |
 | --- | --- |
-| `copy_ledger(principal,hour)` PK, `bytes` | Byte copy xong theo giờ, cho cửa sổ 24h và quota Q1 |
+| `snapshots` | Collection/job, capturing/ready, pin/revision/time/expiry; one per capture job |
+| `snapshot_items` | PK snapshot/source; immutable item JSON, destination ID and captured content identity |
+| `destination_actions` | PK job/ordinal; frozen restore/remove plan with pending/executing/done checkpoint |
+| `collection_archives` | Durable parent/create intent, attempted flag and destination ID |
 
-## 009_hot_queries.sql
+Destination lookup indexes protect referenced physical versions. Capture readiness
+commits with job success; cancellation removes unfinished capture metadata.
+Collection JSON adds `protection:{mirror,snapshots,keep_days,keep_count}` with defaults
+false/false/30/10. Runs freeze options at admission; restore jobs carry snapshot ID.
+Restored mapping generations never decrease and align retains the physical intent.
+Future creates use a fresh higher generation rather than reusing an old operation.
 
-Index cho hot path (đo bằng `EXPLAIN QUERY PLAN`):
-`items_job_list(job_id,kind,list_state)`, `items_scan_list(scan_job,kind,list_state)`,
-`sync_due_poll(mode,state,next_poll_at)`, `sync_due_full(mode,state,next_full_reconcile_at)`.
-Thêm cột `sync_subscriptions.replay_count`, `replay_bytes` (đếm sẵn, không
-`COUNT(*)` mỗi poll) và backfill một lần.
+## Notification markers and retention
 
-## 010_conflict_policy.sql
+Batch notices use existing settings keys for open/sealed/final markers and a unique
+outbox coalesce key. `delivery_unknown` fences uncertain first-summary sends; no
+exactly-once remote guarantee is claimed.
 
-`items` + `conflict_action` (skip/rename/update), `dest_name`
-(index `items_dest_name(dest_parent_id,dest_name)` giữ chỗ tên trong thư mục đích).
-Backfill: item đã có `dest_id` được giữ tên hiện tại.
-
-## 011_selective_sync.sql
-
-`items` + `rel_path` (đường dẫn dưới gốc đã copy), backfill bằng CTE đệ quy một
-lần qua bảng tạm; index `items_collection_kind_state(collection_id,kind,state)`
-cho prune thư mục rỗng sau lọc.
-
-## 020_collection_lifecycle.sql
-
-`collections` + `retired_at` (NULL = chưa retire), index `collections_retired`.
-Index `collections_source_dest(principal, json_extract(body,'$.source_id'),
-json_extract(body,'$.destination_id'))` cho tra bản sao cũ (L2) không quét bảng.
-
-## 021_queue.sql
-
-`jobs` + cột sinh từ body (một nguồn sự thật là `saveJob`):
-`batch_id`, `queue_priority`, `queue_order`, `fair_group`
-(`batch_id` hoặc `collection_id`). Index `jobs_batch` (partial), `jobs_queue(state,queue_priority,queue_order)`,
-`jobs_fair(state,fair_group)`.
-
-## 022_h_api.sql
-
-Index cho truy vấn API: `audit_findings_repairable(audit_id) WHERE repairable=1`,
-`jobs_collection(collection_id,state)`, `jobs_collection_rowid(collection_id)`,
-`jobs_state_rowid(state)` (rowid ở cuối index để phân trang newest-first không
-cần temp B-tree).
-
-## 023_after_copy_sync.sql
-
-| Bảng | Cột chính | Ghi chú |
-| --- | --- | --- |
-| `after_copy_sync` | `collection_id` PK, `principal`, `mode`, `state` pending, `attempts`, `next_attempt_at`, `last_error`, `warning`, `created_at`, `updated_at` | Ghi cùng transaction với kết quả job initial (S8); retry 5 lần; index `after_copy_sync_due` |
-
-## 024_report.sql
-
-`items_job_state(job_id,state)` — đọc item failed/blocked/skipped của một job,
-rowid giữ cursor ổn định.
-
-## 025_history.sql
-
-`jobs_history(CAST((julianday(json_extract(body,'$.updated_at')) - 2440587.5) * 86400000 AS INTEGER))`
-— export lịch sử theo `(updated_ms,rowid)`, tránh so sánh chuỗi RFC3339 có/không
-phần lẻ giây.
-
-## 026_job_bookkeeping.sql
-
-`job_bookkeeping(job_id PK → jobs ON DELETE CASCADE, created_at)` — dấu ghi cùng
-transaction với trạng thái terminal của job và trạng thái collection
-(`Store.FinishJob`). `RunFinished` xóa dấu khi đã ghi subscription hoặc yêu cầu
-sync sau copy; dấu còn sót (crash giữa hai bước) được phát lại lúc daemon khởi
-động (`FinishPendingBookkeeping`). Job audit, repair và cleanup cũng kết thúc qua
-`FinishJob` (có dấu) nhưng không đổi trạng thái collection — chỉ job `initial` làm việc đó.
-
-## Ownership và vòng đời
-
-- Runtime state (jobs/items/events/ledger/outbox) chỉ daemon ghi; CLI/TUI/tray/
-  Telegram không mở DB. `maintenance` (backup/restore/cleanup/prune/vacuum) là
-  ngoại lệ offline, từ chối khi `instance.lock` đang bị giữ.
-- Retention: `maintenance prune --older-than 90d` xóa job đã xong + event +
-  intent cũ + inbox/outbox cũ + plan hết hạn, **giữ** collection, mapping đang
-  dùng và job còn được tham chiếu (items/plans/sync_occurrences). Mặc định dry-run.
-- `cleanup` chỉ xóa file tạm do chương trình tạo, không xóa DB/WAL/key/backup
-  ([cleanup.go](../internal/maintenance/cleanup.go)).
-- Backup dùng `VACUUM INTO` + key + token + config ([maintenance.go](../internal/maintenance/maintenance.go));
-  restore kiểm sha256, `integrity_check`, `foreign_key_check`, schema ≤ binary.
-
-U10 uses the existing `settings` key space: `batch_notice_open:<principal>:<batch>`
-stores a JSON seal/time, `batch_notice_done:<principal>:<batch>` is a durable
-notification marker. Outbox coalesce key `batch-final:<principal>:<batch>` is unique.
-No migration. `delivery_unknown` fences uncertain first-summary sends across restart.
+Prune preserves current mappings, collections and referenced jobs, including
+snapshot capture jobs. **CLI prune applies unless `--dry-run` is specified**;
+preview before changing history. Snapshot retention removes metadata only and
+pinned points are exempt. Forget cascades collection metadata while keeping Drive
+files. Offline cleanup only removes app temporary files. See
+[operations](runbooks.md) and [maintenance implementation](../internal/maintenance).

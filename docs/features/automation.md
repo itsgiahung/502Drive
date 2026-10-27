@@ -1,152 +1,125 @@
-# Sync theo lịch và realtime
+# Scheduled and realtime synchronization
 
-Source: [schedule.go](../../internal/schedule/schedule.go),
-[sync.go](../../internal/state/sync.go) (store), [app/sync.go](../../internal/app/sync.go),
-[syncer.go](../../internal/daemon/syncer.go) (daemon). Test:
-[schedule_test.go](../../internal/schedule/schedule_test.go),
-[syncer_test.go](../../internal/daemon/syncer_test.go),
-[app/sync_test.go](../../internal/app/sync_test.go),
-[httpapi/sync_test.go](../../internal/httpapi/sync_test.go).
+A collection keeps its destination root and source-to-copy mappings across runs.
+Synchronization is one-way: source to destination. Source removal preserves the
+copy unless [mirror](protection.md) is explicitly enabled.
 
-## Subscription
+## Subscriptions and schedules
 
-Một collection có tối đa một subscription:
-`mode` scheduled/realtime, `state` waiting_for_baseline · bootstrapping · active ·
-paused · stopping · stopped · needs_reconcile · error, `content_policy`
-versioned_copy/replace_copy, `schedule_revision`, `revision`.
+Each collection has at most one subscription. Modes are `scheduled` and `realtime`;
+states include `waiting_for_baseline`, `bootstrapping`, `active`, `paused`,
+`stopping`, `stopped`, `needs_reconcile` and `error`.
 
-- `PUT /v1/collections/{id}/sync` tạo/cập nhật (một subscription/collection, đổi
-  mode atomic, không tạo output root mới). Realtime lấy `StartPageToken`
-  **trước** khi ghi subscription ([app/sync.go](../../internal/app/sync.go)).
-- Collection chưa `ready` → `waiting_for_baseline`; run baseline xong tự bật.
+`PUT /v1/collections/{id}/sync` creates or updates the subscription atomically.
+Realtime captures a start-page token before saving configuration. An incomplete
+baseline leaves the subscription waiting until the initial copy succeeds.
 
-## Schedule
-
-`ScheduleSpec` oneOf:
-
-| Kind | Field | Ghi chú |
+| Schedule | Fields | Semantics |
 | --- | --- | --- |
-| interval | `interval_minutes` 5–10080, `anchor_at` UTC | Elapsed UTC, không phụ thuộc host |
-| daily | `timezone` IANA, `local_time` HH:MM | Wall-clock theo zone |
-| weekly | + `weekdays` ISO 1..7 | Một slot/local calendar day |
+| Interval | `interval_minutes` 5–10080, UTC `anchor_at` | Elapsed UTC time |
+| Daily | IANA `timezone`, `local_time` HH:MM | Local wall-clock time |
+| Weekly | Daily fields plus ISO `weekdays` 1–7 | One slot per selected local date |
 
-- DST: giờ không tồn tại bị bỏ; giờ lặp chỉ chạy **một** slot (key = date+HH:MM+zone).
-- Misfire: nhiều slot lỡ → **một** catch-up run, next future.
-- `sync_occurrences(collection, schedule_revision, occurrence_key)` chặn chạy lặp.
-- Queue đầy: slot giữ nguyên due, tick sau thử lại (không trôi, không spin).
-- Timezone mặc định lấy preference (`TZ` hoặc `Asia/Ho_Chi_Minh`), đổi được qua
-  `PATCH /v1/preferences`; CLI/Telegram/TUI dùng preference này.
-- Preview 3 lần chạy tới: `Spec.Preview` ở CLI `sync enable --dry-run` và thẻ xác
-  nhận Telegram trước khi lưu.
+Nonexistent DST times are skipped; repeated local times produce one slot.
+Missed slots coalesce into one catch-up run. `sync_occurrences` prevents duplicate
+admission; a full queue keeps the slot due for a later tick. Defaults follow the
+user's timezone preference. `sync enable --dry-run` previews three future runs.
 
-## Delta run
+```sh
+502drive sync enable COLLECTION --daily 22:00 --timezone UTC
+502drive sync enable COLLECTION --every 30m
+502drive sync enable COLLECTION --mode realtime
+502drive sync status COLLECTION
+```
 
-- Run sync dùng **cùng collection/root**; `items` giữ mapping. Folder được list
-  lại; file thay đổi fingerprint → generation mới; move/rename → `op=align`.
-  Nếu tên nguồn đổi (fingerprint gồm cả tên nên cũng đổi), generation mới
-  quyết định lại `dest_name` theo tên nguồn mới; cùng tên trong cùng generation
-  giữ quyết định cũ để restart không đổi tên.
-- Fingerprint là `m|md5|tên` cho file thường và `t<modifiedTime>||tên` cho file
-  Google (không có md5); chỉ khi thiếu cả hai mới dùng `version`. Drive tăng
-  `version` cả khi không ai sửa (chia sẻ thư mục cha, file vừa được copy), nên
-  dùng nó sẽ copy lại file không đổi. Fingerprint dạng cũ `v<version>|md5|tên`
-  được so một lần theo md5 + tên rồi ghi lại dạng mới, nên nâng cấp không copy
-  lại hàng loạt. Thư mục đổi tên xóa `dest_name` cũ để `align` dùng tên mới.
-- Đổi tên thuần một file thường (md5 không đổi) chỉ đổi tên bản copy (`op=align`),
-  không copy lại. File Google (không md5) đổi tên thì `modifiedTime` cũng đổi nên vẫn là
-  generation mới — giới hạn của Drive API, không phân biệt được với sửa nội dung.
-- Item mất khỏi nguồn → `error_code=source_removed`, bản đích giữ nguyên.
-- Chống xoá nhầm: nếu một lần quét mất **>30%** mục đã map (sàn 10 mục), run
-  dừng **trước khi copy**, thành `partial` với `last_error.code=source_mass_removal`
-  và body có `source_removed`; `RunFinished` tạo audit S1 read-only
-  (`trigger=reconcile_watch`) để giải thích, không tự sửa/xoá đích. Dưới ngưỡng
-  chỉ đánh dấu `source_removed`.
-- `versioned_copy`: bản cũ giữ; `replace_copy`: trash bản cũ sau khi map bản mới.
-- `name/root` không đổi; không tạo wrapper mới mỗi run.
+## Delta runs
 
-## Realtime (Drive Changes polling)
+A run reuses the collection/root. Reachability starts at the source root;
+descendants are scanned only when encountered in the current tree. File content
+changes create a new generation. Moves and supported pure renames use `align`.
 
-- Mỗi subscription có cursor riêng (`sync_subscriptions.cursor`); poll 10s khi
-  vừa có thay đổi, 60s thường, 300s khi lâu không đổi; cooldown theo `Retry-After`.
-- Mỗi page: lọc bằng `RelevantChange` (item đã biết hoặc nằm trong folder nguồn);
-  `AdvancePoll` ghi cursor + admit run **cùng transaction**, nên cursor không vượt
-  thay đổi chưa có run.
-- **Trong lúc baseline/reconcile** (`bootstrapping`): feed vẫn được poll nhưng
-  page được lưu thô vào `sync_pending_changes` (`file_id`, `removed`, `parents`,
-  `trashed`), **cursor chưa tiến**. Sau khi baseline xong, `replayPending` lọc
-  `RelevantChange` trên mapping đã đủ rồi `FinishReplay` xoá buffer, tiến cursor
-  và admit run **trong một transaction**. Trần 5000 thay đổi hoặc 4 MiB mỗi
-  collection; vượt trần → `replay_overflow` → subscription thành
-  `needs_reconcile` + full reconcile, không phát lại một tập đã biết thiếu.
-  Restart giữa chừng đọc tiếp từ `cursor_after` của dòng cuối, không lặp trang.
-- **Full reconcile định kỳ**: `full_reconcile_every` (giây, mặc định 604800 = 7
-  ngày, `0` tắt) đặt lúc `PUT /sync` từ config `full_reconcile_every` (Go
-  duration, rỗng = 168h, `0`/`off` = tắt). `next_full_reconcile_at` lệch ±10%;
-  slot được đẩy trước khi admit nên không chồng run; queue đầy thì giữ slot
-  due cho tick sau. Subscription cũ (schema trước 007) được xếp slot ở tick đầu
-  tiên, không dồn chạy ngay khi nâng cấp.
-- Cursor hết hạn/không dùng được → lấy token mới + `MarkNeedsReconcile` → full
-  reconcile run (`bootstrapping`) rồi `active`.
-- Notification lỗi lặp của một subscription chỉ gửi một lần (marker
-  `notify_markers`), xóa khi có run thành công.
+Binary fingerprints prefer MD5; Google-native files prefer modified time, falling
+back to version only when necessary. Google can change `version` without a content
+edit, so it is not the primary identity. Legacy fingerprints are upgraded without
+mass recopying. A binary rename with unchanged MD5 renames its copy in place;
+Google-native renames can still look like edits when modified time also changes.
 
-## Bộ lọc và copy lại (S5, L2)
+`versioned_copy` retains earlier copies. `replace_copy` trashes a superseded copy
+only after the new copy is confirmed, and preserves snapshot-referenced versions.
+Missing sources become `source_removed`. Filter changes affect future discovery,
+not deletion of existing output.
 
-- `filter` lưu trên plan → job → collection (`GET/PUT /v1/collections/{id}/filter`,
-  revision-guarded). Mỗi run delta dùng **cùng** bộ lọc đã lưu; đổi bộ lọc chỉ ảnh
-  hưởng lần chạy sau, không xóa gì ở đích.
-- Mục bị loại: `skipped/filtered`, không ghi; thư mục bị loại không được list nên
-  cây con không bị đọc; thư mục rỗng sau lọc không tạo trừ `keep_empty_folders`.
-  Chi tiết: [clone-jobs](clone-jobs.md#lọc-khi-đồng-bộ-s5), [design/s5](../design/s5-selective-sync.md).
-- `POST /v1/jobs` với `mode=update` chạy một delta run trên collection hiện có
-  (giữ mapping/root); `mode=new` tạo bản sao mới. Trùng nguồn+đích không có `mode`
-  → `409 already_copied`. Xem [clone-jobs](clone-jobs.md#copy-lại-cùng-nguồn-l2).
+The mass-removal guard stops **before copying** when more than 30% of at least ten
+mapped items disappear. It produces `partial/source_mass_removal` and a read-only
+audit. It does not automatically repair or remove destination content.
 
-## Quota tài khoản
+## Realtime polling and replay
 
-- `copy_ledger(principal,hour,bytes)`: byte đã copy xong, ghi cùng transaction
-  với `CompleteItem`; `CopiedBytes24h` là một `SUM` 24 bucket (xem
-  [verification](../verification.md) cho số đo). Chỉ file có `size` mới cộng.
-- `dailyLimitExceeded` → job `blocked`, `last_error.code=quota_exceeded`,
-  `resume_after` = **midnight America/Los_Angeles** kế tiếp.
-  `storageQuotaExceeded` → `resume_after` = +24h (cần người dọn dung lượng, job
-  vẫn tự kiểm tra lại). Quota khác: `Retry-After` hoặc +1h.
-- Item về `pending` với `attempts-1` và `next_attempt_at=resume_after`; **không
-  đốt lượt**, **không gửi lại mù**. Worker dừng claim, job giữ nguyên id.
-- Engine mỗi vòng poll gọi `ResumeDueBlocked`; job `blocked` có mốc đã qua và
-  `desired_state=run` → `queued` (cùng id), rồi tiếp tục quét/copy phần còn lại.
-  `resume_after` hiện trong `GET /v1/jobs/{id}` (null khi không có).
+Each subscription has its own Changes cursor. Polling adapts to activity
+(10 / 60 / 300 seconds) and honors rate-limit cooldowns. Cursor advancement and run
+admission commit together, so a cursor cannot pass changes without durable work.
 
-## Pause / stop / resume
+During baseline/reconcile, raw changes are buffered while mappings are incomplete.
+Replay re-evaluates relevance against completed mappings, advances the cursor and
+admits work in one transaction. Limits are 5,000 changes or 4 MiB per collection;
+overflow requests a full reconcile rather than replaying an incomplete set.
+Restart resumes from the persisted page checkpoint.
 
-- `pause`: dừng lập lịch/poll mới; run đang chạy không bị hủy.
-- `stop`: disable subscription, cancel run tự động đang chờ, dừng run đang chạy
-  cooperative (`stopping` → `stopped`), **giữ** file/root/history. Run tự động gồm
-  mọi trigger `scheduled realtime reconcile coalesced full_reconcile` (kể cả full
-  reconcile định kỳ đã admit).
-- `resume`: validate collection; scheduled coalesce slot lỡ một lần; realtime
-  catch-up hoặc `needs_reconcile` nếu cursor mất.
-- `POST .../runs`: chạy delta ngay cả khi sync off; nếu đang có run → trả run hiện
-  có + `rerun_requested` (coalesce), follow-up admit khi run trước kết thúc.
+Full reconciliation defaults to every seven days, with jitter. Configuration
+`full_reconcile_every` accepts a Go duration; `0` / `off` disables it. A full queue
+keeps its reconcile slot due. Expired cursors request a new token and full scan.
+A successful run clears deduplicated subscription-error notification markers.
+Full reconcile compares metadata/tree state, not every file's content digest.
 
-## Tự bật sau lần copy đầu (S8)
+## Pause, stop and run now
 
-- Preference `after_copy_sync_mode` (`off|realtime|hourly|six_hourly|daily`) và
-  cờ `copy --sync MODE` (hoặc `after_copy_sync_mode` trên `POST /v1/jobs`) áp cho
-  **collection mới** khi job initial `succeeded`. Mode ghi trên job nên sống qua
-  restart; dòng chờ `after_copy_sync` được ghi cùng transaction với kết quả job.
-- Commit terminal của job copy ghi trạng thái job, trạng thái collection và một
-  marker bookkeeping (`job_bookkeeping`) **trong một transaction**; bookkeeping
-  subscription/after-copy xóa marker đó. Marker còn lại lúc khởi động được replay
-  trước khi worker chạy, nên chết giữa hai bước không làm collection kẹt trạng thái
-  cũ và không mất yêu cầu sync sau copy.
-- Subscription do người dùng đặt trước luôn thắng; job `partial`/`failed` không
-  tạo sync. Lỗi tạo subscription chỉ ghi vào dòng chờ (retry 5 lần), không đổi
-  kết quả copy. Xem [design/h2-after-copy-sync.md](../design/h2-after-copy-sync.md).
+- `sync pause`: suspend future scheduling/polling; an admitted run is not cancelled.
+- `sync stop`: disable the subscription and cooperatively cancel automatic work,
+  including scheduled, realtime, coalesced and full-reconcile triggers. Keep files,
+  root and history.
+- `sync resume`: validate the collection, coalesce a missed schedule or catch up
+  Changes; reconcile if the cursor is unusable.
+- `sync run`: request a delta even with sync off. An active run is reused and a
+  follow-up request coalesces through `rerun_requested`.
 
-## Chưa hỗ trợ
+Job pause/cancel and global queue pause are separate controls. Restore apply
+pauses sync and leaves it paused after completion; see [protection](protection.md).
 
-- Chưa có `corpus_key`/cursor theo account; mỗi subscription một cursor.
-- Digest/nội dung file và "pause cả run đang chạy" bằng một nút: chưa có.
-- Full reconcile định kỳ chỉ đọc lại metadata/cây, không so digest nội dung.
-- Filter theo loại/thành viên nguồn (type/member policy) chưa có; chỉ lọc theo cây.
+## After-copy synchronization
+
+`copy --sync off|realtime|hourly|six_hourly|daily` overrides the corresponding
+preference for a **new collection**. The choice persists on the initial job and is
+applied only after success. An existing user-configured subscription takes priority.
+Subscription failures do not change a successful copy result.
+
+Terminal job state, collection state and a bookkeeping marker commit together.
+Startup replays unfinished bookkeeping before workers begin, preserving after-copy
+configuration across a crash between terminal state and subscription setup.
+
+## Throttle and quota
+
+AIMD worker permits and the read token bucket are shared across jobs. A 429 or
+rate-limit reason waits without spending item attempts. Retry delay honors the
+larger of backoff/jitter and `Retry-After`. Provider 5xx, network failure,
+permissions and quota exhaustion remain distinct error classes.
+
+The per-principal hourly copy ledger records confirmed logical bytes in the same
+transaction as item completion. It is a local rolling-24-hour total, not proof of
+Google's actual account limit.
+
+| Google reason | Behavior |
+| --- | --- |
+| `dailyLimitExceeded` | Block until next midnight in America/Los_Angeles |
+| `storageQuotaExceeded` | Block for 24 hours; user may need to free storage |
+| Other quota | Use Retry-After or a conservative fallback |
+
+Quota-blocked jobs retain their IDs and operation identity. Due jobs with desired
+state `run` are requeued; no item attempt is spent. `resume_after` is nullable in
+job responses. See [quota design](../design/q1-quota.md).
+
+## Limits and sources
+
+No account-wide shared cursor, webhook/push delivery, bidirectional synchronization
+or content-digest full reconcile. See [schedule](../../internal/schedule),
+[state sync](../../internal/state/sync.go), [daemon syncer](../../internal/daemon/syncer.go)
+and their tests. Local fixtures do not establish live quota/reset behavior.

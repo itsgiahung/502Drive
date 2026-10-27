@@ -3,7 +3,7 @@
 
 Licenses are read from each module's LICENSE/COPYING file in the module cache.
 A module that is not downloaded, or whose license cannot be recognised, is
-listed as "chưa xác định" instead of guessing.
+listed as "unidentified" instead of guessing.
 """
 import glob
 import os
@@ -24,7 +24,7 @@ MARKERS = [
 
 def license_of(directory):
     if not directory or not os.path.isdir(directory):
-        return 'chưa xác định'
+        return 'unidentified'
     names = ('LICENSE*', 'License*', 'COPYING*', 'Copying*', 'NOTICE*', 'Notice*')
     for pattern in names:
         for path in sorted(glob.glob(os.path.join(directory, pattern))):
@@ -36,7 +36,7 @@ def license_of(directory):
             for name, test in MARKERS:
                 if test(head):
                     return name
-    return 'chưa xác định'
+    return 'unidentified'
 
 
 def modules():
@@ -54,12 +54,11 @@ def main():
     rows = list(modules())
     main_module = rows[0][0]
     print('# Third Party Notices\n')
-    print('502Drive là phần mềm GPL-3.0 (xem [LICENSE](LICENSE)). File này liệt kê')
-    print('các module Go mà binary phụ thuộc, sinh từ `go list -m all` và license đọc')
-    print('từ file LICENSE trong module cache. Module không tải sẵn hoặc không nhận')
-    print('dạng được license ghi **chưa xác định** (không đoán).\n')
-    print('Sinh lại bằng: `python3 scripts/third-party-notices.py > THIRD_PARTY_NOTICES.md`')
-    print('(sau `go mod download all`).\n')
+    print('502Drive is licensed under GPL-3.0-only; see [LICENSE](LICENSE). This list')
+    print('comes from `go list -m all`; licenses are identified from files in the module')
+    print('cache. Unavailable or unrecognized licenses are marked **unidentified**.\n')
+    print('Regenerate with `python3 scripts/third-party-notices.py > THIRD_PARTY_NOTICES.md`')
+    print('after downloading the module graph.\n')
     print('| Module | Version | License |')
     print('| --- | --- | --- |')
     for path, directory, version in rows:
@@ -67,9 +66,9 @@ def main():
             continue
         print(f'| `{path}` | {version or "—"} | {license_of(directory)} |')
     print()
-    print('Ghi chú: danh sách gồm cả dependency chỉ dùng cho test/build tool (ví dụ')
-    print('go-winres chạy trong hook release, không nằm trong binary). Binary release')
-    print('chỉ chứa các package được import bởi `cmd/502drive` và `cmd/502drive-tray`.')
+    print('The graph includes test and build-tool dependencies as well as runtime modules.')
+    print('Release binaries contain only packages imported by `cmd/502drive` and')
+    print('`cmd/502drive-tray`; for example, the Windows resource generator is a build tool.')
     return 0
 
 

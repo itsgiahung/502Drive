@@ -1,6 +1,12 @@
 # secrets and runtime data
 /.env
 /config.json
+/config/
+/secrets/
+/backups/
+/bot-token
+google-token.enc
+oauth-client.json
 data/
 data-v2/
 reports/
@@ -25,3 +31,8 @@ bin/
 # local only
 /legacy-backup/
 /references/
+
+# private collaboration notes (not product documentation)
+/docs/handoff/
+/.claude/
+/.local-notes/

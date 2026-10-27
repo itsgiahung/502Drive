@@ -1,44 +1,19 @@
-# H2 — S8: tự bật đồng bộ sau lần copy đầu
+# H2 / S8 — Enable sync after the first copy
 
-Ngày: 2026-10-27. Migration: `023_after_copy_sync.sql`.
+Persist `after_copy_sync_mode` on the admitted initial job, overriding the user's
+preference only when explicit. Supported modes: off, realtime, hourly, six_hourly,
+daily. Success creates a durable pending request only for a new collection without
+an existing user subscription; partial/failed/cancelled jobs do not enable sync.
 
-## Hành vi
+Migration 023 stores requests with attempts/lease/retry outcome. Applying uses a
+stable collection/mode key so restart and repeated bookkeeping remain idempotent.
+Provider failure retries the pending request without changing the successful copy.
+Migration 026's terminal bookkeeping fence closes the crash window before setup.
 
-1. Người dùng chọn `after_copy_sync_mode` (`off|realtime|hourly|six_hourly|daily`)
-   trong Preferences, hoặc ghi đè cho một lệnh bằng `copy --sync MODE` /
-   `after_copy_sync_mode` trên `POST /v1/jobs`.
-2. Job mang mode trong body (bền, có ngay từ admission). Khi job **initial**
-   kết thúc `succeeded`, trong **cùng transaction** ghi kết quả (`RunFinished`),
-   daemon ghi một dòng `after_copy_sync` nếu:
-   - job là `trigger=initial`, kind rỗng (không audit/repair/cleanup),
-   - collection chưa có subscription (subscription do người dùng đặt luôn thắng),
-   - mode khác `off`.
-   Job `partial`/`failed`/`cancelled` không tạo dòng nào.
-3. Syncer mỗi tick lấy tối đa 5 dòng đến hạn, đặt `applying` + lease 1 phút, rồi
-   gọi `PUT sync` nội bộ với khóa `after-copy:<collection>:<mode>`. Khóa này
-   cộng `ON CONFLICT(collection_id)` làm thao tác idempotent: retry sau crash,
-   hai lần `RunFinished`, hay hai job cùng collection đều chỉ cho một subscription.
-4. Lỗi (Google offline, chưa kết nối, collection chưa ready) ghi `last_error`,
-   lùi 1/2/3/4 phút, tối đa 5 lần rồi `failed`. **Không** đụng job copy và không
-   đổi kết quả copy.
-5. Mode ánh xạ: `realtime` → subscription realtime (cursor lấy lúc áp dụng);
-   `hourly`/`six_hourly` → interval 60/360 phút neo ở thời điểm copy;
-   `daily` → daily 02:00 theo timezone trong Preferences. `content_policy` là
-   `versioned_copy`.
+Realtime captures a token on application; intervals anchor to copy completion.
+The after-copy daily preset is 02:00 in the saved timezone, distinct from the
+interactive daily schedule preset. Content policy defaults to versioned_copy.
 
-## Cửa sổ lỗi đã kiểm
-
-| Tình huống | Kỳ vọng | Test |
-| --- | --- | --- |
-| Daemon restart ngay sau copy, trước tick syncer | dòng chờ còn, áp dụng đúng | `TestAfterCopySyncAppliesPreferenceAndSurvivesRestart` |
-| Job `partial` | không tạo subscription | `TestAfterCopySyncSkipsPartialAndNonInitialJobs` |
-| Run không phải initial (manual/sync) | bỏ qua | cùng test |
-| Hai lần `RunFinished` cùng collection | một dòng, một subscription | `TestAfterCopySyncTwiceOnOneCollectionCreatesOneSubscription` |
-| Provider lỗi lúc tạo subscription realtime | job vẫn `succeeded`; request `pending` + lỗi; lần sau áp dụng | `TestAfterCopySyncJobFlagOverridesPreferenceAndFailureKeepsJob` |
-| Mode trên job ghi đè preference `off` | subscription realtime được tạo | cùng test |
-
-## Chưa làm
-
-- Telegram đã có nút chọn mode trên thẻ xem trước và mặc định trong Cài đặt (đợt IG); TUI chưa; API + CLI đã có. Móc ở `PROGRESS.md`.
-- `daily` cố định 02:00; chưa có preference riêng cho giờ này.
-- Chưa chạy Drive thật; `StartPageToken` dùng `drivetest.Fake`.
+Verify restart before application, duplicate bookkeeping, explicit mode override,
+provider failure and existing-subscription precedence. See
+[automation](../features/automation.md), [after-copy code](../../internal/state/aftercopy.go).

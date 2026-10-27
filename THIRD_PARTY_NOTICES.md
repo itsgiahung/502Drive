@@ -1,12 +1,11 @@
 # Third Party Notices
 
-502Drive là phần mềm GPL-3.0 (xem [LICENSE](LICENSE)). File này liệt kê
-các module Go mà binary phụ thuộc, sinh từ `go list -m all` và license đọc
-từ file LICENSE trong module cache. Module không tải sẵn hoặc không nhận
-dạng được license ghi **chưa xác định** (không đoán).
+502Drive is licensed under GPL-3.0-only; see [LICENSE](LICENSE). This list
+comes from `go list -m all`; licenses are identified from files in the module
+cache. Unavailable or unrecognized licenses are marked **unidentified**.
 
-Sinh lại bằng: `python3 scripts/third-party-notices.py > THIRD_PARTY_NOTICES.md`
-(sau `go mod download all`).
+Regenerate with `python3 scripts/third-party-notices.py > THIRD_PARTY_NOTICES.md`
+after downloading the module graph.
 
 | Module | Version | License |
 | --- | --- | --- |
@@ -75,7 +74,7 @@ Sinh lại bằng: `python3 scripts/third-party-notices.py > THIRD_PARTY_NOTICES
 | `github.com/kylelemons/godebug` | v1.1.0 | Apache-2.0 |
 | `github.com/lucasb-eyer/go-colorful` | v1.2.0 | MIT |
 | `github.com/mattn/go-isatty` | v0.0.24 | MIT |
-| `github.com/mattn/go-localereader` | v0.0.1 | chưa xác định |
+| `github.com/mattn/go-localereader` | v0.0.1 | unidentified |
 | `github.com/mattn/go-runewidth` | v0.0.16 | MIT |
 | `github.com/mitchellh/hashstructure/v2` | v2.0.2 | MIT |
 | `github.com/muesli/ansi` | v0.0.0-20230316100256-276c6243b2f6 | MIT |
@@ -142,6 +141,6 @@ Sinh lại bằng: `python3 scripts/third-party-notices.py > THIRD_PARTY_NOTICES
 | `modernc.org/strutil` | v1.2.1 | BSD-3-Clause |
 | `modernc.org/token` | v1.1.0 | BSD-3-Clause |
 
-Ghi chú: danh sách gồm cả dependency chỉ dùng cho test/build tool (ví dụ
-go-winres chạy trong hook release, không nằm trong binary). Binary release
-chỉ chứa các package được import bởi `cmd/502drive` và `cmd/502drive-tray`.
+The graph includes test and build-tool dependencies as well as runtime modules.
+Release binaries contain only packages imported by `cmd/502drive` and
+`cmd/502drive-tray`; for example, the Windows resource generator is a build tool.

@@ -1,83 +1,78 @@
 # Google OAuth setup
 
-Source: [internal/drive/auth.go](../internal/drive/auth.go),
-[internal/config/config.go](../internal/config/config.go),
-[internal/cli/commands.go](../internal/cli/commands.go) (`account login`). Test:
-[auth_test.go](../internal/drive/auth_test.go),
-[auth_more_test.go](../internal/drive/auth_more_test.go),
-[setup_test.go](../internal/cli/setup_test.go).
+502Drive uses your own Google **Desktop app** OAuth client and a PKCE loopback
+callback. The daemon holds the credentials; clients and operators do not receive them.
 
-## Chuẩn bị
+## Configure the client
 
-1. Google Cloud Console → *APIs & Services* → bật **Google Drive API** → *Credentials* →
-   tạo OAuth client loại **Desktop app**. Màn hình consent để *Testing* và thêm email
-   của bạn vào *Test users*.
-2. Đưa khóa cho 502Drive bằng **một** trong ba cách (tất cả đều được chép vào
-   `<config>/secrets/oauth-client.json` với quyền 0600; file gốc không bị sửa và giá trị
-   không bao giờ được in ra):
-   - **`.env`**: `GOOGLE_OAUTH_CLIENT_ID=…apps.googleusercontent.com` và
-     `GOOGLE_OAUTH_CLIENT_SECRET=…` trong `./.env` (hoặc `<config>/.env`, hoặc
-     `--env-file PATH`), rồi `502drive setup`. Tên cũ `GDCLONE__GOOGLE_OAUTH__CLIENT_ID`/
-     `…CLIENT_SECRET` cũng được hiểu. Biến môi trường cùng tên cũng được; cờ luôn thắng.
-   - **File JSON** tải từ Google: `502drive setup --oauth-client client_secret.json`.
-     File dạng *Web* bị từ chối (cần Desktop).
-   - **Hỏi trong terminal**: chạy `502drive` hoặc `502drive setup` lần đầu và kéo-thả file JSON.
+Enable the Google Drive API in your Google Cloud project, configure the consent
+screen and create an OAuth client of type **Desktop app**. If your consent screen
+is in testing mode, add the account you will use as a test user.
 
-Client được đọc khi daemon khởi động; secret không nằm trong DB hay response.
+Choose one setup method:
 
-## Đăng nhập
-
-```bash
-502drive                            # mở TUI, nhấn l (trang Account) — tự mở trình duyệt, hiện link và chờ
-502drive account login              # tương đương trên dòng lệnh: in URL, chờ callback loopback
+```sh
+502drive setup --oauth-client /path/to/client_secret.json
 ```
 
-Trong TUI, link hiện hai lần: dạng bấm được (OSC 8) và dạng chữ ngắt dòng để chép lại
-(ví dụ khi bạn đang ở SSH, xem thêm `ssh -L` bên dưới). `esc` chỉ ẩn link; link còn hiệu
-lực tới khi hết 10 phút.
+Or set `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` in your private
+`.env`, then run `502drive setup`. Setup reads `./.env`, the configuration
+folder's `.env`, or an explicit `--env-file PATH`; flags take precedence.
+Legacy `GDCLONE__GOOGLE_OAUTH__CLIENT_ID` / `CLIENT_SECRET` names remain accepted.
 
-- Luồng PKCE loopback; URL chứa `redirect_uri=http://127.0.0.1:<port>/oauth/callback`.
-- Code chỉ dùng một lần; callback sai/không khớp state không consume session hợp lệ;
-  session TTL 10 phút.
-- Token lưu mã hoá AES-GCM trong `secrets/google-token.enc` bằng
-  `secrets/master.key` (0600). Không log token/code/verifier.
-- Sau login, kiểm `502drive doctor --online` (account/destination/Drive).
+Interactive setup can also accept the downloaded JSON path. Web-client JSON is
+rejected. Setup copies client credentials into a private file under the
+configuration directory; values are not printed. Do not commit the original JSON,
+`.env`, generated configuration or token files.
 
-### Daemon ở máy khác / không mở được browser
+## Authorize your account
 
-`account login` in đúng cổng lấy từ `redirect_uri` của session, không đoán:
-
-```text
-Daemon on another machine? Run this on your machine first:
-ssh -L 50200:127.0.0.1:50200 YOU@DAEMON_HOST
+```sh
+502drive up
+502drive account login
+502drive doctor --online
 ```
 
-`50200` lấy từ URL phiên (nếu bạn cấu hình `oauth_callback_port`). Nếu không
-forward được cổng đó, đặt `oauth_callback_port` cố định trong config rồi login lại.
-Callback phải đến **cùng** host/port với `redirect_uri`.
+The TUI's `l` shortcut starts the same login flow. It opens a browser and shows a
+copyable URL. The callback must reach the daemon at the exact host/port in
+`redirect_uri`. The session expires after ten minutes; authorization codes are
+single-use. Invalid callback state does not consume a valid session.
 
-## Docker
+Tokens are encrypted with AES-GCM in `secrets/google-token.enc`, using the private
+`secrets/master.key`. Codes, tokens and PKCE verifiers are not logged. Hiding the
+TUI login panel does not revoke an unexpired session.
 
-- Daemon trong container bind loopback trong container; publish/forward cổng
-  callback ra host khi login: `docker run -p 127.0.0.1:50200:50200 …` (xem
-  [install-docker](install-docker.md)).
-- Mount config, token file và data dir; không đưa secret vào image layer.
+## Remote daemon
 
-## Revoke / reconnect
+Forward the callback port from your local machine to the daemon host **before**
+opening the authorization URL. Use the port printed by the login command:
 
-- `502drive account revoke`: xoá token cục bộ + gọi Google revoke; trạng thái
-  `revoking`/`revoked`; job đang chạy sẽ `blocked`/cần reconnect.
-- `reconnect_required` (refresh token hỏng/quyền bị thu hồi): chạy lại
-  `account login`; không tự đổi account.
-- Operator không bao giờ thấy token/client secret; chỉ owner cấu hình.
+```sh
+ssh -L 50200:127.0.0.1:50200 USER@DAEMON_HOST
+```
 
-## Lỗi thường gặp
+The number above is an example. Configure `oauth_callback_port` if you need a
+fixed port; do not guess a different port from the session's redirect URI.
 
-| Triệu chứng | Nguyên nhân thường gặp |
+## Containers
+
+Publish the callback to host loopback, mount the private configuration and data
+volume, then run `account login` inside the container. See
+[container installation](install-docker.md). Never bake credentials into an image.
+
+## Revoke or reconnect
+
+`502drive account revoke` removes local token material and requests Google
+revocation. Jobs may require reconnection. Run `account login` again after
+`account_reconnect_required`; the application does not silently switch accounts.
+
+| Error | Check |
 | --- | --- |
-| `oauth_not_configured` | Chưa có khóa Google: điền `.env` rồi `502drive setup`, hoặc `setup --oauth-client` |
-| Login xong nhưng account `disconnected` | Callback không tới đúng port/namespace, hoặc file token không ghi được |
-| `account_reconnect_required` | Refresh token hết hiệu lực, quyền bị thu hồi, client đổi |
-| Docker login treo | Chưa publish/forward cổng callback |
+| `oauth_not_configured` | Supply a Desktop client through setup |
+| Login completes but account remains disconnected | Callback namespace/port and token-file write access |
+| `account_reconnect_required` | Revoked/expired refresh credentials or a changed OAuth client |
+| Container login waits indefinitely | Callback publishing and SSH forwarding |
 
-Chưa hỗ trợ: login qua Telegram, nhiều account Google, service account.
+Telegram login, service accounts and multiple simultaneous Google accounts are
+not supported. Implementation: [auth.go](../internal/drive/auth.go); tests:
+[auth_test.go](../internal/drive/auth_test.go), [setup_test.go](../internal/cli/setup_test.go).

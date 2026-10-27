@@ -1,236 +1,147 @@
-# Copy job: từ link đến kết quả
+# Copy jobs
 
-Source: [reference.go](../../internal/drive/reference.go) (parse),
-[service.go](../../internal/app/service.go) (`Inspect`, `Submit`),
-[jobs.go](../../internal/state/jobs.go), [run.go](../../internal/engine/run.go). Test:
-[engine_test.go](../../internal/engine/engine_test.go),
-[sync_test.go](../../internal/engine/sync_test.go),
-[server_test.go](../../internal/httpapi/server_test.go).
+502Drive asks Google Drive to copy server-side. It does not relay file bytes,
+change sharing or bypass permissions. A **job** is a durable attempt; a
+**collection** retains the root and mappings across later runs.
 
-## 1. Preview (`POST /v1/plans`)
+## Preview and admission
 
-- Nhận **một** link HTTPS `drive.google.com`/`docs.google.com` hoặc ID; resource
-  key được giữ ([reference.go](../../internal/drive/reference.go)).
-- Từ chối: item trong trash, shortcut làm **root** (phải mở target), file owner
-  cấm copy (`canCopy=false`), đích không verify được hoặc nằm trong chính nguồn
-  (`checkDestination` đi ngược ancestry, fail-closed).
-- Preview đếm một trang children (không phải full scan); plan TTL 10 phút, lưu
-  principal, destination revision, root name.
+`inspect LINK` creates a plan from one HTTPS Drive/Docs reference or opaque ID.
+Resource keys are preserved internally. Root shortcuts must be opened at their
+target. Trashed sources, explicitly uncopyable files, unverifiable destinations
+and destinations inside the source are rejected.
 
-## 2. Admission (`POST /v1/jobs`)
+A shallow preview counts one children page. It is not a whole-tree total.
+`inspect --deep` starts a background read-only scan; incomplete/cancelled/
+interrupted scans keep totals unknown. Deep scans have a one-hour TTL and report
+advisory warnings such as `estimate_unknown`, `destination_storage_short` and
+`may_hit_daily_limit`.
 
-Trong một transaction: authorize (plan thuộc principal, revision khớp, destination
-revision còn đúng) → check capacity (`maxActiveTotal=100`, `maxActivePerUser=20`)
-→ tạo `collection` + `job` + seed root item + event `admitted` + idempotency →
-commit rồi mới trả `202` + `Location`.
+Admission validates plan/principal/revisions and capacity, then commits collection,
+job, seed item, first event and idempotency before returning `202 + Location`.
+Plan TTL is ten minutes. Default admission caps are 100 total / 20 per principal.
+Accepted does not mean succeeded. The HTTP request does not own the job lifetime.
 
-- Replay cùng key trả cùng job; plan đã consumed + key mới trả job cũ.
-- Adapter không cần chờ; job sống độc lập với HTTP request.
+## Execution and recovery
 
-## 3. Engine
+1. Discover folders breadth-first, checkpointing each listing page with its items.
+2. Create folders, request server-side file copies and handle shortcuts according
+   to policy. Preserve names/tree within provider limitations.
+3. Derive final state from item states and commit result/bookkeeping durably.
 
-| Pha | Việc |
+Every write has a recorded intent before the provider call. Unknown results are
+looked up and reconciled, never blindly resent. Retry and restart preserve operation
+identity. An unresolved result blocks safely. A job blocked solely on an unknown
+outcome receives one delayed automatic recheck; persistent uncertainty requires
+user attention.
+
+Job states are `queued`, `running`, `pausing`, `paused`, `cancelling`,
+`reconciling`, `blocked`, `succeeded`, `partial`, `failed`, `cancelled`.
+Pause/cancel are cooperative; cancelling keeps already-created output. Retry
+revisits failed/blocked work under the same job identity. Total item count stays
+null while discovery is incomplete; a result URL exists only after root creation.
+
+## Copy fidelity
+
+Names, hierarchy, empty folders and supported file types are preserved subject to
+Drive's capabilities. IDs, ownership, sharing permissions and revision history are
+not cloned. Google-native copy eligibility depends on the file type and account.
+
+Shared Drive calls use the relevant all-drives support/listing flags. Writable
+destinations require `canAddChildren`; restricted single files fail inspect,
+while uncopyable children are skipped. This is locally tested, not complete live
+Shared Drive acceptance.
+
+`--shortcuts follow|skip` defaults to `follow`; unavailable targets and loops are
+reported rather than traversed indefinitely. Shortcut traversal does not grant
+permissions to its target.
+
+## Name conflicts
+
+Drive allows duplicate names. 502Drive reserves the destination name before writing
+and keeps that decision across retries:
+
+| Policy | Behavior |
 | --- | --- |
-| discover | BFS folder, ghi item + `page_token` checkpoint cùng transaction |
-| copy | folder → create; file → server-side copy; shortcut → create shortcut; giữ tên/cây |
-| finalize | tính `succeeded/partial/blocked/failed` từ item states, set `result_url`, cập nhật collection, gọi `AfterRun` |
+| `rename` (default) | Use `name (2).ext`, then higher suffixes; preserve compound extensions |
+| `skip` | Skip the conflicting item |
+| `update` | Create the same name while retaining the old object |
 
-- Write có `intent_key` bền vững; timeout → `reconciling`/`blocked`, không gửi
-  lặp mù. `blocked` cần người xử lý; `retry` đưa item lỗi về pending.
-- Folder rỗng được tạo; item nguồn mất dấu `source_removed`, **không xóa** bản đích.
-- `versioned_copy` giữ bản cũ; `replace_copy` chỉ trash bản cũ sau khi bản mới
-  được map (`retireSuperseded`, [run.go](../../internal/engine/run.go)).
-- **AIMD toàn tài khoản** ([throttle.go](../../internal/drive/throttle.go)):
-  `workers` 4 → `max_workers` 8, +1 sau `throttle_successes` call thành công
-  liên tiếp, **halve** khi 429/rateLimit; permit bao quanh claim → call → ghi kết
-  quả nên số item `executing` không vượt trần. Đọc (list/get/changes) qua token
-  bucket `read_requests_per_second` (mặc định 8/s, burst 1 s); ghi chỉ chịu AIMD.
-- **Throttle không phải lỗi item**: 429 trả `attempts` về như trước khi claim,
-  item `pending` với `rate_limited`, hẹn `max(backoff mũ có jitter, Retry-After)`;
-  `listPage`/`reconcile` không tăng số lần thử khi bị throttle. `Retry-After`
-  luôn được tôn trọng. `/v1/status.throttle` báo `workers_now`,
-  `throttled_last_5m`, `next_retry_at`.
-- 5xx là `KindServer` (khác transport `KindUnavailable`/`KindUnreachable`) để
-  log/status phân biệt "Google lỗi" với "mất mạng".
-- Load probe 10 000 file/500 folder: [load_test.go](../../internal/engine/load_test.go).
+A matching size/MD5 copy can be skipped when Drive supplies MD5. Folder conflicts
+rename rather than dropping a whole subtree. Root conflicts are checked on Drive;
+children under app-created folders use local name reservations. The actual root
+name, including a suffix, is recorded for display and cleanup confirmation.
 
-## 4. Điều khiển và trạng thái
+`update` does not delete the old object. It is different from the sync content
+policy `replace_copy`. See [name policy](../design/n1-conflict-policy.md).
 
-- States: `queued running pausing paused cancelling reconciling blocked
-  succeeded partial failed cancelled`. `desired_state` = run/pause/cancel persist.
-- `pause` (queued → paused ngay; running → pausing → paused), `resume`, `cancel`
-  (giữ output đã tạo), `retry` (chỉ item lỗi, giữ job identity).
-- Counts đọc từ item; `total_items` null khi còn folder chưa list xong.
-- `result_url` chỉ có khi root đã tạo.
+## Selective filters
 
-## Copy lại cùng nguồn (L2)
+Include/exclude rules support paths/names, `ext:` and `class:`, size bounds and
+modified-after. Exclude wins. Filtering happens during folder discovery before
+writes; excluded subtrees are not listed. Empty filtered folders are omitted
+unless `keep_empty_folders` is enabled.
 
-Trùng khóa là `(nguồn, đích)` của cùng tài khoản. `POST /v1/jobs` nhận `mode`:
+Filters persist from plan to job to collection. Changes affect later runs and
+never request deletion of existing copies. A previously excluded item may be
+copied when allowed later. **A source that is one file is not filtered.** Shallow
+filter previews describe one top-level page, not the whole tree.
+See [filter design](../design/s5-selective-sync.md).
 
-- không có `mode`: nếu đã có bản sao → `409 already_copied` (thông báo nêu id và trạng thái); không có bản sao thì copy bình thường;
-- `update`: bản sao gần nhất được làm mới bằng một lần delta run (`POST …/runs`, cùng collection); chưa có thì copy;
-  bản sao đã retired → `409 collection_retired` (resume trước hoặc dùng `new`);
-- `new`: luôn tạo bản sao mới (hành vi cũ của `Submit`).
+## Stable skip reasons
 
-CLI: `copy --update|--new`. Trong script (không có TTY) mặc định là `update`; trong terminal bị hỏi
-`[u]pdate / [n]ew / [c]ancel` khi trùng. Plan đã dùng (replay idempotent) không bị đối chiếu lại.
-Tra cứu dùng chỉ mục `collections_source_dest` (migration 020), có test `EXPLAIN QUERY PLAN`.
-TUI hỏi `u`pdate / `n`ew khi gặp `409 already_copied` (hộp copy), Telegram hỏi bằng nút Cập nhật bản cũ / Tạo bản mới
-(xem [telegram.md](telegram.md)).
+`counts.skipped_by_code` summarizes `shortcut_unresolved`, `shortcut_loop`,
+`cannot_copy`, `google_native_export_only`, `conflict`, `unreadable`,
+`trashed_source` and `filtered`. The synthetic `too_large_for_quota` code is used
+only if returned explicitly; it is not a verified Google reason. Real daily or
+storage exhaustion blocks via quota handling rather than silently skipping files.
 
-## Vòng đời collection (L1)
+## Existing copies and lifecycle
 
-- `retire`: tắt lịch và realtime, hủy job xếp hàng/tạm dừng của collection, state `retired`, `retired_at`.
-  Không đụng Drive. Từ chối (`409 collection_busy`, nêu id job) khi đang có job chạy.
-- `resume`: đưa lại `ready`. `forget`: chỉ khi đã retired; xóa bản ghi cục bộ (collection, mapping, lịch sử job,
-  audit, sync). Không đụng Drive. `cleanup`: job `kind=cleanup`, chỉ đưa thư mục đích có `502drive_intent` vào
-  **thùng rác Drive** (`TrashFile`, không `DeleteFile`); mặc định dry-run; bản thật cần đúng `confirm_name`.
-  Gọi lại khi đã vào thùng rác là thành công. Crash giữa chừng: job còn `running`, lần khởi động sau đối chiếu bằng
-  `GetFile`, không gọi trash lần nữa.
-- Retired không được `ClaimDueSchedules`/`AdvancePoll` nhận, và thông báo sync bỏ qua collection retired.
+For an existing source/destination pair, API `mode=update` performs a delta against
+the latest collection; `mode=new` creates another collection. Missing mode returns
+`already_copied`. CLI scripts default to update; a TTY can choose update/new/cancel.
+Retired copies need resume before update. Idempotent admission replay keeps its
+original decision.
 
-## Kiểm tra toàn vẹn (audit) và sửa (repair)
+- `retire`: stop future sync, cancel eligible queued/paused work and mark retired;
+  no Drive writes. Running work returns `collection_busy`.
+- `resume`: return the collection to ready.
+- `forget`: only after retirement; remove local metadata/history, retain Drive files.
+- `collections cleanup`: preview by default in the CLI; apply requires the actual
+  root name and ownership tag. It only trashes the app-created output root.
+  Snapshot-protected roots cannot be cleaned up.
 
-`502drive audit COLLECTION` đối chiếu cây nguồn với cây đích của một collection
-(job kind `audit`, **chỉ đọc** Drive, pause/resume/cancel/restart như job thường):
+Offline `cleanup` is a different command that removes local temporary files.
 
-| Mã finding | Ý nghĩa | Repairable |
-| --- | --- | --- |
-| `missing_at_destination` | nguồn còn, bản đích đã map không còn ở cây đích | có (copy lại) |
-| `extra_at_destination` | object trong cây đích không có dấu của ta | **không — chỉ báo** |
-| `name_mismatch` / `wrong_parent` | bản đích sai tên / sai thư mục | có nếu object có `502drive_intent` của ta |
-| `size_or_md5_mismatch` | file đích khác size/md5 với nguồn | có nếu có intent của ta |
-| `duplicate_at_destination` | bản thừa cùng intent (khác bản đã map) | có (trash bản thừa) |
-| `source_removed` / `unreadable_source` | nguồn mất / không đọc được | không |
+## Audit and repair
 
-Kết quả nằm ở `GET /v1/audits/{id}` (counts) + `GET /v1/audits/{id}/findings`
-(phân trang). Telegram có nút 🔍 trên thẻ collection (tóm tắt + nút Sửa).
+Audit is read-only and follows normal job controls. Findings include:
 
-**Repair** (`--repair`) là job riêng trên engine hiện có, tham chiếu audit:
+| Finding | Repair behavior |
+| --- | --- |
+| `missing_at_destination` | Recopy through the normal intent/reconcile path |
+| `name_mismatch`, `wrong_parent` | Align only an owned destination object |
+| `size_or_md5_mismatch` | Replace only an owned copy after confirmation |
+| `duplicate_at_destination` | Trash an owned duplicate |
+| `extra_at_destination` | Report only; never automatically remove unrelated objects |
+| `source_removed`, `unreadable_source` | Report only |
 
-- **Mặc định dry-run**: chỉ lập kế hoạch, ghi vào `audits.plan`, không ghi Drive.
-  `--apply` mới thực hiện.
-- Copy lại mục thiếu **qua đúng đường copy hiện có** (intent mới, `ClaimItem`
-  tự resolve cha, reconcile khi mất phản hồi); đổi tên/di chuyển dùng `align`;
-  bản cũ sau khi bản mới được xác nhận bị chuyển vào **thùng rác** (qua
-  `item_versions` superseded, kiểm intent trước khi trash). Không bao giờ xoá
-  vĩnh viễn, không đụng object thiếu dấu.
-- Chạy hai lần: lần hai kiểm lại từng finding với trạng thái hiện tại → kế
-  hoạch rỗng, không đụng Drive. Crash giữa repair: restart quét lại, `item_versions`
-  giữ bản superseded để dọn tiếp.
-- Ràng buộc: collection không được có job khác đang chạy (chung `one_active_run`).
+`audit COLLECTION --repair` previews; `--apply` writes. Repair revalidates current
+state, uses the same engine and excludes other collection writers. Superseded
+copies are retired only after replacements are mapped, with snapshot references
+respected. No permanent delete exists. See [integrity design](../design/s1-integrity.md).
 
-Thiết kế: [design/s1-integrity.md](../design/s1-integrity.md).
+## Batch, queue and rate limits
 
-## Phân loại mục bị bỏ qua (skipped) và chính sách shortcut (K1)
+Multiple links create independent jobs with one batch ID and per-link idempotency.
+One rejected link does not roll back the rest. Priority ranges from -5 to 5;
+queue admission favors less-active groups before FIFO within equal priority.
+`jobs move` is revision-guarded. Queue positions are estimates that can change
+with admissions/completions.
 
-Khi gặp các đối tượng không thể sao chép, engine đánh dấu trạng thái `skipped` kèm mã lỗi ổn định và tổng hợp số lượng trong `counts.skipped_by_code`:
-
-- `shortcut_unresolved`: shortcut trỏ tới mục không tồn tại, bị xoá hoặc không thể truy cập; hoặc khi dùng chính sách `--shortcuts skip`.
-- `shortcut_loop`: phát hiện vòng lặp shortcut (tự trỏ chính nó hoặc vòng lặp nhiều cấp).
-- `cannot_copy`: tệp nguồn bị chủ sở hữu khoá quyền sao chép (`canCopy=false`, `copyRequiresWriterPermission`).
-- `google_native_export_only`: định dạng tài liệu Google Workspace chỉ hỗ trợ xuất, không hỗ trợ `Files.Copy` server-side (như My Maps, Google Sites, Scripts, Fusion Tables, Jamboard).
-- `too_large_for_quota`: chỉ được gán khi API trả lý do `too_large_for_quota`. Đây không phải lý do Google đã
-  xác nhận; giới hạn dung lượng thật (`storageQuotaExceeded`, `dailyLimitExceeded`) vẫn làm job `blocked` (Q1).
-  Chưa kiểm với Drive thật.
-- `conflict`: tệp đã có ở đích cùng nội dung hoặc bị chính sách `skip` loại (N1).
-- `unreadable`: không thể đọc nội dung hoặc metadata do quyền truy cập.
-- `trashed_source`: tệp nguồn nằm trong thùng rác Drive.
-- `filtered`: mục bị loại bởi bộ lọc (S5), kể cả thư mục bị loại cả cây con.
-
-Chính sách shortcut điều khiển qua cờ CLI `--shortcuts follow|skip` (mặc định `follow`: theo đích 1 cấp, phát hiện vòng lặp; `skip`: bỏ qua mọi shortcut).
-
-## Hỗ trợ Shared Drives (Drive dùng chung — D1)
-
-502Drive hỗ trợ đầy đủ các thao tác sao chép từ và đến Shared Drives (Team Drives):
-
-- **Tương thích toàn diện**: Mọi lệnh gọi Drive API đều truyền `supportsAllDrives=true` và `includeItemsFromAllDrives=true`, cho phép truy cập tài nguyên trong Shared Drives mà không cần thay đổi OAuth scope (`drive` scope đầy đủ hiện có).
-- **Nhận diện `driveId`**: Nhận biết và kế thừa `driveId` trên cây thư mục nguồn và đích.
-- **Kiểm soát quyền truy cập rõ ràng**:
-  - Khi thư mục đích nằm trong Shared Drive mà tài khoản không có quyền thêm tệp (`canAddChildren=false`), hệ thống từ chối ngay ở bước Inspect với mã lỗi 409 `destination_not_writable`.
-  - Khi tệp nguồn trong Shared Drive bị giới hạn quyền sao chép đối với người xem (`canCopy=false`), bước Inspect từ chối tệp đơn lẻ với mã lỗi 403 `copy_not_permitted`; khi sao chép toàn bộ cây, các tệp này được đánh dấu `skipped` với mã `cannot_copy`.
-
-## Trùng tên ở đích (N1)
-
-Drive cho phép nhiều tệp cùng tên trong một thư mục. Khi một mục chuẩn bị được ghi, 502Drive giữ tên
-của nó trong cơ sở dữ liệu (`items.dest_name`, dưới `dest_parent_id`) trước khi ghi, rồi:
-
-1. Tên còn trống → ghi với tên gốc.
-2. Đã có bản cùng nội dung (cùng size và md5, chỉ khi Drive trả md5) → không ghi lại (`skipped`, `conflict`).
-3. Khác nội dung, theo `--on-conflict`: `rename` (mặc định) → `name (2).ext`, `(3)`, … giữ phần mở rộng
-   (`archive.tar.gz` → `archive (2).tar.gz`); `skip` → bỏ qua (`conflict`); `update` → ghi cùng tên, không xóa
-   bản nào.
-
-Quyết định được lưu cùng lúc với việc giữ tên, nên khởi động lại không đổi ý. Thư mục luôn đổi tên khi trùng
-(bỏ qua thư mục sẽ bỏ cả cây con). Thư mục gốc được kiểm tra trực tiếp trên Drive, vì nó nằm trong thư mục đích
-do người dùng chọn; các mục bên trong thư mục do 502Drive tạo chỉ kiểm tra qua cơ sở dữ liệu, nên không thêm lệnh
-`files.list` nào trong đường copy.
-
-Giới hạn: `update` chưa xóa bản cũ (sẽ cần `replace_copy`/repair); mục `align` (đổi tên nguồn) không quyết định lại tên.
-Thiết kế: [design/n1-conflict-policy.md](../design/n1-conflict-policy.md).
-
-## Lọc khi đồng bộ (S5)
-
-Bộ lọc (`filter`) của kế hoạch được lưu vào job và collection. Nó được áp dụng khi liệt kê, trước khi ghi:
-
-- Mục bị loại được lưu với trạng thái `skipped`, mã `filtered`, và không bao giờ được ghi. Thư mục bị loại không
-  được liệt kê, nên cây con của nó không bị đọc.
-- Thư mục không còn mục nào được giữ sẽ không được tạo, trừ khi `keep_empty_folders`.
-- Đổi bộ lọc (`sync filter set`) chỉ ảnh hưởng lần chạy sau. Không xóa gì ở đích; mục đã copy vẫn ở đó; mục bị loại
-  trước đó được copy khi bộ lọc cho phép.
-- Xem trước (`inspect`) cho biết số mục cấp cao nhất đạt/bị loại và 10 mẫu mỗi loại, trên một trang liệt kê.
-- Chỉ áp dụng cho nguồn là thư mục. Nguồn là một tệp đơn không bị lọc.
-
-Chi tiết: [design/s5-selective-sync.md](../design/s5-selective-sync.md).
-
-## Giới hạn / chưa hỗ trợ
-
-- Không giữ owner/permission/revision/history của bản gốc; không tải/upload bytes.
-- Copy lại cùng nguồn dùng `mode=update|new` trên collection hiện có (L2); không có
-  action "xoá bản cũ rồi copy lại" ngoài cleanup/repair.
-- Nhiều link trong một lệnh tạo nhiều job cùng `batch_id` (xem dưới), nhưng **không**
-  gộp nhiều nguồn vào một job; không watch/push.
-- Unknown outcome chỉ reconcile bằng query; repair thủ công chỉ qua audit/repair (S1).
-- Job chỉ bị chặn vì `unknown_remote_outcome` (crash, mất phản hồi) được daemon tự
-  kiểm lại **một lần** sau 2 phút (chỉ mục tìm kiếm của Drive có thể trễ): đúng đường
-  của `jobs retry` — mục được gửi lại chỉ khi truy vấn xác nhận Drive không có bản nào
-  mang intent của nó. Job có lý do chặn khác (`multiple_matches`, đăng nhập lại,
-  quota) không được tự thử; chặn lần hai thì chờ người dùng (`auto_retried=true`).
-  Telegram không báo lần chặn đầu, chỉ báo khi lần tự kiểm không giải quyết được hoặc
-  khi job xong.
-- Thư mục gốc được đặt tên khác do trùng (`Photos (2)`): job và collection mang tên
-  thật đó (`root_name`), nên mọi giao diện và `cleanup --confirm-name` dùng đúng tên
-  người dùng thấy trong Drive.
-
-## Lô (batch), hàng đợi và tạm dừng (S6)
-
-Thiết kế đầy đủ: [design/s6-batch-queue.md](../design/s6-batch-queue.md). Tóm tắt:
-
-- Nhiều link trong một lệnh: mỗi link một job, chung `batch_id` (`jobs.batch_id`, cột sinh từ body). Khóa
-  idempotency của từng link là `khóa-lô:chỉ-số`, nên gửi lại cả lô không tạo job mới; một link lỗi không làm hỏng các
-  link khác. `GET /v1/batches/{id}` tổng hợp theo trạng thái (chỉ trong principal).
-- Hàng đợi: job `queued` được chọn theo ưu tiên (`priority` -5..5), rồi **fair share** theo nhóm (lô, hoặc collection
-  đơn lẻ): nhóm đang có ít job chạy hơn được ưu tiên, nên một lô 20 link không chiếm hết slot khi có job đơn lẻ chờ.
-  Cùng ưu tiên và cùng số chạy thì FIFO (`queue_order`). Truy vấn dùng chỉ mục `jobs_queue` và `jobs_fair`
-  (kiểm bằng `EXPLAIN QUERY PLAN` trong test). `POST /v1/jobs/{id}/move` (before/after/priority, có revision).
-- Tạm dừng toàn hàng đợi: `POST /v1/queue/pause|resume` (owner). Cờ bền `settings.queue_paused`; job đang chạy
-  chuyển `pausing` → `paused` ở điểm an toàn; resume chỉ đưa lại job **do hàng đợi** tạm dừng (job người dùng tự
-  tạm dừng vẫn tạm dừng). Điểm an toàn đọc lại cờ hàng đợi trong cùng transaction với lần ghi job: nếu hàng đợi đã
-  resume khi job còn `pausing`, job được ghi lại `running` (`desired_state=run`) và worker cũ tiếp tục chạy, thay vì
-  nằm `paused` không ai đánh thức.
-  Trạng thái ở `GET /v1/status` (`queue.paused`).
-- Số slot đồng thời do `max_active_jobs` trong config quyết định (mặc định 2, 1..32). Mỗi job vẫn chia sẻ trần
-  AIMD toàn tài khoản (`workers`/`max_workers`), nên đây là độ sâu hàng đợi, không phải số call song song.
-
-## Kiểm tra sâu trước khi copy (S7)
-
-Thiết kế: [design/s7-deep-preflight.md](../design/s7-deep-preflight.md). `POST /v1/plans` với `deep: true` (hoặc
-`inspect --deep`) trả plan ngay với `preview.deep.state = "running"`; quét chỉ đọc chạy nền, `GET /v1/plans/{id}` cho
-kết quả, `POST /v1/plans/{id}/preflight/cancel` để hủy. Kết quả chỉ `complete = true` khi quét hết; hủy, hết hạn
-(TTL 1 giờ) hoặc daemon khởi động lại (`interrupted`) đều không được báo là tổng. Cảnh báo (không chặn):
-`estimate_unknown`, `destination_storage_short`, `may_hit_daily_limit`.
-
-U2: job GET/list returns additive `queue_position` (1-based), `queue_ahead`
-and `queue_paused`. The admission scheduler and position query share fair-group
-ordering. These are snapshots; running jobs completing or new admissions can
-change them. Clients hide numeric hints while paused and when fields are absent.
+Global pause is durable. Resume restarts jobs paused by the queue while retaining
+user pauses. `max_active_jobs` controls job slots, not independent API worker pools;
+all jobs share AIMD permits and the read token bucket. Rate limits wait without
+spending item attempts. See [automation](automation.md), [protection](protection.md)
+and [engine tests](../../internal/engine/engine_test.go).

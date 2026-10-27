@@ -1,59 +1,68 @@
-# Cài trên Windows
+# Windows installation
 
-Artifact: `502drive_<ver>_windows_amd64.zip` (`502drive.exe` console +
-`502drive-tray.exe` GUI) và `502drive-setup.exe` (Inno Setup) kèm `.sha256`.
-**Installer chưa ký code** — SmartScreen sẽ cảnh báo "unknown publisher"; hãy
-kiểm SHA256 trước khi chạy. Chưa acceptance trên Windows 10/11 trong phiên này.
+Windows releases contain `502drive.exe`, the GUI launcher `502drive-tray.exe`,
+and the `502d.cmd` shortcut. Choose the ZIP for portable use or
+`502drive-setup.exe` for installation.
 
-## Cài
+The installer is **unsigned**. SmartScreen may show an unknown-publisher warning;
+verify SHA-256 against the release checksum. Native installer acceptance is still
+outstanding; a cross-build is not proof of successful installation.
 
-- **Installer:** chạy `502drive-setup.exe`; chọn "Start 502Drive in the
-  notification area when I sign in" nếu muốn autostart (mặc định tắt). Shortcut
-  Start Menu: tray + menu. Gỡ cài **không** xóa config/token/data người dùng.
-- **Một dòng (PowerShell):** `irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex`
-  — kiểm checksum, cài vào `%LOCALAPPDATA%\Programs\502Drive`, thêm vào PATH, tạo
-  alias `502d`.
-- **Installer** cũng có tùy chọn thêm vào PATH (mặc định bật) và cài `502d.cmd`. Chưa
-  chạy ISCC thật nên phần này chưa được kiểm chứng.
-- **Zip:** giải nén, chạy `502drive.exe setup` trong terminal (config/token file
-  private), sau đó `502drive.exe serve` hoặc `502drive-tray.exe`.
-- Autostart có thể bật sau khi cài: `502drive autostart enable|disable|status`
-  (khóa Run `HKCU\...\Run`, chạy `502drive up --quiet`).
+## Install and configure
 
-Xác minh: `Get-FileHash .\502drive-setup.exe -Algorithm SHA256` so với file
-`.sha256` trong release.
+The Inno Setup installer offers:
 
-## Cấu hình
+| Option | Default |
+| --- | --- |
+| Add the installation directory to PATH | On |
+| Start on sign-in | Off |
+| Create a desktop shortcut | Off |
 
-- `502drive setup` tạo config JSON (`%AppData%\502drive\config.json`; bản cài trước 0.3 tiếp tục dùng `%AppData%\502drive-next`) và
-  API token 0600-tương đương (ACL user). Data dir mặc định cạnh config
-  (`data-v2\state-v2.db`, `secrets\`).
-- `502drive setup --oauth-client client_secret.json`,
-  `--telegram-token-file bot-token --telegram-owner-id N`.
-- `502drive account login` mở browser trên máy này; nếu daemon ở máy khác, dùng
-  `ssh -L <port>:127.0.0.1:<port>` như hướng dẫn CLI in ra.
+Start Menu shortcuts open the tray or terminal menu. Uninstall removes program
+files and shortcuts, leaving user configuration, tokens and data intact.
+The ZIP can be extracted and run directly. A PowerShell installer is also available:
 
-## Chạy nền
+```powershell
+irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex
+```
 
-- Cách 1: chạy `502drive-tray.exe`; mục **Start daemon** của tray spawn
-  `502drive.exe serve` ẩn console.
-- Cách 2: `502drive.exe serve` trong một terminal (đóng terminal = dừng daemon),
-  hoặc tạo Task Scheduler "At log on" trỏ tới `502drive.exe serve`.
-- **Chưa hỗ trợ**: Windows service (`sc create`/`nssm`) và auto-update. Tray và
-  daemon là hai process riêng; đóng tray không dừng daemon.
+```powershell
+502drive setup --oauth-client C:\path\to\client_secret.json
+502drive up
+502drive account login
+502drive doctor --online
+```
 
-## Tray
+See [OAuth setup](oauth-setup.md). New configurations use `%AppData%\502drive`;
+older `502drive-next` configurations remain supported. Private-file access is
+restricted to the user. Never publish these directories.
 
-- Icon 7 trạng thái; menu: Open TUI (mở `wt.exe`/`cmd` chạy `502drive menu`),
-  Copy link trong clipboard (`Get-Clipboard`), Jobs & thư viện, mở folder kết quả
-  gần nhất, Tạm dừng/Tiếp tục hàng đợi, Start/Stop daemon, Quit.
-- `Stop daemon` **luôn** qua HTTP `POST /v1/shutdown` (graceful), không dùng
-  `taskkill`; job đang chạy tiếp tục ở lần mở sau. Đóng tray không dừng daemon
-  trừ khi bật `tray_quit_stops_daemon: true`.
-- Kiểm tra: `502drive doctor` (thêm `--fix` để sửa quyền/thư mục cục bộ).
+## Run and stop
 
-## Gỡ
+`502drive up` starts the detached daemon. The tray offers **Open 502Drive** and
+**Stop 502Drive…**. Exiting the TUI or tray normally leaves the daemon running;
+the opt-in `tray_quit_stops_daemon` preference changes tray exit behavior.
+`502drive serve` runs in the foreground and ends with its process.
 
-- Installer: Settings → Apps → 502Drive → Uninstall (chỉ xóa thư mục cài + shortcut).
-- Zip: xóa thư mục giải nén. Muốn xóa dữ liệu: xóa tay config/data dir (không có
-  lệnh purge).
+Enable sign-in startup with `502drive autostart enable`; inspect it with
+`autostart status`. There is no native Windows service installer or automatic
+software updater. Daemon shutdown uses HTTP, not process-name termination.
+
+## Build the installer
+
+A Windows host with **Inno Setup 6** is needed to compile `.iss`. The repository's
+Windows CI runner can provide that host; a personal Windows computer is optional.
+Stage a verified release archive under `dist/windows`, then run:
+
+```powershell
+./packaging/windows/build-installer.ps1 -Version 0.3.0
+```
+
+Use `-Compiler PATH` for another ISCC location. Output is
+`artifacts/windows/502drive-setup.exe` and its `.sha256` file.
+
+`-SmokeTest` is intended for an isolated Windows runner: silently install with
+optional tasks disabled, run `version`, uninstall, and check that a synthetic
+sentinel outside the application directory survives. It does not start the daemon
+or log in. The release workflow invokes this smoke test, but it has not been run
+natively in the latest Linux development session.
