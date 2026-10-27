@@ -19,12 +19,17 @@ Test: [cli_test.go](../../internal/cli/cli_test.go), [drive_test.go](../../inter
 502drive serve [--maintenance]
 502drive status
 502drive inspect SOURCE [--to ID] [--name NAME] [--shortcuts follow|skip] [--on-conflict skip|rename|update] [FILTER]
-502drive copy [SOURCE|--stdin] [--to ID] [--name NAME|--auto-name] [--wait] [--idempotency-key K] [--shortcuts follow|skip] [--on-conflict skip|rename|update] [FILTER]
+502drive copy [SOURCE|--stdin] [--to ID] [--name NAME|--auto-name] [--wait] [--idempotency-key K] [--shortcuts follow|skip] [--on-conflict skip|rename|update] [FILTER] [--update|--new]
 502drive ls [FOLDER] [--all]                 # FOLDER = link/ID/root (mặc định root)
 502drive info LINK|ID
 502drive mkdir NAME [--in PARENT] [--idempotency-key K]
 502drive jobs list|get|wait|events|pause|resume|cancel|retry
 502drive collections list|get
+502drive collections run|pause|audit COLLECTION          # L3: quick actions (resume: retired → back; else sync resume)
+502drive collections retire|resume COLLECTION            # L1: stop following / bring back (no Drive change)
+502drive collections forget COLLECTION --yes             # L1: delete local records of a retired copy only
+502drive collections cleanup COLLECTION [--dry-run=false --yes --confirm-name NAME]   # L1: destination → Drive trash
+502drive collections open COLLECTION [--dest]            # L3: print the source (or destination) link
 502drive sync enable|status|run|pause|resume|stop COLLECTION
 502drive sync filter show COLLECTION
 502drive sync filter set COLLECTION [FILTER] [--keep-empty-folders] | --clear

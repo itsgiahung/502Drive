@@ -263,7 +263,7 @@ func (s *Store) AdmitGuarded(ctx context.Context, principal, key, planID string,
 		j := Job{ID: ID("job"), Principal: principal, CollectionID: ID("col"), Trigger: "initial", SourceName: p.SourceName, DestinationID: p.DestinationID, RootName: p.RootName, State: JobQueued, DesiredState: "run", Shortcuts: p.Shortcuts, OnConflict: p.OnConflict, Filter: p.Filter, Revision: 1, CreatedAt: now, UpdatedAt: now}
 		c := Collection{ID: j.CollectionID, SourceID: p.SourceID, SourceName: p.SourceName, SourceKind: p.SourceKind, SourceMime: p.SourceMime, ResourceKey: p.ResourceKey, DestinationID: p.DestinationID, RootName: p.RootName, BaselineJobID: j.ID, State: "copying", Shortcuts: p.Shortcuts, OnConflict: p.OnConflict, Filter: p.Filter, Revision: 1}
 		cb, _ := json.Marshal(c)
-		if _, e = tx.ExecContext(ctx, "INSERT INTO collections VALUES(?,?,?,?)", c.ID, principal, p.ID, cb); e != nil {
+		if _, e = tx.ExecContext(ctx, "INSERT INTO collections(id, principal, plan_id, body) VALUES(?,?,?,?)", c.ID, principal, p.ID, cb); e != nil {
 			return nil, e
 		}
 		jb, _ := json.Marshal(j)
@@ -472,8 +472,12 @@ func (s *Store) Events(ctx context.Context, principal, id string, after int64, l
 	return out, rows.Err()
 }
 
-func (s *Store) Collections(ctx context.Context, principal string) ([]Collection, error) {
-	rows, e := s.db.QueryContext(ctx, "SELECT body FROM collections WHERE (?='' OR principal=?) ORDER BY rowid DESC LIMIT 100", principal, principal)
+func (s *Store) Collections(ctx context.Context, principal string, all bool) ([]Collection, error) {
+	allInt := 0
+	if all {
+		allInt = 1
+	}
+	rows, e := s.db.QueryContext(ctx, "SELECT body FROM collections WHERE (?='' OR principal=?) AND (?=1 OR retired_at IS NULL) ORDER BY rowid DESC LIMIT 100", principal, principal, allInt)
 	if e != nil {
 		return nil, e
 	}
@@ -519,7 +523,8 @@ func ValidateKey(key string) error {
 }
 
 func IsConflict(err error) bool {
-	return errors.Is(err, ErrMismatch) || errors.Is(err, ErrStale) || errors.Is(err, ErrExpired) || errors.Is(err, ErrTransition)
+	var busy ErrCollectionBusy
+	return errors.Is(err, ErrMismatch) || errors.Is(err, ErrStale) || errors.Is(err, ErrExpired) || errors.Is(err, ErrTransition) || errors.Is(err, ErrCollectionNotRetired) || errors.As(err, &busy)
 }
 
 func IsTerminal(s string) bool {

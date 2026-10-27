@@ -124,6 +124,9 @@ func (r *run) execute(ctx context.Context) {
 	case state.JobKindRepair:
 		r.executeRepair(ctx, job)
 		return
+	case state.JobKindCleanup:
+		r.executeCleanup(ctx, job)
+		return
 	}
 
 	if !r.reconcileAll(ctx) {

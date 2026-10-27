@@ -185,7 +185,8 @@ func TestCopyWaitSucceedsAndSubmitAloneReturnsAdmitted(t *testing.T) {
 		t.Fatalf("%v", st)
 	}
 	// submit-only returns right away with the job queued/running and exit 0
-	res = r.run("copy", src.ID, "--quiet")
+	// --new asks for a second copy; a plain copy would refresh the first (L2)
+	res = r.run("copy", src.ID, "--quiet", "--new")
 	if res.code != 0 || !strings.HasPrefix(strings.TrimSpace(res.out), "job_") {
 		t.Fatalf("%+v", res)
 	}

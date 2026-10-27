@@ -10,14 +10,23 @@ import (
 )
 
 var (
-	ErrMismatch    = errors.New("idempotency_mismatch")
-	ErrNotFound    = errors.New("not_found")
-	ErrStale       = errors.New("stale_revision")
-	ErrExpired     = errors.New("plan_expired")
-	ErrTransition  = errors.New("invalid_transition")
-	ErrCapacity    = errors.New("capacity_exceeded")
-	ErrPlanChanged = errors.New("plan_changed")
+	ErrMismatch             = errors.New("idempotency_mismatch")
+	ErrNotFound             = errors.New("not_found")
+	ErrStale                = errors.New("stale_revision")
+	ErrExpired              = errors.New("plan_expired")
+	ErrTransition           = errors.New("invalid_transition")
+	ErrCapacity             = errors.New("capacity_exceeded")
+	ErrPlanChanged          = errors.New("plan_changed")
+	ErrCollectionNotRetired = errors.New("collection_not_retired")
 )
+
+type ErrCollectionBusy struct {
+	ActiveJobID string
+}
+
+func (e ErrCollectionBusy) Error() string {
+	return "collection_busy: " + e.ActiveJobID
+}
 
 // Job states, shared by every adapter.
 const (
@@ -153,6 +162,18 @@ type Job struct {
 	ResumeAfter *time.Time `json:"resume_after,omitempty"`
 }
 
+// Collection states.
+const (
+	CollectionCopying = "copying"
+	CollectionReady   = "ready"
+	CollectionRetired = "retired"
+)
+
+// Additional job kinds.
+const (
+	JobKindCleanup = "cleanup"
+)
+
 type Collection struct {
 	ID            string      `json:"id"`
 	SourceID      string      `json:"source_id"`
@@ -166,6 +187,7 @@ type Collection struct {
 	ResultURL     *string     `json:"result_url"`
 	BaselineJobID string      `json:"baseline_job_id"`
 	State         string      `json:"state"`
+	RetiredAt     *time.Time  `json:"retired_at,omitempty"`
 	Revision      int         `json:"revision"`
 	Sync          any         `json:"sync"`
 	Shortcuts     string      `json:"shortcuts,omitempty"`

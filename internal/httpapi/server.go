@@ -118,6 +118,7 @@ func (s *Server) Handler() http.Handler {
 	route("GET /v1/audits/{id}/findings", s.auditFindings)
 	route("POST /v1/audits/{id}/repair", s.repairAudit)
 	s.syncRoutes(route)
+	s.lifecycleRoutes(route)
 	mux.HandleFunc("/", s.wrap(true, func(http.ResponseWriter, *http.Request, app.Principal) (int, any, error) {
 		return 0, nil, app.Fail(404, "not_found", "Not found.")
 	}))
@@ -328,6 +329,9 @@ func markReplay(w http.ResponseWriter, replayed bool) {
 type jobInput struct {
 	PlanID           string `json:"plan_id"`
 	ExpectedRevision *int   `json:"expected_revision"`
+	// Mode answers an existing copy of the same source and destination (L2):
+	// "update", "new", or omitted (refuse with 409 already_copied).
+	Mode string `json:"mode,omitempty"`
 }
 
 func (s *Server) createJob(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
@@ -344,7 +348,7 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request, p app.Princip
 	if in.PlanID == "" || in.ExpectedRevision == nil {
 		return 0, nil, app.Fail(400, "invalid_request", "plan_id and expected_revision are required.")
 	}
-	res, err := s.Svc.Submit(r.Context(), p, idemKey(r), in.PlanID, *in.ExpectedRevision)
+	res, err := s.Svc.SubmitMode(r.Context(), p, idemKey(r), in.PlanID, *in.ExpectedRevision, in.Mode)
 	if err != nil {
 		return 0, nil, err
 	}

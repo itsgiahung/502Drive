@@ -33,7 +33,7 @@ func TestMigration010AddsConflictActionAndDestName(t *testing.T) {
 		if _, err = db.Exec("INSERT INTO plans VALUES(?,?,?,NULL)", "plan1", "owner", []byte(`{"id":"plan1"}`)); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = db.Exec("INSERT INTO collections VALUES(?,?,?,?)", "col1", "owner", "plan1", []byte(`{"id":"col1","source_id":"src","source_kind":"folder","state":"ready"}`)); err != nil {
+		if _, err = db.Exec("INSERT INTO collections(id, principal, plan_id, body) VALUES(?,?,?,?)", "col1", "owner", "plan1", []byte(`{"id":"col1","source_id":"src","source_kind":"folder","state":"ready"}`)); err != nil {
 			t.Fatal(err)
 		}
 		if _, err = db.Exec("INSERT INTO jobs VALUES(?,?,?,?,?)", "job1", "owner", "col1", "succeeded", []byte(`{"id":"job1","principal":"owner"}`)); err != nil {
@@ -118,7 +118,7 @@ func TestMigration010BackfillsReservedNamesAndIndexesThem(t *testing.T) {
 	if _, err = db.Exec("INSERT INTO plans VALUES(?,?,?,NULL)", "plan1", "owner", []byte(`{"id":"plan1"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.Exec("INSERT INTO collections VALUES(?,?,?,?)", "col1", "owner", "plan1", []byte(`{"id":"col1","source_id":"src","source_kind":"folder","state":"ready"}`)); err != nil {
+	if _, err = db.Exec("INSERT INTO collections(id, principal, plan_id, body) VALUES(?,?,?,?)", "col1", "owner", "plan1", []byte(`{"id":"col1","source_id":"src","source_kind":"folder","state":"ready"}`)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = db.Exec("INSERT INTO jobs VALUES(?,?,?,?,?)", "job1", "owner", "col1", "succeeded", []byte(`{"id":"job1","principal":"owner"}`)); err != nil {
@@ -186,7 +186,7 @@ func TestDecisionSurvivesReopen(t *testing.T) {
 	if _, err := s.db.ExecContext(ctx, "INSERT INTO plans VALUES(?,?,?,NULL)", "plan1", "owner", []byte(`{"id":"plan1"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.ExecContext(ctx, "INSERT INTO collections VALUES(?,?,?,?)", "col1", "owner", "plan1", []byte(`{"id":"col1","state":"ready"}`)); err != nil {
+	if _, err := s.db.ExecContext(ctx, "INSERT INTO collections(id, principal, plan_id, body) VALUES(?,?,?,?)", "col1", "owner", "plan1", []byte(`{"id":"col1","state":"ready"}`)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.db.ExecContext(ctx, "INSERT INTO jobs VALUES(?,?,?,?,?)", "job1", "owner", "col1", "running", []byte(`{"id":"job1","principal":"owner"}`)); err != nil {
@@ -260,7 +260,7 @@ func TestMigration011BackfillsRelPathsAndPlansPruneWithIndexes(t *testing.T) {
 	if _, err = db.Exec("INSERT INTO plans VALUES(?,?,?,NULL)", "plan1", "owner", []byte(`{"id":"plan1"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.Exec("INSERT INTO collections VALUES(?,?,?,?)", "col1", "owner", "plan1", []byte(`{"id":"col1","state":"ready"}`)); err != nil {
+	if _, err = db.Exec("INSERT INTO collections(id, principal, plan_id, body) VALUES(?,?,?,?)", "col1", "owner", "plan1", []byte(`{"id":"col1","state":"ready"}`)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = db.Exec("INSERT INTO jobs VALUES(?,?,?,?,?)", "job1", "owner", "col1", "succeeded", []byte(`{"id":"job1","principal":"owner"}`)); err != nil {

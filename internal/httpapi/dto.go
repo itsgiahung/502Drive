@@ -164,7 +164,7 @@ func operatorDTO(o state.Operator) map[string]any {
 
 func collectionState(s string) string {
 	switch s {
-	case "copying", "ready", "partial", "needs_action", "legacy_read_only":
+	case "copying", "ready", "partial", "needs_action", "legacy_read_only", "retired":
 		return s
 	case "blocked", "failed":
 		return "needs_action"
@@ -224,8 +224,8 @@ func (s *Server) collectionDTO(ctx context.Context, c state.Collection) (map[str
 	}
 	return map[string]any{
 		"id": c.ID, "source_id": c.SourceID, "source_name": c.SourceName, "source_kind": kindDTO(c.SourceKind, c.SourceMime),
-		"destination_id": c.DestinationID, "destination_root_id": c.RootID, "result_url": c.ResultURL, "baseline_job_id": c.BaselineJobID,
-		"state": collectionState(c.State), "revision": c.Revision, "sync": sync,
+		"destination_id": c.DestinationID, "destination_root_id": c.RootID, "root_name": c.RootName, "result_url": c.ResultURL, "baseline_job_id": c.BaselineJobID,
+		"state": collectionState(c.State), "retired_at": tsPtr(c.RetiredAt), "revision": c.Revision, "sync": sync,
 		"filter": c.Filter, "on_conflict": nonEmpty(c.OnConflict, "rename"),
 	}, nil
 }
