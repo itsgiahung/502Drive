@@ -37,6 +37,11 @@ type Service struct {
 	// Lifecycle reports the power/network state; nil means "running, online".
 	Lifecycle func() Lifecycle
 	Now       func() time.Time
+	ConfigDir string
+
+	// Hooks for doctor checks (nil uses system defaults)
+	DiskSpaceFn func(path string) (freeBytes uint64, totalBytes uint64, err error)
+	FDLimitFn   func() (cur uint64, max uint64, err error)
 }
 
 func (s *Service) now() time.Time {

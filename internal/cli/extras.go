@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/itsgiahung/502Drive/internal/autostart"
 	"github.com/itsgiahung/502Drive/internal/config"
 	"github.com/itsgiahung/502Drive/internal/update"
 )
@@ -142,66 +142,34 @@ func (a *App) autostartCmd() *cobra.Command {
 	return c
 }
 
-const winRunKey = `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
-
-func (a *App) autostartFile() string {
-	dir := a.env("XDG_CONFIG_HOME")
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		dir = filepath.Join(home, ".config")
+func (a *App) autostartManager() *autostart.Manager {
+	m := autostart.Default()
+	if dir := a.env("XDG_CONFIG_HOME"); dir != "" {
+		m.ConfigDir = dir
 	}
-	return filepath.Join(dir, "autostart", "502drive.desktop")
+	return m
 }
 
 // desktopExec quotes a path for the Exec key of a .desktop file.
 func desktopExec(path string) string {
-	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "`", "\\`", "$", `\$`)
-	return `"` + r.Replace(path) + `"`
-}
-
-func autostartEntry(exe string) string {
-	return "[Desktop Entry]\nType=Application\nName=502Drive\nComment=Start the 502Drive daemon and tray\n" +
-		"Exec=" + desktopExec(exe) + " up --quiet\nIcon=502drive\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
+	return autostart.DesktopExec(path)
 }
 
 func (a *App) autostartSet(on bool) error {
-	exe, err := os.Executable()
+	m := a.autostartManager()
+	var err error
+	if on {
+		err = m.Enable()
+	} else {
+		err = m.Disable()
+	}
 	if err != nil {
-		return localErr(ExitInternal, "autostart_failed", "Cannot locate the 502drive binary.")
+		if runtime.GOOS == "darwin" {
+			return localErr(ExitUsage, "not_supported", err.Error())
+		}
+		return localErr(ExitInternal, "autostart_failed", err.Error())
 	}
-	switch runtime.GOOS {
-	case "windows":
-		argv := []string{"reg", "add", winRunKey, "/v", "502Drive", "/t", "REG_SZ", "/d", `"` + exe + `" up --quiet`, "/f"}
-		if !on {
-			argv = []string{"reg", "delete", winRunKey, "/v", "502Drive", "/f"}
-		}
-		if out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput(); err != nil && on {
-			return localErr(ExitInternal, "autostart_failed", "reg failed: "+strings.TrimSpace(string(out)))
-		}
-	case "darwin":
-		return localErr(ExitUsage, "not_supported", "Autostart is not supported on macOS yet; run `502drive serve` under launchd.")
-	default:
-		path := a.autostartFile()
-		if path == "" {
-			return localErr(ExitInternal, "autostart_failed", "Cannot find your config directory.")
-		}
-		if !on {
-			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return localErr(ExitInternal, "autostart_failed", err.Error())
-			}
-			break
-		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			return localErr(ExitInternal, "autostart_failed", err.Error())
-		}
-		if err := os.WriteFile(path, []byte(autostartEntry(exe)), 0o600); err != nil {
-			return localErr(ExitInternal, "autostart_failed", err.Error())
-		}
-	}
-	on2, where := a.autostartState()
+	on2, where := m.Status()
 	if !a.g.quiet && !a.g.json {
 		fmt.Fprintf(a.out(), "autostart %v (%s)\n", map[bool]string{true: "enabled", false: "disabled"}[on2], where)
 	}
@@ -209,16 +177,7 @@ func (a *App) autostartSet(on bool) error {
 }
 
 func (a *App) autostartState() (bool, string) {
-	switch runtime.GOOS {
-	case "windows":
-		err := exec.Command("reg", "query", winRunKey, "/v", "502Drive").Run()
-		return err == nil, winRunKey
-	case "darwin":
-		return false, "unsupported on macOS"
-	}
-	path := a.autostartFile()
-	_, err := os.Stat(path)
-	return err == nil, path
+	return a.autostartManager().Status()
 }
 
 // ---- update ----

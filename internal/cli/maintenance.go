@@ -10,12 +10,103 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/itsgiahung/502Drive/internal/maintenance"
+	"github.com/itsgiahung/502Drive/internal/state"
 )
 
 // maintenanceCmds are offline data-directory commands: they never contact the
 // daemon and refuse to run while a daemon holds the instance lock.
 func (a *App) maintenanceCmds() []*cobra.Command {
-	return []*cobra.Command{a.backupCmd(), a.restoreCmd(), a.cleanupCmd()}
+	return []*cobra.Command{a.backupCmd(), a.restoreCmd(), a.cleanupCmd(), a.vacuumCmd(), a.pruneCmd()}
+}
+
+func (a *App) maintenanceCmd() *cobra.Command {
+	c := &cobra.Command{Use: "maintenance", Short: "Offline data directory maintenance"}
+	c.AddCommand(a.backupCmd(), a.restoreCmd(), a.cleanupCmd(), a.vacuumCmd(), a.pruneCmd())
+	return c
+}
+
+func (a *App) pruneCmd() *cobra.Command {
+	var olderThanStr string
+	var dryRun bool
+	c := &cobra.Command{
+		Use:   "prune",
+		Short: "Prune finished jobs and historical data",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			dur, err := parseRetentionDuration(olderThanStr)
+			if err != nil {
+				return usage("%s", err.Error())
+			}
+			cfg, err := a.loadConfig()
+			if err != nil {
+				return err
+			}
+			report, err := maintenance.Prune(cmd.Context(), cfg.DataDir, state.PruneOptions{
+				OlderThan: dur,
+				DryRun:    dryRun,
+			})
+			if err != nil {
+				return maintenanceErr(err)
+			}
+			if a.g.json {
+				return a.printJSON(report)
+			}
+			mode := a.style.good("apply")
+			if dryRun {
+				mode = a.style.warn("dry-run")
+			}
+			fmt.Fprintf(a.out(), "%s prune (older than %s):\n", mode, report.OlderThan)
+			printKV(a.out(), a.style, []kv{
+				{"jobs_pruned", fmt.Sprint(report.JobsPruned)},
+				{"events_pruned", fmt.Sprint(report.EventsPruned)},
+				{"intents_pruned", fmt.Sprint(report.IntentsPruned)},
+				{"telegram_inbox_pruned", fmt.Sprint(report.TelegramInboxPruned)},
+				{"telegram_outbox_pruned", fmt.Sprint(report.TelegramOutboxPruned)},
+				{"plans_pruned", fmt.Sprint(report.PlansPruned)},
+			})
+			return nil
+		},
+	}
+	c.Flags().StringVar(&olderThanStr, "older-than", "90d", "retention threshold (e.g. 90d, 720h)")
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "simulate without deleting")
+	return c
+}
+
+func parseRetentionDuration(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 90 * 24 * time.Hour, nil
+	}
+	if strings.HasSuffix(s, "d") || strings.HasSuffix(s, "D") {
+		numStr := s[:len(s)-1]
+		var days int
+		if _, err := fmt.Sscanf(numStr, "%d", &days); err != nil || days < 0 {
+			return 0, fmt.Errorf("invalid retention days: %s", s)
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
+	}
+	return time.ParseDuration(s)
+}
+
+func (a *App) vacuumCmd() *cobra.Command {
+	return &cobra.Command{Use: "vacuum", Short: "Compact the database offline", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := a.loadConfig()
+			if err != nil {
+				return err
+			}
+			report, err := maintenance.Vacuum(cmd.Context(), cfg.DataDir)
+			if err != nil {
+				return maintenanceErr(err)
+			}
+			if a.g.json {
+				return a.printJSON(report)
+			}
+			fmt.Fprintf(a.out(), "%s %s\n", a.style.good("vacuum:"), report.DataDir)
+			printKV(a.out(), a.style, []kv{{"pre_bytes", fmt.Sprint(report.PreBytes)}, {"post_bytes", fmt.Sprint(report.PostBytes)},
+				{"reclaimed_bytes", fmt.Sprint(report.Reclaimed)}})
+			return nil
+		}}
 }
 
 func (a *App) backupCmd() *cobra.Command {

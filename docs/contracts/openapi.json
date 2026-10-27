@@ -2402,6 +2402,7 @@
           "language": {
             "type": "string",
             "enum": [
+              "auto",
               "vi",
               "en"
             ]
@@ -2459,6 +2460,34 @@
                 "type": "null"
               }
             ]
+          },
+          "quiet_hours_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-2][0-9]:[0-5][0-9]$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quiet_hours_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-2][0-9]:[0-5][0-9]$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retention_days": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Retention window in days; 0 means keep forever",
+            "default": 90
           }
         },
         "required": [
@@ -2471,7 +2500,10 @@
           "notify_failed",
           "notify_action_required",
           "after_copy_sync_mode",
-          "after_copy_schedule"
+          "after_copy_schedule",
+          "quiet_hours_start",
+          "quiet_hours_end",
+          "retention_days"
         ]
       },
       "PreferencePatch": {
@@ -2481,6 +2513,7 @@
           "language": {
             "type": "string",
             "enum": [
+              "auto",
               "vi",
               "en"
             ]
@@ -2528,6 +2561,19 @@
                 "type": "null"
               }
             ]
+          },
+          "quiet_hours_start": {
+            "type": "string",
+            "pattern": "^[0-2][0-9]:[0-5][0-9]$"
+          },
+          "quiet_hours_end": {
+            "type": "string",
+            "pattern": "^[0-2][0-9]:[0-5][0-9]$"
+          },
+          "retention_days": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Retention window in days; 0 means keep forever"
           }
         },
         "required": []

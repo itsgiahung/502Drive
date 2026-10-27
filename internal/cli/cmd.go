@@ -172,6 +172,7 @@ func (a *App) rootCommand() *cobra.Command {
 		a.collectionsCmd(), a.syncCmd(), a.destinationsCmd(), a.accountCmd(), a.doctorCmd(), a.menuCmd(),
 		a.lsCmd(), a.infoCmd(), a.mkdirCmd(), a.healthcheckCmd(),
 		a.trayCmd(), a.upCmd(), a.stopCmd(), a.logsCmd(), a.autostartCmd(), a.updateCmd(), a.assetsCmd())
+	root.AddCommand(a.maintenanceCmd())
 	root.AddCommand(a.maintenanceCmds()...)
 	return root
 }

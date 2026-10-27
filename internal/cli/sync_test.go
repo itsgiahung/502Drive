@@ -245,6 +245,7 @@ func TestSyncRunNowCoalesces(t *testing.T) {
 }
 
 func TestMenuUsesTheLanguagePreference(t *testing.T) {
+	t.Setenv("LC_ALL", "vi_VN.UTF-8")
 	r := newRig(t)
 	r.setupDest()
 	vi := r.menu("0\n")

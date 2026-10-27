@@ -86,6 +86,17 @@ func TestMaintenanceCommands(t *testing.T) {
 		t.Fatalf("both modes: exit %d", res.code)
 	}
 
+	// Prune offline test
+	if res = run("maintenance", "prune", "--dry-run", "--older-than", "90d"); res.code != ExitOK || !strings.Contains(res.out, "dry-run") {
+		t.Fatalf("maintenance prune dry-run: %d %s %s", res.code, res.out, res.errOut)
+	}
+	if res = run("prune", "--older-than", "90d"); res.code != ExitOK || !strings.Contains(res.out, "apply") {
+		t.Fatalf("prune apply alias: %d %s %s", res.code, res.out, res.errOut)
+	}
+	if res = run("prune", "--older-than", "invalid_duration"); res.code != ExitUsage {
+		t.Fatalf("prune with invalid duration should fail with usage error, got exit %d", res.code)
+	}
+
 	// A running daemon (here: the open store holding the lock) blocks both
 	// backup and cleanup.
 	live, err := state.Open(dataDir)
@@ -98,5 +109,8 @@ func TestMaintenanceCommands(t *testing.T) {
 	}
 	if res = run("cleanup", "--apply"); res.code != ExitUnavailable {
 		t.Fatalf("cleanup with a writer: exit %d %s", res.code, res.errOut)
+	}
+	if res = run("maintenance", "prune"); res.code != ExitUnavailable {
+		t.Fatalf("prune with a writer: exit %d %s", res.code, res.errOut)
 	}
 }

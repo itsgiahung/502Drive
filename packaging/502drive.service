@@ -16,6 +16,11 @@ Type=simple
 ExecStart=/usr/bin/502drive serve
 Restart=on-failure
 RestartSec=5
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=4
+MemoryHigh=512M
+TasksMax=64
 # The daemon binds loopback only; nothing listens on a public address.
 # Basic hardening. The data directory and config must stay writable:
 # the default v2 locations are under %h/.config/502drive-next and

@@ -123,6 +123,47 @@ power source trong test; mô phỏng không thay thế kiểm trên OS thật.
 | T2-9 | Chống restart loop: unit `Restart=on-failure` + `StartLimitBurst=5`/300s; tray không tự hồi sinh daemon | local (unit text) | chưa chạy | [502drive.service](../packaging/502drive.service); `systemd-analyze verify`: chưa chạy |
 | T2-10 | Cấu trúc menu ổn định với id mới (start/stop/quit tách bạch) | local | — | `TestBuildViewKeepsAStableStructure`, `TestBuildViewUsesTheLanguage` |
 
+## Autostart thống nhất (T3)
+
+| ID | Kịch bản | Mô phỏng | OS thật | Bằng chứng |
+| --- | --- | --- | --- | --- |
+| T3-1 | Linux XDG autostart file `~/.config/autostart/502drive.desktop` chạy `up --quiet`, tạo thư mục 0700, file 0600, idempotent | local | chưa chạy | [autostart/autostart_test.go](../internal/autostart/autostart_test.go) `TestAutostartLinuxEnableDisableIdempotent`, [cli/extras_test.go](../internal/cli/extras_test.go) `TestAutostartEnableDisableOnLinux` |
+| T3-2 | Windows HKCU Run value `502Drive` = `"<exe>" up --quiet`, idempotent enable/disable | local (mock) | chưa chạy | `TestAutostartWindowsMockRegistry` |
+| T3-3 | Darwin (macOS) trả về lỗi unsupported rõ ràng, hướng dẫn launchd | local | — | `TestAutostartDarwinUnsupported` |
+| T3-4 | Inno Setup `502drive.iss` khớp chính xác giá trị `"<exe>" up --quiet` và uninsdeletevalue | local | — | `TestInstallerIssMatchesAutostartMechanism` |
+| T3-5 | Tray menu hiển thị trạng thái autostart thật (có dấu ✓ khi bật) và toggle được | local | — | [tray/tray_test.go](../internal/tray/tray_test.go) `TestTrayAutostartToggle`, `TestBuildViewUsesTheLanguage` |
+
+## Đa ngôn ngữ hoàn chỉnh (T5)
+
+| ID | Kịch bản | Mô phỏng | OS thật | Bằng chứng |
+| --- | --- | --- | --- | --- |
+| T5-1 | `language=auto` suy ra từ OS locale (Linux LC_ALL/LC_MESSAGES/LANG, Windows GetUserDefaultLocaleName); chỉ vi* → Việt, còn lại → English | local (mock) | chưa chạy | [i18n/locale_test.go](../internal/i18n/locale_test.go) `TestResolveAndLocale` |
+| T5-2 | Hàm định dạng ngày giờ theo múi giờ + locale (vi: 02/01/2006 15:04; en: 2006-01-02 15:04). **Chưa nối vào đầu ra CLI/tray** | local (hàm) | — | `TestFormatTimeAndDate` |
+| T5-3 | Đổi ngôn ngữ không cần restart: tray cập nhật view ở lần poll kế | local | — | [tray/tray_test.go](../internal/tray/tray_test.go) `TestTrayDynamicLanguageChangeWithoutRestart` |
+| T5-4 | JSON/exit code/mã lỗi giữ nguyên qua snapshot test | local | — | [cli/snapshot_test.go](../internal/cli/snapshot_test.go) `TestJSONOutputSnapshotAndExitCodesGuardsAgainstRegression` |
+| T5-5 | Giờ yên tĩnh (quiet hours): start/end theo múi giờ preferences, hỗ trợ qua nửa đêm; thông báo desktop của tray bị chặn trong khung giờ. Thông báo Telegram **chưa** áp dụng | local | — | [state/settings_test.go](../internal/state/settings_test.go) `TestInQuietHours`, [tray/tray_test.go](../internal/tray/tray_test.go) `TestNotifySkippedDuringQuietHours` |
+
+## Linux reliability (S11)
+
+| ID | Kịch bản | Mô phỏng | OS thật | Bằng chứng |
+| --- | --- | --- | --- | --- |
+| S11-1 | `502drive.service` có `Nice=10`, `IOSchedulingClass=best-effort`, `MemoryHigh=512M`, `TasksMax=64`, hardening; `systemd-analyze verify` không báo lỗi cú pháp (chỉ báo `/usr/bin/502drive` chưa được cài) | local (`systemd-analyze verify`) | — | [packaging/502drive.service](../packaging/502drive.service) |
+| S11-2 | `doctor` thêm kiểm đĩa (< 512MB fail), fd (< 128 fail), WAL (> 32MB fail), checkpoint age, quyền file bí mật (0600) | local (mock/inject) | local | [app/doctor_test.go](../internal/app/doctor_test.go) `TestDoctorReliabilityChecks`, `TestCheckpointAgeCheck` |
+| S11-3 | SQLite: `wal_checkpoint(TRUNCATE)` và `optimize` định kỳ khi rảnh và khi tắt daemon | local | — | [state/checkpoint_test.go](../internal/state/checkpoint_test.go) `TestCheckpointTruncateAndOptimize`, [daemon/daemon.go](../internal/daemon/daemon.go) |
+| S11-4 | Vacuum thủ công offline `502drive maintenance vacuum` (báo kích thước trước/sau, từ chối khi daemon đang chạy) | local | — | [maintenance/vacuum_test.go](../internal/maintenance/vacuum_test.go) `TestVacuumOfflineSucceeds`, `TestVacuumRefusesWhenDaemonLocked` |
+| S11-5 | Đo CPU / RSS nhàn rỗi (0 tick CPU trong 30 s, RSS ≈ 26.9 MB) ghi vào verification.md. Đo khi copy 10k file: **chưa chạy** (cần Drive thật) | local | chưa chạy | [verification.md](verification.md) |
+| S11-6 | Kịch bản `scripts/soak.sh` kiểm tra độ bền, rò rỉ RSS (không chạy trong CI). Chỉ kiểm cú pháp (`bash -n`); **chưa chạy soak** | local (syntax) | chưa chạy | [scripts/soak.sh](../scripts/soak.sh) |
+
+## Retention dữ liệu có hạn (R1)
+
+| ID | Kịch bản | Mô phỏng | OS thật | Bằng chứng |
+| --- | --- | --- | --- | --- |
+| R1-1 | Ngưỡng thời gian: job/event/inbox/outbox cũ hơn ngưỡng bị xóa; mới hơn được giữ lại | local | — | [state/prune_test.go](../internal/state/prune_test.go) `TestPruneEnforcesRetentionAndProtectsReferences` |
+| R1-2 | `maintenance prune --dry-run` báo cáo chính xác 100% số lượng dự kiến xóa, không xóa dữ liệu thật | local | — | `TestPruneEnforcesRetentionAndProtectsReferences`, [maintenance/prune_test.go](../internal/maintenance/prune_test.go) |
+| R1-3 | Toàn vẹn khóa ngoại: `PRAGMA foreign_key_check` sạch 0 lỗi trước và sau khi prune | local | — | `TestPruneEnforcesRetentionAndProtectsReferences` |
+| R1-4 | Bảo vệ tham chiếu: job còn được tham chiếu (`items.job_id`, `plans.consumed_job`, `sync_occurrences.job_id`, v.v.) và collections/mappings không bao giờ bị xóa | local | — | `TestPruneEnforcesRetentionAndProtectsReferences` |
+| R1-5 | Cấu hình `retention_days = 0` giữ lại toàn bộ dữ liệu (không xóa gì); lệnh CLI `maintenance prune` từ chối khi daemon đang chạy; daemon tự prune mỗi 24 h chỉ khi `retention_days > 0` | local | — | `TestPruneEnforcesRetentionAndProtectsReferences` (mục zero-retention), [cli/maintenance_test.go](../internal/cli/maintenance_test.go) `TestMaintenanceCommands` |
+
 ## Automation và sync
 
 | ID | Scenario | Trạng thái | Test |

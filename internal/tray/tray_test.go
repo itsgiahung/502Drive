@@ -168,15 +168,21 @@ func TestBuildViewUsesTheLanguage(t *testing.T) {
 	if vi.Items[1].Title != "Mở menu TUI" || vi.Items[6].Title != "Bật daemon" {
 		t.Fatalf("vi view = %+v", vi.Items)
 	}
-	if vi.Items[7].Title != "Dừng 502Drive…" || vi.Items[9].Title != "Thoát khay" {
-		t.Fatalf("vi stop/quit = %q / %q", vi.Items[7].Title, vi.Items[9].Title)
+	if vi.Items[7].Title != "Dừng 502Drive…" || vi.Items[10].Title != "Thoát khay" {
+		t.Fatalf("vi stop/quit = %q / %q", vi.Items[7].Title, vi.Items[10].Title)
+	}
+	if !strings.Contains(vi.Items[8].Title, "Khởi động cùng hệ thống") {
+		t.Fatalf("vi autostart = %q", vi.Items[8].Title)
 	}
 	en := BuildViewLang(snapOf(1, 0, 0, "connected"), true, "", "en")
 	if en.Items[1].Title != "Open TUI" || en.Items[6].Title != "Start daemon" {
 		t.Fatalf("en view = %+v", en.Items)
 	}
-	if en.Items[7].Title != "Stop 502Drive…" || en.Items[9].Title != "Quit tray" {
-		t.Fatalf("en stop/quit = %q / %q", en.Items[7].Title, en.Items[9].Title)
+	if en.Items[7].Title != "Stop 502Drive…" || en.Items[10].Title != "Quit tray" {
+		t.Fatalf("en stop/quit = %q / %q", en.Items[7].Title, en.Items[10].Title)
+	}
+	if !strings.Contains(en.Items[8].Title, "Start on login") {
+		t.Fatalf("en autostart = %q", en.Items[8].Title)
 	}
 	// Start is for a down daemon; stopping is the confirmed item, only online.
 	if en.Items[6].Enabled || !en.Items[7].Enabled {
@@ -214,7 +220,7 @@ func TestBuildViewKeepsAStableStructure(t *testing.T) {
 			ids = append(ids, c.ID)
 		}
 	}
-	want := []string{"status", ActionOpenTUI, ActionPaste, "jobs", "job:0", "job:1", "job:2", ActionOpenTUI + ":jobs", ActionOpenResult, ActionDaemon, ActionStopDaemon, ActionQuit}
+	want := []string{"status", ActionOpenTUI, ActionPaste, "jobs", "job:0", "job:1", "job:2", ActionOpenTUI + ":jobs", ActionOpenResult, ActionDaemon, ActionStopDaemon, ActionAutostart, ActionQuit}
 	if strings.Join(ids, ",") != strings.Join(want, ",") {
 		t.Fatalf("ids = %v, want %v", ids, want)
 	}
@@ -808,5 +814,98 @@ func TestTitleShowsRealCopyCountsOnlyWhenKnown(t *testing.T) {
 	snap.Jobs[0].Total = nil
 	if got := BuildViewLang(snap, true, "", "en").Title; strings.Contains(got, "/") {
 		t.Fatalf("unknown total must not show a count: %q", got)
+	}
+}
+
+func TestTrayAutostartToggle(t *testing.T) {
+	state := false
+	p := &fakePresenter{}
+	a := newAgent(Options{
+		Status: func(context.Context) (Status, error) {
+			return Status{Ready: true, AccountStatus: "connected"}, nil
+		},
+		Jobs: func(context.Context) ([]Job, error) {
+			return nil, nil
+		},
+		Copy: func(context.Context, string) (string, error) {
+			return "job_1", nil
+		},
+		AutostartToggle: func() (bool, error) {
+			state = !state
+			return state, nil
+		},
+	})
+	a.p = p
+
+	ctx := t.Context()
+	a.refresh(ctx)
+
+	// Toggle on
+	a.action(ctx, ActionAutostart)
+	if !state {
+		t.Fatal("autostart should be toggled on")
+	}
+
+	// Toggle off
+	a.action(ctx, ActionAutostart)
+	if state {
+		t.Fatal("autostart should be toggled off")
+	}
+}
+
+func TestTrayDynamicLanguageChangeWithoutRestart(t *testing.T) {
+	currentLang := "en"
+	p := &fakePresenter{}
+	a := newAgent(Options{
+		Status: func(context.Context) (Status, error) {
+			return Status{Ready: true, AccountStatus: "connected"}, nil
+		},
+		Jobs: func(context.Context) ([]Job, error) {
+			return nil, nil
+		},
+		Copy: func(context.Context, string) (string, error) {
+			return "job_1", nil
+		},
+		Language: func(context.Context) (string, error) {
+			return currentLang, nil
+		},
+	})
+	a.p = p
+
+	ctx := t.Context()
+	view, _ := a.refresh(ctx)
+	if view.Items[1].Title != "Open TUI" {
+		t.Fatalf("expected English 'Open TUI', got %q", view.Items[1].Title)
+	}
+
+	// Dynamically change language preference to Vietnamese
+	currentLang = "vi"
+	view, _ = a.refresh(ctx)
+	if view.Items[1].Title != "Mở menu TUI" {
+		t.Fatalf("expected Vietnamese 'Mở menu TUI' after dynamic change, got %q", view.Items[1].Title)
+	}
+}
+
+// Quiet hours suppress desktop notifications; outside them the notice is sent.
+func TestNotifySkippedDuringQuietHours(t *testing.T) {
+	notices := []Notice{{Title: "done", Body: "x"}}
+	for _, tc := range []struct {
+		name  string
+		quiet func(context.Context) (bool, error)
+		want  int
+	}{
+		{"nil quiet sends", nil, 1},
+		{"not quiet sends", func(context.Context) (bool, error) { return false, nil }, 1},
+		{"quiet suppresses", func(context.Context) (bool, error) { return true, nil }, 0},
+		{"lookup error sends", func(context.Context) (bool, error) { return true, errors.New("down") }, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := &fakeHost{goos: "linux", have: map[string]bool{"notify-send": true}}
+			a := &agent{o: Options{Host: h.Host(), Quiet: tc.quiet}}
+			a.notify(context.Background(), notices)
+			if len(h.ran) != tc.want {
+				t.Fatalf("ran %d notify commands, want %d", len(h.ran), tc.want)
+			}
+		})
 	}
 }

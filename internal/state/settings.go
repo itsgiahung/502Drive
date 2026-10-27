@@ -28,19 +28,45 @@ func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 
 // Preferences are per principal.
 type Preferences struct {
-	Language             string `json:"language"`
-	Timezone             string `json:"timezone"`
-	AutoCopy             bool   `json:"auto_copy"`
-	DestinationID        string `json:"destination_id,omitempty"`
-	DestinationRevision  *int   `json:"destination_revision,omitempty"`
-	NotifyCompleted      bool   `json:"notify_completed"`
-	NotifyFailed         bool   `json:"notify_failed"`
-	NotifyActionRequired bool   `json:"notify_action_required"`
-	AfterCopySyncMode    string `json:"after_copy_sync_mode"`
+	Language             string  `json:"language"`
+	Timezone             string  `json:"timezone"`
+	AutoCopy             bool    `json:"auto_copy"`
+	DestinationID        string  `json:"destination_id,omitempty"`
+	DestinationRevision  *int    `json:"destination_revision,omitempty"`
+	NotifyCompleted      bool    `json:"notify_completed"`
+	NotifyFailed         bool    `json:"notify_failed"`
+	NotifyActionRequired bool    `json:"notify_action_required"`
+	AfterCopySyncMode    string  `json:"after_copy_sync_mode"`
+	QuietHoursStart      *string `json:"quiet_hours_start,omitempty"`
+	QuietHoursEnd        *string `json:"quiet_hours_end,omitempty"`
+	RetentionDays        int     `json:"retention_days"`
+}
+
+// InQuietHours reports whether the given wall clock time falls within quiet hours.
+func (p Preferences) InQuietHours(t time.Time) bool {
+	if p.QuietHoursStart == nil || p.QuietHoursEnd == nil {
+		return false
+	}
+	start, end := strings.TrimSpace(*p.QuietHoursStart), strings.TrimSpace(*p.QuietHoursEnd)
+	if len(start) != 5 || len(end) != 5 {
+		return false
+	}
+	loc := time.UTC
+	if p.Timezone != "" {
+		if l, err := time.LoadLocation(p.Timezone); err == nil {
+			loc = l
+		}
+	}
+	hm := t.In(loc).Format("15:04")
+	if start <= end {
+		return hm >= start && hm < end
+	}
+	// Overnight span (e.g. 22:00 to 07:00)
+	return hm >= start || hm < end
 }
 
 func DefaultPreferences() Preferences {
-	return Preferences{Language: "vi", Timezone: DefaultTimezone(), NotifyCompleted: true, NotifyFailed: true, NotifyActionRequired: true, AfterCopySyncMode: "off"}
+	return Preferences{Language: "auto", Timezone: DefaultTimezone(), NotifyCompleted: true, NotifyFailed: true, NotifyActionRequired: true, AfterCopySyncMode: "off", RetentionDays: 90}
 }
 
 // DefaultTimezone is the process TZ when it is a valid IANA zone, otherwise

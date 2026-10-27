@@ -3,7 +3,11 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -128,6 +132,9 @@ type PreferencePatch struct {
 	NotifyFailed         *bool   `json:"notify_failed"`
 	NotifyActionRequired *bool   `json:"notify_action_required"`
 	AfterCopySyncMode    *string `json:"after_copy_sync_mode"`
+	QuietHoursStart      *string `json:"quiet_hours_start"`
+	QuietHoursEnd        *string `json:"quiet_hours_end"`
+	RetentionDays        *int    `json:"retention_days"`
 }
 
 func (s *Service) PatchPreferences(ctx context.Context, p Principal, key string, patch PreferencePatch) (state.Preferences, error) {
@@ -139,10 +146,11 @@ func (s *Service) PatchPreferences(ctx context.Context, p Principal, key string,
 		return cur, err
 	}
 	if patch.Language != nil {
-		if *patch.Language != "vi" && *patch.Language != "en" {
-			return cur, Fail(http.StatusBadRequest, "invalid_request", "language must be vi or en.")
+		lang := strings.ToLower(strings.TrimSpace(*patch.Language))
+		if lang != "vi" && lang != "en" && lang != "auto" {
+			return cur, Fail(http.StatusBadRequest, "invalid_request", "language must be vi, en or auto.")
 		}
-		cur.Language = *patch.Language
+		cur.Language = lang
 	}
 	if patch.Timezone != nil {
 		tz := strings.TrimSpace(*patch.Timezone)
@@ -167,6 +175,34 @@ func (s *Service) PatchPreferences(ctx context.Context, p Principal, key string,
 		default:
 			return cur, Fail(http.StatusBadRequest, "invalid_request", "after_copy_sync_mode must be off, scheduled or realtime.")
 		}
+	}
+	if patch.QuietHoursStart != nil {
+		s := strings.TrimSpace(*patch.QuietHoursStart)
+		if s != "" {
+			if _, err := time.Parse("15:04", s); err != nil || len(s) != 5 {
+				return cur, Fail(http.StatusBadRequest, "invalid_request", "quiet_hours_start must be HH:MM.")
+			}
+			cur.QuietHoursStart = &s
+		} else {
+			cur.QuietHoursStart = nil
+		}
+	}
+	if patch.QuietHoursEnd != nil {
+		e := strings.TrimSpace(*patch.QuietHoursEnd)
+		if e != "" {
+			if _, err := time.Parse("15:04", e); err != nil || len(e) != 5 {
+				return cur, Fail(http.StatusBadRequest, "invalid_request", "quiet_hours_end must be HH:MM.")
+			}
+			cur.QuietHoursEnd = &e
+		} else {
+			cur.QuietHoursEnd = nil
+		}
+	}
+	if patch.RetentionDays != nil {
+		if *patch.RetentionDays < 0 {
+			return cur, Fail(http.StatusBadRequest, "invalid_request", "retention_days must be >= 0.")
+		}
+		cur.RetentionDays = *patch.RetentionDays
 	}
 	if patch.AutoCopy != nil || patch.DestinationID != nil || patch.DestinationRevision != nil {
 		// Auto-copy is bound to a validated destination revision; any change
@@ -265,6 +301,88 @@ func (s *Service) Doctor(ctx context.Context, p Principal, online bool) ([]Check
 	add("account", acc.Status == "connected", "Google account is connected.", "Google account status: "+acc.Status+".")
 	_, derr := s.Store.DefaultDestination(ctx)
 	add("destination", derr == nil, "A default destination is set.", "No default destination is set.")
+
+	// Disk space check
+	dataDir := s.Store.DataDir()
+	if dataDir == "" {
+		dataDir = "."
+	}
+	df := s.DiskSpaceFn
+	if df == nil {
+		df = defaultDiskSpace
+	}
+	free, total, err := df(dataDir)
+	if err != nil {
+		add("disk_space", false, "", "Cannot read disk space: "+err.Error())
+	} else if free < 512*1024*1024 {
+		add("disk_space", false, "", fmt.Sprintf("Low disk space: %s free of %s (minimum 512MB required).", humanBytes(int64(free)), humanBytes(int64(total))))
+	} else {
+		add("disk_space", true, fmt.Sprintf("Disk space: %s free of %s.", humanBytes(int64(free)), humanBytes(int64(total))), "")
+	}
+
+	// File descriptor limit check
+	fdf := s.FDLimitFn
+	if fdf == nil {
+		fdf = defaultFDLimit
+	}
+	curFD, maxFD, err := fdf()
+	if err != nil {
+		add("fd_limit", false, "", "Cannot check file descriptor limit: "+err.Error())
+	} else if curFD < 128 {
+		add("fd_limit", false, "", fmt.Sprintf("File descriptor limit too low: %d (minimum 128 required).", curFD))
+	} else {
+		add("fd_limit", true, fmt.Sprintf("File descriptor limit: %d (max: %d).", curFD, maxFD), "")
+	}
+
+	// DB and WAL size check
+	dbPath := filepath.Join(dataDir, "state-v2.db")
+	walPath := filepath.Join(dataDir, "state-v2.db-wal")
+	var dbSize, walSize int64
+	if fi, err := os.Stat(dbPath); err == nil {
+		dbSize = fi.Size()
+	}
+	if fi, err := os.Stat(walPath); err == nil {
+		walSize = fi.Size()
+	}
+	if walSize > 32*1024*1024 {
+		add("db_wal", false, "", fmt.Sprintf("SQLite WAL is too large: %s (exceeds 32MB); run maintenance vacuum.", humanBytes(walSize)))
+	} else {
+		add("db_wal", true, fmt.Sprintf("Database size: %s, WAL: %s.", humanBytes(dbSize), humanBytes(walSize)), "")
+	}
+
+	// Checkpoint age check
+	lastCP := s.Store.LastCheckpoint()
+	if !lastCP.IsZero() && time.Since(lastCP) > 24*time.Hour {
+		add("checkpoint_age", false, "", fmt.Sprintf("Last WAL checkpoint was %s ago (over 24h).", time.Since(lastCP).Truncate(time.Minute)))
+	} else {
+		add("checkpoint_age", true, "SQLite checkpoint is up to date.", "")
+	}
+
+	// Secret permissions check
+	checkDir := s.ConfigDir
+	if checkDir == "" {
+		checkDir = dataDir
+	}
+	var insecureFiles []string
+	candidates := []string{
+		filepath.Join(checkDir, "token.json"),
+		filepath.Join(checkDir, "google-token.enc"),
+		filepath.Join(checkDir, "master.key"),
+		filepath.Join(checkDir, "config.json"),
+	}
+	for _, f := range candidates {
+		if fi, err := os.Stat(f); err == nil {
+			if runtime.GOOS != "windows" && fi.Mode().Perm()&0o077 != 0 {
+				insecureFiles = append(insecureFiles, fmt.Sprintf("%s (%04o)", filepath.Base(f), fi.Mode().Perm()))
+			}
+		}
+	}
+	if len(insecureFiles) > 0 {
+		add("secret_permissions", false, "", fmt.Sprintf("Insecure permissions on: %s; must be 0600.", strings.Join(insecureFiles, ", ")))
+	} else {
+		add("secret_permissions", true, "Secret file permissions are secure (0600).", "")
+	}
+
 	if online {
 		c := Check{Name: "google_drive", Status: "passed", Message: "Google Drive answered."}
 		if prov, err := s.provider(ctx); err != nil {
@@ -277,4 +395,17 @@ func (s *Service) Doctor(ctx context.Context, p Principal, online bool) ([]Check
 		out = append(out, Check{Name: "google_drive", Status: "skipped", Message: "Run with online=true to contact Google."})
 	}
 	return out, nil
+}
+
+func humanBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }

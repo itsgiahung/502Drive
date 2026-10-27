@@ -71,7 +71,7 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 	}
 	defer store.Close()
 
-	svc := &app.Service{Store: store, Version: o.Version}
+	svc := &app.Service{Store: store, Version: o.Version, ConfigDir: filepath.Dir(cfg.TokenFile)}
 	var auth *drive.Auth
 	if cfg.OAuthClientFile != "" {
 		raw, err := config.ReadPrivate(cfg.OAuthClientFile)
@@ -292,6 +292,33 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 		close(telegramDone)
 	}
 
+	maintCtx, stopMaint := context.WithCancel(context.WithoutCancel(ctx))
+	maintDone := make(chan struct{})
+	go func() {
+		defer close(maintDone)
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		lastDaily := time.Now()
+		for {
+			select {
+			case <-maintCtx.Done():
+				return
+			case <-ticker.C:
+				_ = store.CheckpointTruncate(maintCtx)
+				_ = store.Optimize(maintCtx)
+				if time.Since(lastDaily) >= 24*time.Hour {
+					lastDaily = time.Now()
+					if prefs, err := store.Preferences(maintCtx, "default"); err == nil && prefs.RetentionDays > 0 {
+						_, _ = store.Prune(maintCtx, state.PruneOptions{
+							OlderThan: time.Duration(prefs.RetentionDays) * 24 * time.Hour,
+							DryRun:    false,
+						})
+					}
+				}
+			}
+		}
+	}()
+
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- hs.Serve(ln) }()
 	log.Info("listening", "addr", ln.Addr().String())
@@ -315,6 +342,10 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 	<-syncDone
 	stopBot()
 	<-telegramDone
+	stopMaint()
+	<-maintDone
+	_ = store.CheckpointTruncate(shutCtx)
+	_ = store.Optimize(shutCtx)
 	if errors.Is(runErr, http.ErrServerClosed) {
 		runErr = nil
 	}
