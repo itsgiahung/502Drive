@@ -93,6 +93,7 @@ Or just run `502drive` to open the app and paste the link there.
 | Pause or resume everything | `502drive pause` · `502drive resume` |
 | Check that everything is set up | `502drive doctor` |
 | Stop 502Drive | `502drive stop` |
+| Update to the latest release | `502drive update --install --restart` |
 
 `COPY_ID` comes from `collections list`. Every command has `--help`, and
 `--json` for scripts. The full list is in the [CLI reference](docs/features/cli.md).
@@ -136,8 +137,9 @@ finishes. Only the chats you allow can use it. See the
   continues by itself when Google allows it.
 - Your Google login is stored encrypted on your machine. Backups made with
   `502drive backup` contain it, so keep them private.
-- 502Drive talks to your Google account and, if you set it up, Telegram. Nothing
-  else: no telemetry, no automatic updates, no public sharing links.
+- 502Drive talks to your Google account and, if you set it up, Telegram, plus
+  GitHub when you check for updates. No telemetry, no automatic updates, no public
+  sharing links.
 
 **Tested so far:** copying, syncing, crash recovery, audit and Telegram on Linux
 with a real Google account. **Not yet tested for real:** Windows and macOS

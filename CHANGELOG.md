@@ -35,6 +35,9 @@ before 1.0 a minor version may change behaviour, and every such change is listed
 - Daily history pruning now follows the retention setting saved in the app (it
   read another settings slot) and runs once a day across restarts (it waited for
   24 hours of uptime, which a laptop rarely reaches).
+- `502drive update --install` downloads the newer release, verifies its checksum,
+  swaps the binary (keeping `.prev`) and, with `--restart`, backs up the data and
+  restarts the daemon. Package-managed installs get the package command instead.
 - Left returns from nested views. Live refresh and returning from reports/filter
   editors preserve object identity instead of reusing a stale list position.
 - Public Markdown is English with one Vietnamese introduction, `README_VI.md`.

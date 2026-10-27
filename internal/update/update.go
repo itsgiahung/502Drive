@@ -1,6 +1,7 @@
-// Package update checks whether a newer 502Drive release exists. It only
-// reads the public GitHub release metadata; it never downloads or installs
-// anything, and it runs only when the user asks (or opted in to the tray check).
+// Package update checks whether a newer 502Drive release exists and, when the
+// user runs `502drive update --install`, installs it after verifying its
+// checksum. Nothing happens on its own: the tray only checks, and only when the
+// user opted in.
 package update
 
 import (

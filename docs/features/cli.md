@@ -163,7 +163,7 @@ Mkdir returns its ID/link; quiet mode prints the ID.
 502drive tray [--write-icons DIR]
 502drive autostart enable|disable|status
 502drive autostart systemd status|install|remove
-502drive update [--enable-check|--disable-check]
+502drive update [--install [--restart] [--yes]] [--enable-check|--disable-check]
 502drive backup PATH
 502drive restore PATH --to DIR
 502drive cleanup [--dry-run|--apply] [--older-than D]
@@ -177,7 +177,15 @@ menu or noninteractive result is used. `--no-input` never opens an input UI.
 `menu --job` / `tui --job` opens one job, including beyond the first page.
 See [desktop navigation](desktop.md#keyboard-navigation),
 [operations](../runbooks.md) and [Windows installation](../install-windows.md).
-Update only checks; it does not download or install software.
+`update` checks for a newer release. `update --install` (asked for by the user,
+never automatic) downloads this platform's archive from the GitHub release,
+verifies it against the release's `checksums.txt`, swaps the binary atomically and
+keeps the previous one as `502drive.prev`. Scripts need `--yes`. Installs under
+`/usr/` or in a folder the user cannot write (rpm/deb, the Windows installer) are
+refused with the package-manager command instead. `--restart` then stops the
+daemon, backs up its data under `<config>/backups/before-TAG-…` (the new version
+may upgrade the database) and starts the new binary. The checksum guards against
+a corrupted download; it comes from the same release, so it is not a signature.
 
 ## Output contract
 

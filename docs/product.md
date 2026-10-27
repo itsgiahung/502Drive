@@ -36,7 +36,7 @@ by default; mirror must be enabled explicitly.
 - Desktop notifications use Linux `notify-send`; Windows/macOS support is incomplete.
 - Telegram offers schedule presets rather than an arbitrary schedule editor.
 - HTTP bearer authentication represents the owner; operators use Telegram.
-- No automatic software installation/update, Windows signing or Drive webhooks.
+- No automatic updates: `502drive update --install` updates only when asked. No Windows signing or Drive webhooks.
 - Protection options are exposed through service/HTTP/CLI; dedicated TUI/Telegram
   controls are not yet implemented.
 - Native Windows/installer, Shared Drive and large-tree acceptance remain incomplete.

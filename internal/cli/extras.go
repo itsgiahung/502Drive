@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -244,11 +245,14 @@ func (a *App) autostartState() (bool, string) {
 // ---- update ----
 
 func (a *App) updateCmd() *cobra.Command {
-	var enable, disable bool
-	c := &cobra.Command{Use: "update", Short: "Check for a newer release (never installs anything)", Args: cobra.NoArgs,
+	var enable, disable, install, restart, yes bool
+	c := &cobra.Command{Use: "update", Short: "Check for a newer release; --install verifies and installs it", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if enable && disable {
 				return usage("choose --enable-check or --disable-check, not both")
+			}
+			if restart && !install {
+				return usage("--restart goes with --install")
 			}
 			if enable || disable {
 				return a.setUpdateCheck(enable)
@@ -261,6 +265,9 @@ func (a *App) updateCmd() *cobra.Command {
 				return localErr(ExitUnavailable, "update_check_failed", err.Error())
 			}
 			newer := update.Newer(Version, rel.Tag)
+			if install {
+				return a.installUpdate(cmd.Context(), rel, newer, restart, yes)
+			}
 			if a.g.json {
 				b, _ := json.Marshal(map[string]any{"data": map[string]any{"current": Version, "latest": rel.Tag, "url": rel.URL, "update_available": newer}, "request_id": ""})
 				fmt.Fprintln(a.out(), string(b))
@@ -270,9 +277,12 @@ func (a *App) updateCmd() *cobra.Command {
 				fmt.Fprintf(a.out(), "502drive %s is up to date (latest release %s).\n", Version, rel.Tag)
 				return nil
 			}
-			fmt.Fprintf(a.out(), "A newer release is available: %s (you have %s)\n%s\nDownload it from the release page and verify the checksums; 502drive never updates itself.\n", rel.Tag, Version, rel.URL)
+			fmt.Fprintf(a.out(), "A newer release is available: %s (you have %s)\n%s\nInstall it with: 502drive update --install\n", rel.Tag, Version, rel.URL)
 			return nil
 		}}
+	c.Flags().BoolVar(&install, "install", false, "download the newer release, verify its checksum and replace this binary")
+	c.Flags().BoolVar(&restart, "restart", false, "with --install: stop the daemon, back up its data, and start the new version")
+	c.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
 	c.Flags().BoolVar(&enable, "enable-check", false, "let the tray check for a new release once a day")
 	c.Flags().BoolVar(&disable, "disable-check", false, "stop the daily tray check")
 	return c
@@ -302,4 +312,119 @@ func (a *App) trayUpdateNote(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return "update available: " + rel.Tag, nil
+}
+
+// installUpdate replaces this binary with the newer release. It never runs on
+// its own: the user asks for it. Package-managed installs (rpm/deb, the
+// Windows installer) are left to their package manager.
+func (a *App) installUpdate(ctx context.Context, rel update.Release, newer, restart, yes bool) error {
+	if !newer {
+		if !a.g.quiet {
+			fmt.Fprintf(a.out(), "502drive %s is up to date (latest release %s).\n", Version, rel.Tag)
+		}
+		return nil
+	}
+	target := a.env("DRIVE502_UPDATE_TARGET") // tests only
+	if target == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			return localErr(ExitInternal, "update_failed", "Cannot locate the 502drive binary.")
+		}
+		if target, err = filepath.EvalSymlinks(exe); err != nil {
+			target = exe
+		}
+	}
+	dir := filepath.Dir(target)
+	if strings.HasPrefix(target, "/usr/") || !update.Writable(dir) {
+		return localErr(ExitUsage, "update_package_managed", fmt.Sprintf(
+			"502drive in %s is managed by a package or an installer. Update it the same way: download %s from %s "+
+				"(rpm: sudo dnf upgrade ./FILE.rpm · deb: sudo apt install ./FILE.deb · Windows: 502drive-setup.exe).",
+			dir, rel.Tag, rel.URL))
+	}
+	if !yes {
+		if !a.io.StdinTTY || a.g.noInput {
+			return usage("add --yes to install %s without a prompt", rel.Tag)
+		}
+		if !a.confirm(fmt.Sprintf("Install %s over %s (you have %s)? [y/N]", rel.Tag, target, Version)) {
+			return localErr(ExitUsage, "update_cancelled", "Nothing was installed.")
+		}
+	}
+	base := update.ReleaseBase(a.env("DRIVE502_RELEASE_BASE"), rel.Tag)
+	sums, err := update.Fetch(ctx, nil, base+"/checksums.txt", 1<<20)
+	if err != nil {
+		return localErr(ExitUnavailable, "update_failed", err.Error())
+	}
+	asset, err := update.PickAsset(sums, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return localErr(ExitNotFound, "update_failed", err.Error())
+	}
+	if !a.g.quiet {
+		fmt.Fprintf(a.errw(), "Downloading %s…\n", asset.Name)
+	}
+	archive, err := update.Fetch(ctx, nil, base+"/"+asset.Name, 200<<20)
+	if err != nil {
+		return localErr(ExitUnavailable, "update_failed", err.Error())
+	}
+	if err = update.Verify(archive, asset.SHA256); err != nil {
+		return localErr(ExitInternal, "update_checksum", err.Error())
+	}
+	names := []string{"502drive"}
+	if runtime.GOOS == "windows" {
+		names = []string{"502drive.exe", "502drive-tray.exe"}
+	}
+	files, err := update.Extract(archive, runtime.GOOS == "windows", names...)
+	if err != nil {
+		return localErr(ExitInternal, "update_failed", err.Error())
+	}
+	if err = update.Replace(target, files[names[0]]); err != nil {
+		return localErr(ExitInternal, "update_failed", err.Error())
+	}
+	if len(names) > 1 {
+		tray := filepath.Join(dir, names[1])
+		if _, serr := os.Stat(tray); serr == nil {
+			if err = update.Replace(tray, files[names[1]]); err != nil {
+				return localErr(ExitInternal, "update_failed", err.Error())
+			}
+		}
+	}
+	if !a.g.quiet {
+		fmt.Fprintf(a.out(), "Installed %s at %s (checksum verified). The previous binary is kept as %s.prev.\n", rel.Tag, target, target)
+	}
+	if !a.daemonUp(ctx) {
+		return nil
+	}
+	if !restart {
+		if !a.g.quiet {
+			fmt.Fprintln(a.out(), "The running daemon is still the old version. Restart it when convenient: 502drive update --install --restart, or 502drive stop then 502drive up.")
+		}
+		return nil
+	}
+	return a.restartWith(ctx, target, rel.Tag)
+}
+
+// restartWith stops the daemon, backs up its data (the new version may upgrade
+// the database, which the old one then cannot open), and starts the daemon from
+// the newly installed binary. It runs that binary by path: after the swap, this
+// process's own executable is the old file.
+func (a *App) restartWith(ctx context.Context, target, tag string) error {
+	run := func(args ...string) error {
+		argv := a.childArgv(target, args...)
+		c := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		c.Stdout, c.Stderr = a.errw(), a.errw()
+		return c.Run()
+	}
+	if err := run("stop", "--yes"); err != nil {
+		return localErr(ExitInternal, "update_restart_failed", "Could not stop the daemon: "+err.Error())
+	}
+	backup := filepath.Join(filepath.Dir(a.configPath()), "backups", "before-"+tag+"-"+time.Now().Format("20060102-150405"))
+	if err := run("backup", backup); err != nil {
+		return localErr(ExitInternal, "update_restart_failed", "The daemon is stopped but the backup failed ("+err.Error()+"); start it again with: 502drive up")
+	}
+	if err := run("up"); err != nil {
+		return localErr(ExitInternal, "update_restart_failed", "Could not start the new daemon: "+err.Error())
+	}
+	if !a.g.quiet {
+		fmt.Fprintf(a.out(), "Restarted on %s. A backup of the previous data is in %s.\n", tag, backup)
+	}
+	return nil
 }

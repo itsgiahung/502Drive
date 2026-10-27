@@ -1,6 +1,13 @@
 package cli
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -92,7 +99,7 @@ func TestDesktopExecQuotingIsSafe(t *testing.T) {
 	}
 }
 
-func TestUpdateCheckReportsNewerAndNeverInstalls(t *testing.T) {
+func TestUpdateCheckReportsNewerWithoutInstalling(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"tag_name":"v9.0.0","html_url":"https://example.test/release"}`))
 	}))
@@ -108,7 +115,110 @@ func TestUpdateCheckReportsNewerAndNeverInstalls(t *testing.T) {
 	}
 	var out, errb strings.Builder
 	code := Execute(t.Context(), []string{"update"}, IO{In: strings.NewReader(""), Out: &out, Err: &errb, Getenv: env})
-	if code != ExitOK || !strings.Contains(out.String(), "v9.0.0") || !strings.Contains(out.String(), "never updates itself") {
+	if code != ExitOK || !strings.Contains(out.String(), "v9.0.0") || !strings.Contains(out.String(), "update --install") {
 		t.Fatalf("exit %d out %q err %q", code, out.String(), errb.String())
+	}
+}
+
+// fakeRelease serves the release API, checksums.txt and one archive holding a
+// "502drive" binary for this platform.
+func fakeRelease(t *testing.T, binary []byte, corrupt bool) *httptest.Server {
+	t.Helper()
+	var arch bytes.Buffer
+	name := fmt.Sprintf("502drive_9.0.0_%s_%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		zw := zip.NewWriter(&arch)
+		for _, n := range []string{"502drive.exe", "502drive-tray.exe"} {
+			w, _ := zw.Create(n)
+			w.Write(binary)
+		}
+		zw.Close()
+		name += ".zip"
+	} else {
+		gz := gzip.NewWriter(&arch)
+		tw := tar.NewWriter(gz)
+		tw.WriteHeader(&tar.Header{Name: "502drive", Mode: 0o755, Size: int64(len(binary)), Typeflag: tar.TypeReg})
+		tw.Write(binary)
+		tw.Close()
+		gz.Close()
+		name += ".tar.gz"
+	}
+	sum := sha256.Sum256(arch.Bytes())
+	digest := hex.EncodeToString(sum[:])
+	if corrupt {
+		digest = strings.Repeat("0", 64)
+	}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/releases/latest"):
+			w.Write([]byte(`{"tag_name":"v9.0.0","html_url":"https://example.test/release"}`))
+		case strings.HasSuffix(r.URL.Path, "/checksums.txt"):
+			fmt.Fprintf(w, "%s  %s\n", digest, name)
+		case strings.HasSuffix(r.URL.Path, "/"+name):
+			w.Write(arch.Bytes())
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func runUpdate(t *testing.T, ts *httptest.Server, target string, args ...string) (int, string, string) {
+	t.Helper()
+	old := Version
+	Version = "1.0.0"
+	t.Cleanup(func() { Version = old })
+	env := func(k string) string {
+		switch k {
+		case "DRIVE502_UPDATE_API", "DRIVE502_RELEASE_BASE":
+			return ts.URL
+		case "DRIVE502_UPDATE_TARGET":
+			return target
+		case "DRIVE502_ENDPOINT":
+			return "http://127.0.0.1:1" // no daemon
+		}
+		return ""
+	}
+	var out, errb strings.Builder
+	code := Execute(t.Context(), append([]string{"update"}, args...), IO{In: strings.NewReader(""), Out: &out, Err: &errb, Getenv: env})
+	return code, out.String(), errb.String()
+}
+
+// --install verifies the archive against checksums.txt, swaps the binary and
+// keeps the old one as .prev. A bad checksum changes nothing, scripts must say
+// --yes, and a package-managed path is left to its package manager.
+func TestUpdateInstallVerifiesAndSwapsTheBinary(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "502drive")
+	if err := os.WriteFile(target, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	bad := fakeRelease(t, []byte("new"), true)
+	defer bad.Close()
+	if code, _, _ := runUpdate(t, bad, target, "--install", "--yes"); code == ExitOK {
+		t.Fatal("a checksum mismatch was installed")
+	}
+	if b, _ := os.ReadFile(target); string(b) != "old" {
+		t.Fatal("a failed update touched the binary")
+	}
+
+	good := fakeRelease(t, []byte("new"), false)
+	defer good.Close()
+	if code, _, errOut := runUpdate(t, good, target, "--install"); code != ExitUsage || !strings.Contains(errOut, "--yes") {
+		t.Fatalf("without a terminal --install must ask for --yes: %d %q", code, errOut)
+	}
+	code, out, errOut := runUpdate(t, good, target, "--install", "--yes")
+	if code != ExitOK || !strings.Contains(out, "checksum verified") {
+		t.Fatalf("install: %d %q %q", code, out, errOut)
+	}
+	if b, _ := os.ReadFile(target); string(b) != "new" {
+		t.Fatalf("binary = %q, want the new one", b)
+	}
+	if b, _ := os.ReadFile(target + ".prev"); string(b) != "old" {
+		t.Fatalf("previous binary = %q, want it kept", b)
+	}
+
+	if code, _, errOut := runUpdate(t, good, "/usr/bin/502drive", "--install", "--yes"); code != ExitUsage || !strings.Contains(errOut, "package") {
+		t.Fatalf("package-managed path: %d %q", code, errOut)
 	}
 }

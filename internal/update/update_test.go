@@ -1,9 +1,13 @@
 package update
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -43,5 +47,46 @@ func TestLatestReadsTheReleaseAndMapsNotFound(t *testing.T) {
 	defer missing.Close()
 	if _, err = Latest(context.Background(), nil, missing.URL); err != ErrNoRelease {
 		t.Fatalf("404 = %v, want ErrNoRelease", err)
+	}
+}
+
+func TestPickAssetIgnoresMalformedLinesAndOtherPlatforms(t *testing.T) {
+	good := strings.Repeat("a", 64)
+	sums := []byte("not-a-hash  502drive_1.0.0_linux_amd64.tar.gz\n" +
+		good + "  502drive_1.0.0_darwin_arm64.tar.gz\n" +
+		good + "  ../evil_linux_amd64.tar.gz\n" +
+		good + "  502drive_1.0.0_linux_amd64.tar.gz\n" +
+		good + "  502drive_1.0.0_windows_amd64.zip\n")
+	a, err := PickAsset(sums, "linux", "amd64")
+	if err != nil || a.Name != "502drive_1.0.0_linux_amd64.tar.gz" || a.SHA256 != good {
+		t.Fatalf("linux asset = %+v %v", a, err)
+	}
+	if a, err = PickAsset(sums, "windows", "amd64"); err != nil || !strings.HasSuffix(a.Name, ".zip") {
+		t.Fatalf("windows asset = %+v %v", a, err)
+	}
+	if _, err = PickAsset(sums, "linux", "riscv64"); err == nil {
+		t.Fatal("a missing platform must be an error")
+	}
+	if err = Verify([]byte("x"), good); err == nil {
+		t.Fatal("a wrong digest verified")
+	}
+}
+
+func TestExtractReadsOnlyTheNamedTopLevelFile(t *testing.T) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for name, body := range map[string]string{"../502drive": "evil", "README.md": "doc", "502drive": "bin"} {
+		tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg})
+		tw.Write([]byte(body))
+	}
+	tw.Close()
+	gz.Close()
+	files, err := Extract(buf.Bytes(), false, "502drive")
+	if err != nil || string(files["502drive"]) != "bin" || len(files) != 1 {
+		t.Fatalf("files = %v %v", files, err)
+	}
+	if _, err = Extract(buf.Bytes(), false, "502drive-tray"); err == nil {
+		t.Fatal("a missing file must be an error")
 	}
 }

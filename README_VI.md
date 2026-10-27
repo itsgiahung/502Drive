@@ -92,6 +92,7 @@ Hoặc chỉ cần gõ `502drive` để mở ứng dụng rồi dán link vào �
 | Tạm dừng hoặc chạy lại tất cả | `502drive pause` · `502drive resume` |
 | Kiểm tra cài đặt có ổn không | `502drive doctor` |
 | Tắt 502Drive | `502drive stop` |
+| Cập nhật lên bản mới nhất | `502drive update --install --restart` |
 
 `COPY_ID` lấy từ `collections list`. Lệnh nào cũng có `--help`, và `--json` cho
 script. Danh sách đầy đủ ở [tài liệu CLI](docs/features/cli.md) (tiếng Anh).
@@ -135,8 +136,9 @@ Chỉ những tài khoản bạn cho phép mới dùng được. Xem
   chạy tiếp khi Google cho phép.
 - Thông tin đăng nhập Google được mã hóa trên máy bạn. Bản sao lưu tạo bằng
   `502drive backup` có chứa nó, nên hãy giữ kín.
-- 502Drive chỉ kết nối tới tài khoản Google của bạn và Telegram (nếu bạn bật).
-  Không gửi dữ liệu thống kê, không tự cập nhật, không tạo link chia sẻ công khai.
+- 502Drive chỉ kết nối tới tài khoản Google của bạn, Telegram (nếu bạn bật) và
+  GitHub khi bạn kiểm tra cập nhật. Không gửi dữ liệu thống kê, không tự cập nhật,
+  không tạo link chia sẻ công khai.
 
 **Đã kiểm thật:** copy, đồng bộ, phục hồi sau crash, audit và Telegram trên Linux với
 tài khoản Google thật. **Chưa kiểm thật:** cài trên Windows và macOS, Shared Drive,

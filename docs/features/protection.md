@@ -22,6 +22,11 @@ works even when automatic capture is disabled.
 
 ## Mirror behavior
 
+Drive answers "not found" both for a deleted file and for one you can no longer
+see. If the owner of a shared source removes your access to some files, mirror
+treats them as deleted and moves their copies to the trash (recoverable for about
+30 days). The mass-removal guard still stops a run when a large share vanishes.
+
 - Act only on mapped source IDs after a complete source scan and successful copy.
   Listing/copy/reconciliation failures and the mass-removal guard prevent mirror.
 - Trash missing-source copies only with the exact ownership intent/generation.
