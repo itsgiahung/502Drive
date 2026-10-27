@@ -145,3 +145,7 @@ hook dừng. Đây là thứ **Quit trên tray** gọi; TUI/CLI không bao giờ
 - U7: `GET /v1/jobs?state=a,b,c` accepts multiple states (trimmed, deduplicated,
   canonical order); invalid members return 400 `invalid_request`. Cursor remains
   bound to the state set, principal and collection. Missing query is unchanged.
+
+- U9: status adds `quota:{used_24h_bytes,limit_known,resume_after}` for the
+  requesting principal. `limit_known=false`: the ledger does not establish the
+  actual Google limit. Resume is nullable, taken from quota-blocked jobs.

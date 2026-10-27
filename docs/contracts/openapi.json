@@ -4105,6 +4105,9 @@
       "required": [
        "paused"
       ]
+     },
+     "quota": {
+      "$ref": "#/components/schemas/QuotaStatus"
      }
     },
     "required": [
@@ -5861,6 +5864,31 @@
      },
      "action": {
       "type": "string"
+     }
+    }
+   },
+   "QuotaStatus": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+     "used_24h_bytes",
+     "limit_known",
+     "resume_after"
+    ],
+    "properties": {
+     "used_24h_bytes": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "limit_known": {
+      "type": "boolean"
+     },
+     "resume_after": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
      }
     }
    }

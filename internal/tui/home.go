@@ -11,6 +11,7 @@ import (
 
 	"github.com/itsgiahung/502Drive/internal/i18n"
 	"github.com/itsgiahung/502Drive/internal/mascot"
+	"github.com/itsgiahung/502Drive/internal/present"
 )
 
 // slashCmd is one entry of the command prompt, like a slash command.
@@ -408,6 +409,9 @@ func (m Model) busyBlock(pw int) []string {
 		}
 	}
 	lines = append(lines, "  "+m.accent(m.workLine()))
+	if q := m.snap.Status.Quota; q != nil {
+		lines = append(lines, "  "+present.QuotaLine(*q, m.location(), m.lang))
+	}
 	for i, j := range running {
 		if i >= 3 {
 			break
@@ -459,6 +463,9 @@ func (m Model) jobsBanner() []string {
 		cat = m.frame.Lines(o)
 	}
 	right := []string{m.accent(m.workLine()), ""}
+	if q := m.snap.Status.Quota; q != nil {
+		right = append(right, present.QuotaLine(*q, m.location(), m.lang))
+	}
 	if m.width >= mascot.MiniCols+4+mascot.StripCols+2 {
 		t := float64(m.opt.now().UnixMilli()%100000) / 1000
 		if m.opt.NoMotion {

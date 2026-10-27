@@ -13,6 +13,7 @@ import (
 
 	"github.com/itsgiahung/502Drive/internal/app"
 	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/present"
 	"github.com/itsgiahung/502Drive/internal/schedule"
 	"github.com/itsgiahung/502Drive/internal/state"
 )
@@ -178,6 +179,10 @@ func (t *Telegram) homePage(ctx context.Context, p app.Principal, chatID int64, 
 	}
 	fmt.Fprintf(&b, "📂 %s: <b>%s</b>\n", tx.destLabel, escape(short(dest, 50)))
 	fmt.Fprintf(&b, "⏳ %s %d · 🕒 %s %d · ⚠️ %s %d\n", tx.running, st.Running, tx.queued, st.Queued, tx.needAction, st.Blocked)
+	if q, e := t.svc.Quota(ctx, p); e == nil {
+		view := t.jobViewFor(ctx, p.ID)
+		fmt.Fprintln(&b, escape(present.QuotaLine(q, view.loc, string(tx.lang))))
+	}
 	if st.QueuePaused {
 		b.WriteString(tx.ig().queuePaused + "\n")
 	}

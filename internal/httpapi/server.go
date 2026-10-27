@@ -310,8 +310,12 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request, p app.Principal)
 	if err != nil {
 		return 0, nil, err
 	}
+	quota, err := s.Svc.Quota(r.Context(), p)
+	if err != nil {
+		return 0, nil, err
+	}
 	return 200, map[string]any{"version": st.Version, "schema_version": st.SchemaVersion, "ready": st.Ready, "account": accountDTO(st.Account),
-		"bot_state": st.BotState, "running_jobs": st.Running, "queued_jobs": st.Queued, "blocked_jobs": st.Blocked,
+		"quota": quota, "bot_state": st.BotState, "running_jobs": st.Running, "queued_jobs": st.Queued, "blocked_jobs": st.Blocked,
 		"lifecycle": st.Lifecycle, "throttle": st.Throttle, "queue": map[string]any{"paused": st.QueuePaused}}, nil
 }
 

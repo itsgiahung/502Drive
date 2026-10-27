@@ -35,6 +35,8 @@ const (
 
 // Status is the subset of /v1/status the tray shows.
 type Status struct {
+	Quota         *present.QuotaStatus
+	Timezone      string
 	Version       string
 	Ready         bool
 	Running       int
@@ -218,6 +220,13 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 // total is known, and what to do when something needs the user.
 func tooltip(title, line string, status Status, online bool, lang string) string {
 	parts := []string{title, line}
+	if status.Quota != nil {
+		loc, _ := time.LoadLocation(status.Timezone)
+		if loc == nil {
+			loc = time.UTC
+		}
+		parts = append(parts, present.QuotaLine(*status.Quota, loc, lang))
+	}
 	if online && status.Blocked > 0 {
 		parts = append(parts, i18n.T(lang, i18n.TrayNeedsHint))
 	}

@@ -223,3 +223,6 @@ syncer trong daemon:
 
 U3: job problems and report captions use the shared bilingual explanation
 catalogue. CSV keeps stable codes and English reasons for interchange.
+
+U9: `/status` includes this principal's Q1 copied bytes (rolling hourly 24-hour
+window) and actual quota resume time in their saved timezone; no guessed cap.

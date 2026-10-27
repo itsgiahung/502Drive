@@ -6,11 +6,13 @@ package tui
 import (
 	"context"
 	"github.com/itsgiahung/502Drive/internal/filter"
+	"github.com/itsgiahung/502Drive/internal/present"
 	"time"
 )
 
 // Status is the subset of /v1/status the TUI shows.
 type Status struct {
+	Quota         *present.QuotaStatus
 	Version       string
 	Ready         bool
 	Running       int

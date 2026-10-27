@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itsgiahung/502Drive/internal/present"
 	"github.com/itsgiahung/502Drive/internal/schedule"
 	"github.com/itsgiahung/502Drive/internal/tui"
 )
@@ -272,12 +273,13 @@ func (a *App) tuiSnapshot(ctx context.Context) (tui.Snapshot, error) {
 		return snap, err
 	}
 	var st struct {
-		Version  string `json:"version"`
-		Ready    bool   `json:"ready"`
-		Running  int    `json:"running_jobs"`
-		Queued   int    `json:"queued_jobs"`
-		Blocked  int    `json:"blocked_jobs"`
-		Bot      string `json:"bot_state"`
+		Quota    *present.QuotaStatus `json:"quota"`
+		Version  string               `json:"version"`
+		Ready    bool                 `json:"ready"`
+		Running  int                  `json:"running_jobs"`
+		Queued   int                  `json:"queued_jobs"`
+		Blocked  int                  `json:"blocked_jobs"`
+		Bot      string               `json:"bot_state"`
 		Throttle struct {
 			Workers   int        `json:"workers_now"`
 			Throttled int        `json:"throttled_last_5m"`
@@ -298,7 +300,7 @@ func (a *App) tuiSnapshot(ctx context.Context) (tui.Snapshot, error) {
 	if err = r.Decode(&st); err != nil {
 		return snap, err
 	}
-	snap.Status = tui.Status{Version: st.Version, Ready: st.Ready, Running: st.Running, Queued: st.Queued,
+	snap.Status = tui.Status{Quota: st.Quota, Version: st.Version, Ready: st.Ready, Running: st.Running, Queued: st.Queued,
 		Blocked: st.Blocked, AccountStatus: st.Account.Status, BotState: st.Bot,
 		Workers: st.Throttle.Workers, Throttled5m: st.Throttle.Throttled,
 		Lifecycle: st.Lifecycle.State, LifecycleOnline: st.Lifecycle.Online, GapSeconds: st.Lifecycle.Gap,

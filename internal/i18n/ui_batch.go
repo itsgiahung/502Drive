@@ -1,6 +1,8 @@
 package i18n
 
 const (
+	QuotaCopied24h         Key = "quota_copied_24h"
+	QuotaResumeAt          Key = "quota_resume_at"
 	DeepTotalUnknown       Key = "deep_total_unknown"
 	JobStatesChoose        Key = "job_states_choose"
 	FilterInclude          Key = "filter_include"
@@ -29,6 +31,7 @@ const (
 
 func init() {
 	vi := map[Key]string{
+		QuotaCopied24h: "24 giờ qua đã copy %s", QuotaResumeAt: "tiếp tục lúc %s",
 		DeepTotalUnknown: "chưa biết tổng",
 		JobStatesChoose:  "Chọn trạng thái · Space bật/tắt · Enter áp dụng · Esc hủy (không chọn = tất cả)",
 		FilterInclude:    "Bao gồm", FilterExclude: "Loại trừ", FilterMin: "Nhỏ nhất", FilterMax: "Lớn nhất", FilterModified: "Sửa sau (RFC3339)", FilterKeep: "Giữ thư mục rỗng (true/false)",
@@ -49,6 +52,7 @@ func init() {
 		SetupIncomplete:        "Chưa đủ điều kiện; hoàn thành các bước trong checklist.",
 	}
 	en := map[Key]string{
+		QuotaCopied24h: "Copied %s in the last 24 hours", QuotaResumeAt: "resumes at %s",
 		DeepTotalUnknown: "total unknown",
 		JobStatesChoose:  "Choose states · Space toggle · Enter apply · Esc cancel (none = all)",
 		FilterInclude:    "Include", FilterExclude: "Exclude", FilterMin: "Minimum size", FilterMax: "Maximum size", FilterModified: "Modified after (RFC3339)", FilterKeep: "Keep empty folders (true/false)",

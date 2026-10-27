@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/itsgiahung/502Drive/internal/present"
 	"github.com/itsgiahung/502Drive/internal/state"
 	"github.com/itsgiahung/502Drive/internal/tray"
 )
@@ -100,11 +101,12 @@ func (a *App) trayStatus(ctx context.Context) (tray.Status, error) {
 		return out, err
 	}
 	var st struct {
-		Version string `json:"version"`
-		Ready   bool   `json:"ready"`
-		Running int    `json:"running_jobs"`
-		Queued  int    `json:"queued_jobs"`
-		Blocked int    `json:"blocked_jobs"`
+		Quota   *present.QuotaStatus `json:"quota"`
+		Version string               `json:"version"`
+		Ready   bool                 `json:"ready"`
+		Running int                  `json:"running_jobs"`
+		Queued  int                  `json:"queued_jobs"`
+		Blocked int                  `json:"blocked_jobs"`
 		Account struct {
 			Status string  `json:"status"`
 			Label  *string `json:"label"`
@@ -119,10 +121,25 @@ func (a *App) trayStatus(ctx context.Context) (tray.Status, error) {
 	if err = r.Decode(&st); err != nil {
 		return out, err
 	}
-	out = tray.Status{Version: st.Version, Ready: st.Ready, Running: st.Running, Queued: st.Queued,
+	out = tray.Status{Quota: st.Quota, Version: st.Version, Ready: st.Ready, Running: st.Running, Queued: st.Queued,
 		Blocked: st.Blocked, AccountStatus: st.Account.Status, QueuePaused: st.Queue.Paused, Lifecycle: st.Lifecycle.State}
 	if st.Account.Label != nil {
 		out.AccountLabel = *st.Account.Label
+	}
+	if st.Quota != nil {
+		a.slow.mu.Lock()
+		out.Timezone = a.slow.pref.Timezone
+		a.slow.mu.Unlock()
+		if out.Timezone == "" {
+			if r, e := a.call(ctx, "GET", "/v1/preferences", nil, nil, ""); e == nil {
+				var p struct {
+					Timezone string `json:"timezone"`
+				}
+				if r.Decode(&p) == nil {
+					out.Timezone = p.Timezone
+				}
+			}
+		}
 	}
 	if setup, err := a.setupChecklist(ctx); err == nil {
 		for _, c := range setup.Checks {

@@ -141,3 +141,7 @@ The three presets remain on **b**. Preview creates no copy job.
 U8: while SSE is connected, deep preview refreshes with stream-driven snapshots;
 the separate 700ms poll is suppressed. Stream loss resumes the existing fallback.
 Partial scans explicitly show unknown total; completion updates without a keypress.
+
+U9: Home and tray tooltip show Q1 copied bytes over the last 24 hours and the
+actual resume time of a quota-blocked job, in the user's timezone. Unknown Google
+limits stay unknown. Old servers without quota retain the existing display.
