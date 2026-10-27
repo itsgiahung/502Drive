@@ -123,3 +123,10 @@ U4: progress uses one shared 30-second observation window, with at least three
 samples before displaying a rate. Bytes are copied logical bytes, unknown totals
 stay unknown; ETA is explicitly estimated and withheld on stalls/unstable rates.
 Tray keeps the detailed shared progress in its tooltip and bounds menu row width.
+
+U5: on a collection, **A** opens the audit findings screen: **t** filters kind,
+**n/p** follows next/previous cursors, **f** previews repair, **F** asks before
+apply. Apply requires a successful dry-run; its plan is shown. A missing or
+failed dry-run does not enable apply. Confirmation states only 502Drive-owned
+objects may change. Relative paths come from that collection's mapping; unmapped
+extra objects use detail/ID. Existing inline audit (`v`) remains available.

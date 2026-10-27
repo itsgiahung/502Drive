@@ -5565,6 +5565,12 @@
      },
      "detail": {
       "type": "string"
+     },
+     "path": {
+      "type": "string"
+     },
+     "explanation": {
+      "$ref": "#/components/schemas/Explanation"
      }
     }
    },

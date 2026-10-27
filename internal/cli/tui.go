@@ -37,6 +37,8 @@ func (a *App) tuiActions() tui.Actions {
 		SubmitMode:            a.tuiSubmitMode,
 		StartAudit:            a.tuiStartAudit,
 		GetAudit:              a.tuiGetAudit,
+		AuditFindings:         a.tuiAuditFindings,
+		GetJob:                a.tuiGetJob,
 		RepairAudit:           a.tuiRepairAudit,
 		CollectionLifecycle:   a.tuiCollectionLifecycle,
 		Cleanup:               a.tuiCleanup,

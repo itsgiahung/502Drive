@@ -138,3 +138,6 @@ hook dừng. Đây là thứ **Quit trên tray** gọi; TUI/CLI không bao giờ
 
 - U2: job reads add nullable `queue_position` (>=1), `queue_ahead` (>=0) and
   `queue_paused`. Queue positions follow successive fair admissions.
+
+- U5: audit findings add `path` (empty if no mapping) and shared `explanation`.
+  Paths resolve only inside the authorized audit collection. Repair routes unchanged.

@@ -36,7 +36,11 @@ func (s *Service) AuditFindings(ctx context.Context, p Principal, id, kind strin
 	if err != nil {
 		return nil, 0, err
 	}
-	return s.Store.ListFindings(ctx, a.ID, kind, limit, cursor)
+	findings, next, err := s.Store.ListFindings(ctx, a.ID, kind, limit, cursor)
+	if err == nil {
+		err = s.Store.ResolveFindingPaths(ctx, a.CollectionID, findings)
+	}
+	return findings, next, err
 }
 
 // LastAudit returns the newest audit of a collection, for the collection card.

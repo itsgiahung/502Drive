@@ -1,6 +1,9 @@
 package i18n
 
 const (
+	AuditBrowserKeys       Key = "audit_browser_keys"
+	AuditAllKinds          Key = "audit_all_kinds"
+	AuditPreviewInfo       Key = "audit_preview_info"
 	QueueAhead             Key = "queue_ahead"
 	SetupTitle             Key = "setup_title"
 	SetupDaemon            Key = "setup_daemon"
@@ -15,6 +18,9 @@ const (
 
 func init() {
 	vi := map[Key]string{
+		AuditBrowserKeys:       "t lọc loại · n/p trang sau/trước · f xem trước sửa · F áp dụng · esc về nguồn",
+		AuditAllKinds:          "Tất cả loại",
+		AuditPreviewInfo:       "Bản xem trước dry-run: %d thao tác; chỉ mục của 502Drive.",
 		QueueAhead:             "Đang chờ (còn %d trước)",
 		SetupTitle:             "Bắt đầu",
 		SetupDaemon:            "Daemon: chạy 502drive up",
@@ -27,6 +33,9 @@ func init() {
 		SetupIncomplete:        "Chưa đủ điều kiện; hoàn thành các bước trong checklist.",
 	}
 	en := map[Key]string{
+		AuditBrowserKeys:       "t filter kind · n/p next/previous · f preview repair · F apply · esc back",
+		AuditAllKinds:          "All kinds",
+		AuditPreviewInfo:       "Dry-run preview: %d actions; only 502Drive objects.",
 		QueueAhead:             "Queued (%d ahead)",
 		SetupTitle:             "Get started",
 		SetupDaemon:            "Daemon: run 502drive up",

@@ -37,7 +37,7 @@ func (m Model) activeTab() int {
 	switch m.screen {
 	case screenJob:
 		home = screenJobs
-	case screenCollection:
+	case screenCollection, screenAudit:
 		home = screenLibrary
 	case screenCopy:
 		home = screenHome

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"runtime"
@@ -152,13 +153,20 @@ func (a *App) tuiGetAudit(ctx context.Context, auditID string) (tui.AuditReport,
 
 func auditReport(av auditView, found []findingView) tui.AuditReport {
 	rep := tui.AuditReport{ID: av.ID, CollectionID: av.CollectionID, JobID: av.JobID, State: av.State,
-		Revision: av.Revision, Scanned: av.Scanned, Counts: av.Counts}
+		Revision: av.Revision, Scanned: av.Scanned, Counts: av.Counts, Repairable: av.Repairable}
+	var preview struct {
+		Actions []tui.RepairOp `json:"actions"`
+	}
+	_ = json.Unmarshal(av.Plan, &preview)
+	rep.Plan = preview.Actions
 	for _, f := range found {
 		if f.Repairable && !f.Repaired {
-			rep.Repairable++
+			if av.Repairable == 0 {
+				rep.Repairable++
+			}
 		}
 		if len(rep.Findings) < 8 {
-			rep.Findings = append(rep.Findings, tui.Finding{Kind: f.Kind, SourceID: f.SourceID, DestID: f.DestID,
+			rep.Findings = append(rep.Findings, tui.Finding{Path: f.Path, Kind: f.Kind, SourceID: f.SourceID, DestID: f.DestID,
 				Detail: f.Detail, Repairable: f.Repairable, Repaired: f.Repaired})
 		}
 	}

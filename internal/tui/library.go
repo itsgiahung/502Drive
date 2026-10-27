@@ -49,6 +49,7 @@ const (
 )
 
 type auditMsg struct {
+	repairState  string
 	collectionID string
 	rep          AuditReport
 	err          error
@@ -156,6 +157,9 @@ func (m Model) collectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 	switch msg.String() {
+	case "A":
+		next, cmd := m.openAuditBrowser(c)
+		return next, cmd, true
 	case "a":
 		next, cmd := m.startAudit(c)
 		return next, cmd, true
@@ -281,17 +285,25 @@ func (m Model) onAudit(msg auditMsg) (tea.Model, tea.Cmd) {
 	}
 	a.err = ""
 	rep := msg.rep
+	if a.planned && a.report != nil && a.report.Revision != rep.Revision {
+		a.planned = false
+	}
 	a.report = &rep
 	if msg.started {
 		m.status = m.tf(i18n.AuditStarted, Sanitize(rep.JobID))
 		return m, m.refetch()
 	}
 	if a.repairJob != "" {
-		if j, ok := m.jobByID(a.repairJob); !ok || terminalState(j.State) {
-			a.planned = a.planned || a.repairDry
+		st := msg.repairState
+		if j, ok := m.jobByID(a.repairJob); ok {
+			st = j.State
+		}
+		if terminalState(st) {
+			a.planned = a.repairDry && st == "succeeded"
 			a.repairJob = ""
 		}
 	}
+
 	return m, nil
 }
 
@@ -333,10 +345,17 @@ func (m Model) pollAudits() tea.Cmd {
 			continue
 		}
 		a.polling = true
-		acts, ctx, id, collection := m.acts, m.ctx, a.report.ID, cid
+		acts, ctx, id, collection, repairID := m.acts, m.ctx, a.report.ID, cid, a.repairJob
 		cmds = append(cmds, func() tea.Msg {
 			rep, err := acts.GetAudit(ctx, id)
-			return auditMsg{collectionID: collection, rep: rep, err: err}
+			st := ""
+			if repairID != "" && acts.GetJob != nil {
+				j, e := acts.GetJob(ctx, repairID)
+				if e == nil {
+					st = j.State
+				}
+			}
+			return auditMsg{collectionID: collection, rep: rep, err: err, repairState: st}
 		})
 	}
 	return tea.Batch(cmds...)

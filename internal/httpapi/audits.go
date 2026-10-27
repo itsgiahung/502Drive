@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/itsgiahung/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/present"
 	"github.com/itsgiahung/502Drive/internal/state"
 )
 
@@ -30,7 +31,7 @@ func auditDTO(a state.Audit) map[string]any {
 
 func findingDTO(f state.Finding) map[string]any {
 	return map[string]any{
-		"audit_id": f.AuditID, "kind": f.Kind, "source_id": f.SourceID, "dest_id": f.DestID,
+		"path": f.Path, "explanation": present.Explain(f.Kind, "en"), "audit_id": f.AuditID, "kind": f.Kind, "source_id": f.SourceID, "dest_id": f.DestID,
 		"repairable": f.Repairable, "repaired": f.Repaired, "detail": f.Detail,
 	}
 }

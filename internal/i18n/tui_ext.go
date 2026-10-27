@@ -131,8 +131,8 @@ var tuiExtVI = map[Key]string{
 
 	LibRetiredTag: "đã ngừng theo dõi",
 	LibRetiredOn:  "đang hiện cả nguồn đã ngừng theo dõi (H để ẩn)",
-	CollKeysExt:   "a kiểm tra toàn vẹn · v kết quả · f lập kế hoạch sửa · F sửa · b bộ lọc · o ngừng theo dõi · u theo dõi lại · c dọn đích · w quên",
-	FooterCollExt: "a kiểm tra · v kết quả · f/F sửa · b lọc · o ngừng · u theo dõi lại · c dọn đích · w quên · esc",
+	CollKeysExt:   "A danh sách kiểm tra · a kiểm tra toàn vẹn · v kết quả · f lập kế hoạch sửa · F sửa · b bộ lọc · o ngừng theo dõi · u theo dõi lại · c dọn đích · w quên",
+	FooterCollExt: "A danh sách kiểm tra · a kiểm tra · v kết quả · f/F sửa · b lọc · o ngừng · u theo dõi lại · c dọn đích · w quên · esc",
 	FooterLibExt:  "space chọn · n chạy · p tạm dừng · x dừng · d/h/e/t lịch · H cả nguồn đã ngừng · enter mở · q",
 
 	AuditTitle:        "Kiểm tra toàn vẹn",

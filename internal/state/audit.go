@@ -53,6 +53,7 @@ type Audit struct {
 
 // Finding is one divergence between source and destination.
 type Finding struct {
+	Path       string `json:"path,omitempty"`
 	AuditID    string `json:"audit_id"`
 	Kind       string `json:"kind"`
 	SourceID   string `json:"source_id,omitempty"`

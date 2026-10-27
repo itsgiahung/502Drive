@@ -29,6 +29,7 @@ const (
 	screenDrive
 	screenCopy
 	screenReport
+	screenAudit
 )
 
 const (
@@ -117,6 +118,7 @@ type Model struct {
 	batches    map[string]*batchState
 	lastAudits map[string]*lastAuditState
 	rep        *reportView
+	ab         *auditBrowser
 	exp        *exportFlow
 
 	watching bool // the realtime stream is connected
@@ -295,6 +297,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onPlan(msg)
 	case submitMsg:
 		return m.onSubmit(msg)
+	case auditPageMsg:
+		return m.onFindings(msg)
 	case auditMsg:
 		return m.onAudit(msg)
 	case repairMsg:
@@ -521,6 +525,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.status = ""
 		return m, nil
+	}
+	if m.screen == screenAudit {
+		return m.auditBrowserKey(msg.String())
 	}
 	if m.screen == screenCopy { // the dialog owns 1/2/3, d and enter
 		return m.copyScreenKey(msg)
@@ -859,6 +866,10 @@ func (m Model) listLen() int {
 		if m.drv != nil {
 			return len(m.drv.page.Items)
 		}
+	case screenAudit:
+		if m.ab != nil {
+			return len(m.ab.page.Items)
+		}
 	case screenJobs:
 		return len(m.snap.Jobs)
 	case screenLibrary:
@@ -895,6 +906,8 @@ func (m *Model) clampCursor() {
 // block above the rows takes.
 func (m Model) listShape() (per, title int) {
 	switch m.screen {
+	case screenAudit:
+		return 2, 4
 	case screenJobs:
 		return 2, 2 + len(m.jobsBanner()) + len(m.lifeBanner()) + len(m.jobsHeadLines()) + m.jobsMoreLines() + len(m.exportLines())
 	case screenReport:

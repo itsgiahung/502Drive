@@ -62,6 +62,14 @@ var explanations = map[string][2]explanationText{
 	"quota":                      {{"quota reached", "Google reported a quota limit.", "Wait until resume_after, or check Google quota and destination space."}, {"đã chạm hạn mức", "Google báo đã chạm hạn mức.", "Chờ mốc tiếp tục hoặc kiểm tra hạn mức Google và dung lượng đích."}},
 	"invalid":                    {{"request rejected", "Drive rejected this request.", "Check the source and destination, then run doctor."}, {"yêu cầu bị từ chối", "Drive từ chối yêu cầu này.", "Kiểm tra nguồn, đích rồi chạy doctor."}},
 	"cancelled":                  {{"unknown reason", "The daemon did not record a reason.", "Refresh the report and run doctor if needed."}, {"chưa rõ lý do", "Daemon chưa ghi lại lý do.", "Đọc lại báo cáo và chạy doctor nếu cần."}},
+	"missing_at_destination":     {{"missing at destination", "The mapped source item is missing at the destination.", "Preview repair to restore the copy."}, {"Không thấy ở đích", "Mục nguồn đã theo dõi không thấy ở đích.", "Xem trước sửa để khôi phục bản copy."}},
+	"extra_at_destination":       {{"extra at destination", "The destination contains an extra item.", "Review manually; repair does not remove extra items."}, {"Mục dư ở đích", "Đích có thêm mục ngoài cây theo dõi.", "Kiểm tra thủ công; sửa không xóa mục dư."}},
+	"name_mismatch":              {{"name differs", "The destination name differs from the source.", "Preview alignment of the owned copy."}, {"Tên khác nhau", "Tên ở đích khác tên nguồn.", "Xem trước căn chỉnh bản copy sở hữu."}},
+	"wrong_parent":               {{"wrong parent", "The mapped destination is in a different parent.", "Preview alignment."}, {"Khác thư mục cha", "Bản đích theo dõi ở thư mục cha khác.", "Xem trước căn chỉnh."}},
+	"size_or_md5_mismatch":       {{"content differs", "The recorded size or checksum differs.", "Preview a replacement copy."}, {"Nội dung khác nhau", "Kích thước hoặc checksum khác nhau.", "Xem trước copy thay thế."}},
+	"duplicate_at_destination":   {{"duplicate at destination", "Multiple destination items match this mapping.", "Inspect before repair."}, {"Bản trùng ở đích", "Nhiều mục đích khớp với mapping này.", "Kiểm tra trước khi sửa."}},
+	"source_removed":             {{"source no longer visible", "The mapped source is no longer visible.", "Check access; keep the existing destination."}, {"Không thấy nguồn nữa", "Không còn nhìn thấy mục nguồn đã theo dõi.", "Kiểm tra quyền; giữ bản đích hiện có."}},
+	"unreadable_source":          {{"source unreadable", "The audit could not read this source.", "Check access and audit again."}, {"Không đọc được nguồn", "Kiểm tra chưa đọc được nguồn này.", "Kiểm tra quyền rồi kiểm tra lại."}},
 }
 
 func Explain(code, lang string) Explanation {

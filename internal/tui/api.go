@@ -229,13 +229,24 @@ func (e *ExistingCopyError) Error() string { return e.Message }
 
 // Finding is one difference an integrity audit found.
 type Finding struct {
-	Kind, SourceID, DestID, Detail string
-	Repairable, Repaired           bool
+	Path, Kind, SourceID, DestID, Detail string
+	Repairable, Repaired                 bool
 }
 
 // AuditReport is one integrity audit with its (first) findings. Counts holds
 // every finding by kind; Findings is only the first page.
+type FindingPage struct {
+	Items []Finding
+	Next  string
+}
+type RepairOp struct {
+	SourceID  string `json:"source_id"`
+	Action    string `json:"action"`
+	OldDestID string `json:"dest_id"`
+}
+
 type AuditReport struct {
+	Plan                           []RepairOp
 	ID, CollectionID, JobID, State string
 	Revision, Scanned              int
 	Counts                         map[string]int
@@ -263,6 +274,8 @@ type WatchEvent struct {
 // Actions is the API surface the model needs. The CLI implements it with
 // internal/cli.Client; tests implement it with fakes.
 type Actions struct {
+	AuditFindings         func(ctx context.Context, auditID, kind, cursor string) (FindingPage, error)
+	GetJob                func(ctx context.Context, id string) (Job, error)
 	Snapshot              func(ctx context.Context) (Snapshot, error)
 	JobAction             func(ctx context.Context, id, action string, revision int) error
 	SyncPreset            func(ctx context.Context, collectionID, preset string) error

@@ -13,18 +13,21 @@ import (
 // auditView mirrors the audit DTO; --json passes the server envelope through
 // untouched, so this is only for human output.
 type auditView struct {
-	ID           string         `json:"id"`
-	CollectionID string         `json:"collection_id"`
-	JobID        string         `json:"job_id"`
-	State        string         `json:"state"`
-	Counts       map[string]int `json:"counts"`
-	Scanned      int            `json:"scanned_folders"`
-	Revision     int            `json:"revision"`
-	StartedAt    string         `json:"started_at"`
-	FinishedAt   *string        `json:"finished_at"`
+	Plan         json.RawMessage `json:"plan,omitempty"`
+	Repairable   int             `json:"repairable_findings"`
+	ID           string          `json:"id"`
+	CollectionID string          `json:"collection_id"`
+	JobID        string          `json:"job_id"`
+	State        string          `json:"state"`
+	Counts       map[string]int  `json:"counts"`
+	Scanned      int             `json:"scanned_folders"`
+	Revision     int             `json:"revision"`
+	StartedAt    string          `json:"started_at"`
+	FinishedAt   *string         `json:"finished_at"`
 }
 
 type findingView struct {
+	Path       string `json:"path"`
 	AuditID    string `json:"audit_id"`
 	Kind       string `json:"kind"`
 	SourceID   string `json:"source_id"`

@@ -523,3 +523,4 @@ probe chạy riêng không `-race`:
 | U2 fair positions match actual claims, pause/old-server display, HTTP fields | `TestQueuePositionsFollowActualFairClaims`, `TestQueueUsesServerAheadAndSuppressesWhilePaused`, `TestJobQueueFieldsAreFromScheduler` | local |
 | U3 bilingual coverage of K1/provider/item codes, unknown fallback and error snapshot | `TestExplanationCoversProductionCodes`, `TestUnknownExplanationRetainsCode`, `TestPlainErrorJobSnapshot` | local |
 | U4 three observations, unknown totals, stalled rate, honest ETA | `TestRecentProgressRequiresThreeSamplesAndKnownStableTotal`, `TestSpeedAndETAFollowSuccessiveSnapshots` | local |
+| U5 audit type/cursor navigation, failed dry-run guard, scoped paths, text snapshot | `TestAuditBrowserFiltersAndPages`, `TestFailedDryRunNeverEnablesApply`, `TestFindingPathsStayWithinAuthorizedCollection` | local |

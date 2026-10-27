@@ -25,3 +25,26 @@ func TestQueuePositionsFollowActualFairClaims(t *testing.T) {
 		t.Fatalf("positions=%v err=%v", positions, err)
 	}
 }
+
+func TestFindingPathsStayWithinAuthorizedCollection(t *testing.T) {
+	s := openStore(t)
+	a := queueJob(t, s, 1, "")
+	b := queueJob(t, s, 2, "")
+	if _, err := s.db.ExecContext(t.Context(), "UPDATE items SET rel_path=? WHERE collection_id=? AND source_id=?", "docs/synthetic.pdf", a.CollectionID, "srcplan1"); err != nil {
+		t.Fatal(err)
+	}
+	found := []Finding{{SourceID: "srcplan1"}}
+	if err := s.ResolveFindingPaths(t.Context(), a.CollectionID, found); err != nil {
+		t.Fatal(err)
+	}
+	if found[0].Path != "docs/synthetic.pdf" {
+		t.Fatal(found)
+	}
+	found = []Finding{{SourceID: "srcplan1"}}
+	if err := s.ResolveFindingPaths(t.Context(), b.CollectionID, found); err != nil {
+		t.Fatal(err)
+	}
+	if found[0].Path != "" {
+		t.Fatal("path crossed collection scope")
+	}
+}
