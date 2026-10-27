@@ -279,6 +279,26 @@ power source trong test; mô phỏng không thay thế kiểm trên OS thật.
 | O12 | Rollback sau remote write | chưa chạy | — |
 | I1–I4 | OAuth callback/session/revoke | local (một phần) | [auth_test.go](../internal/drive/auth_test.go), [auth_more_test.go](../internal/drive/auth_more_test.go); live: chưa |
 
+## Live integration harness & Fault injector (S12)
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| S12-1 | FaultInjector bọc RoundTripper: pass-through, chèn 429 kèm Retry-After, rớt kết nối (KindUnreachable), mất phản hồi (KindUnavailable), max/skip hits, đồng thời | local | [drive/faultinject_test.go](../internal/drive/faultinject_test.go) 10 test |
+| S12-2 | Live workspace: định dạng `502drive-live-test-<unix>`, cô lập hoàn toàn dưới root, dọn dẹp vào thùng rác (`TrashFile`) | local | [live/harness_test.go](../internal/live/harness_test.go) `TestLiveFolderNameFormat`, `TestLiveWorkspaceIsolationAndCleanup` |
+| S12-3 | Build tag `live`, cờ `DRIVE502_LIVE=1` bảo vệ, tự động skip khi thiếu cờ/credential | local | [live/harness_test.go](../internal/live/harness_test.go) `TestCheckLiveSkipsWhenDisabled`, [live/live_test.go](../internal/live/live_test.go) |
+| S12-4 | Kịch bản clone cây nhỏ với provider | local | [live/harness_test.go](../internal/live/harness_test.go) `TestScenarioCloneSmallTreeWithFake` |
+| S12-5 | Live end-to-end trên Google Drive thật (OAuth refresh, clone cây nhỏ, crash/resume với fault injector, sync change feed, Telegram bot) | chưa chạy | [live/live_test.go](../internal/live/live_test.go) (cần tài khoản Google thật) |
+
+## UX thống nhất (S13)
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| S13-1 | StateLabel: song ngữ vi/en, 18 trạng thái, case/trim insensitive, fallback trạng thái lạ | local | [present/present_test.go](../internal/present/present_test.go) `TestStateLabel` |
+| S13-2 | HumanBytes: B, KB, MB, GB, TB, âm trả "-", 0 B | local | [present/present_test.go](../internal/present/present_test.go) `TestHumanBytes` |
+| S13-3 | HumanDuration: giây/phút/giờ/ngày, vi (`2p30s`, `1g05p`) và en (`2m30s`, `1h05m`) | local | [present/present_test.go](../internal/present/present_test.go) `TestHumanDuration` |
+| S13-4 | Progress: hoàn thành/tổng số, tốc độ, ETA, lỗi/chặn | local | [present/present_test.go](../internal/present/present_test.go) `TestProgress` |
+| S13-5 | OneLine: một dòng tổng hợp gọn gàng cho danh sách | local | [present/present_test.go](../internal/present/present_test.go) `TestOneLine` |
+
 ## Cách chạy
 
 `gofmt -l cmd internal && go vet ./... && go test -race ./...` cho toàn bộ; load
