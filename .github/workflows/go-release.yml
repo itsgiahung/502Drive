@@ -205,10 +205,7 @@ jobs:
         run: |
           $version = "${{ github.ref_name }}".TrimStart('v')
           if ('${{ github.event_name }}' -eq 'workflow_dispatch') { $version = '0.0.0-dry-run' }
-          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path $iscc)) { throw "Inno Setup not found at $iscc" }
-          & $iscc "/DMyAppVersion=$version" 'packaging/windows/502drive.iss'
-          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with $LASTEXITCODE" }
+          ./packaging/windows/build-installer.ps1 -Version $version -SmokeTest
 
       - name: Checksum the installer
         shell: pwsh

@@ -51,6 +51,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "addtopath"; Description: "Add 502Drive to PATH (so you can type 502drive or the short 502d in a terminal)"; GroupDescription: "Command line:"
 Name: "autostart"; Description: "Start 502Drive in the notification area when I sign in"; GroupDescription: "Startup:"; Flags: unchecked
+Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
 [Files]
 Source: "..\..\dist\windows\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -64,6 +65,7 @@ Source: "..\..\NOTICE.md"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{group}\{#MyAppName} tray"; Filename: "{app}\{#MyAppTrayName}"; IconFilename: "{app}\502drive.ico"
 Name: "{group}\{#MyAppName} menu"; Filename: "{app}\{#MyAppExeName}"; Parameters: "menu"; WorkingDir: "{app}"; IconFilename: "{app}\502drive.ico"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppTrayName}"; IconFilename: "{app}\502drive.ico"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPath('{app}'); Tasks: addtopath
