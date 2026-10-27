@@ -234,3 +234,9 @@ batch, with revision-bound one-shot callbacks. Preferences/quiet hours apply.
 Old clients keep per-job notices. A durable send-attempt fence prevents blind
 resends after an unknown Telegram outcome; a crash in that window may lose the
 summary. Exactly-once remote delivery is not claimed.
+
+U11: operator `/find NAME` searches only their library collection names, including
+retired entries, with cursor paging (10 per page) and read-only details. It never
+searches the owner's Drive. Owner whole-Drive `/find` is unchanged; the shared
+library service allows owner scope across principals. Unknown users and group
+chats receive no library data. Result callbacks recheck scope and revision.

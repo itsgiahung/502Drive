@@ -376,7 +376,7 @@ func TestFindSearchesTheWholeDriveNotJustTheTopLevel(t *testing.T) {
 	}
 }
 
-func TestFindForAnOperatorIsRefusedByTheServiceWithoutASearch(t *testing.T) {
+func TestFindForAnOperatorUsesOnlyTheLibraryWithoutADriveSearch(t *testing.T) {
 	h := newHarness(t, 100)
 	h.addOperator(555)
 	h.drive.Folder("Owner secrets", "root")
@@ -384,8 +384,8 @@ func TestFindForAnOperatorIsRefusedByTheServiceWithoutASearch(t *testing.T) {
 	if strings.Contains(h.lastCard().Text, "Owner secrets") || h.drive.CallCount("search") != 0 {
 		t.Fatalf("an operator searched the owner's Drive:\n%s", h.lastCard().Text)
 	}
-	if !strings.Contains(h.lastCard().Text, vietnamese.errMsg["forbidden"]) {
-		t.Fatalf("the refusal should be explained:\n%s", h.lastCard().Text)
+	if !strings.Contains(h.lastCard().Text, vietnamese.g().findNone) {
+		t.Fatalf("the empty library should be explained:\n%s", h.lastCard().Text)
 	}
 }
 

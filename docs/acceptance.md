@@ -529,3 +529,4 @@ probe chạy riêng không `-race`:
 | U8 stream-triggered deep refresh, final state, fallback/late replies | `TestStreamSnapshotRefreshesVisibleDeepScan`, existing deep-scan tests | local |
 | U9 unknown limit, quota scope, user timezone | `TestStatusQuotaDoesNotInventALimit`, `TestQuotaResumeOnlyUsesPrincipalQuotaJobs`, `TestQuotaLineUsesReaderTimezoneAndNoUnknownLimit` | local |
 | U10 admission seal, terminal barrier, restart/outbox dedup, stale callbacks, uncertain-send fence | `TestBatchSealIsScopedAndIdempotent`, `TestBatchSummaryWaitsForAllJobsAndSurvivesBotRestart`, `TestBatchNoticeSealAndOutboxSurviveRestart` | local; remote exactly-once not established |
+| U11 owner/operator/stranger/group scope, cursor paging, no operator Drive search | `TestOperatorFindIsPagedScopedAndReadOnly`, existing `/find` authorization tests | local |

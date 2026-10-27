@@ -81,7 +81,7 @@ func TestFindEscapesNamesAndCapsTheList(t *testing.T) {
 	}
 }
 
-func TestFindIsOwnerOnlyAndNeverTouchesDriveForOthers(t *testing.T) {
+func TestOperatorFindNeverTouchesDriveAndStrangersStaySilent(t *testing.T) {
 	h := newHarness(t, 100)
 	if _, _, err := h.svc.AddOperator(context.Background(), app.Owner, "op-f", 555); err != nil {
 		t.Fatal(err)

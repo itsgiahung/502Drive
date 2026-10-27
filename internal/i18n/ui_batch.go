@@ -1,6 +1,8 @@
 package i18n
 
 const (
+	LibraryFindTitle       Key = "library_find_title"
+	LibraryFindScope       Key = "library_find_scope"
 	BatchSummary           Key = "batch_summary"
 	BatchViewIssues        Key = "batch_view_issues"
 	BatchRetryFailed       Key = "batch_retry_failed"
@@ -35,6 +37,7 @@ const (
 
 func init() {
 	vi := map[Key]string{
+		LibraryFindTitle: "Tìm thư viện: %s", LibraryFindScope: "Chỉ đọc · chỉ bộ sưu tập trong phạm vi được xem.",
 		BatchSummary: "Lô %s: xong %d/%d; %d cần xử lý", BatchViewIssues: "Xem vấn đề", BatchRetryFailed: "Thử lại các job lỗi", BatchRetryAccepted: "Đã nhận yêu cầu thử lại các job lỗi.",
 		QuotaCopied24h: "24 giờ qua đã copy %s", QuotaResumeAt: "tiếp tục lúc %s",
 		DeepTotalUnknown: "chưa biết tổng",
@@ -57,6 +60,7 @@ func init() {
 		SetupIncomplete:        "Chưa đủ điều kiện; hoàn thành các bước trong checklist.",
 	}
 	en := map[Key]string{
+		LibraryFindTitle: "Library search: %s", LibraryFindScope: "Read only · collections within your permitted scope.",
 		BatchSummary: "Batch %s: done %d/%d; %d need action", BatchViewIssues: "View issues", BatchRetryFailed: "Retry failed jobs", BatchRetryAccepted: "Retry requests accepted for failed jobs.",
 		QuotaCopied24h: "Copied %s in the last 24 hours", QuotaResumeAt: "resumes at %s",
 		DeepTotalUnknown: "total unknown",

@@ -30,6 +30,9 @@ func (t *Telegram) findCmd(ctx context.Context, p app.Principal, chatID int64, q
 	if len([]rune(q)) > findMaxQuery {
 		q = string([]rune(q)[:findMaxQuery])
 	}
+	if p.Role != app.RoleOwner {
+		return t.findLibrary(ctx, p, chatID, 0, libraryFindPayload{Query: q})
+	}
 	matches, err := t.svc.Search(ctx, p, q)
 	if err != nil {
 		return t.showError(ctx, p, chatID, 0, err)

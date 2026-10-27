@@ -220,6 +220,8 @@ func (t *Telegram) onCallback(ctx context.Context, cq *models.CallbackQuery) err
 
 func (t *Telegram) act(ctx context.Context, p app.Principal, st state.Callback, tx texts) error {
 	switch st.Action {
+	case "find_library", "find_library_collection":
+		return t.libraryFindAction(ctx, p, st)
 	case "batch_issues", "batch_retry_failed":
 		return t.batchNoticeAction(ctx, p, st)
 	case "copy":
