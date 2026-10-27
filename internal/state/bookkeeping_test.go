@@ -128,3 +128,47 @@ func TestMigration026AddsBookkeepingTable(t *testing.T) {
 		t.Fatal("foreign key violation after upgrade")
 	}
 }
+
+// An audit, repair or cleanup job finishes through FinishJob too: it leaves a
+// marker for the replay but never rewrites the collection state, which only the
+// baseline copy defines.
+func TestFinishJobForAMaintenanceJobKeepsTheCollectionState(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	col := Collection{ID: "col_aud", SourceID: "src_aud", SourceName: "P", SourceKind: KindFolder,
+		DestinationID: "dest", RootName: "P", State: CollectionReady, Revision: 3, BaselineJobID: "job_base"}
+	cb, _ := json.Marshal(col)
+	j := Job{ID: "job_aud", Principal: "owner", CollectionID: col.ID, Kind: JobKindAudit, Trigger: "audit",
+		SourceName: "P", DestinationID: "dest", RootName: "P", State: JobRunning, DesiredState: "run",
+		Revision: 1, CreatedAt: now, UpdatedAt: now}
+	jb, _ := json.Marshal(j)
+	if err := s.tx(ctx, func(tx *sql.Tx) error {
+		if _, e := tx.ExecContext(ctx, "INSERT INTO plans VALUES(?,?,?,NULL)", "plan_"+col.ID, "owner", []byte(`{}`)); e != nil {
+			return e
+		}
+		if _, e := tx.ExecContext(ctx, "INSERT INTO collections(id, principal, plan_id, body) VALUES(?,?,?,?)", col.ID, "owner", "plan_"+col.ID, cb); e != nil {
+			return e
+		}
+		_, e := tx.ExecContext(ctx, "INSERT INTO jobs VALUES(?,?,?,?,?)", j.ID, "owner", col.ID, j.State, jb)
+		return e
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.FinishJob(ctx, j.ID, func(x *Job) (string, bool) {
+		x.State = JobPartial
+		return "finished", true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetCollection(ctx, "", col.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != CollectionReady || got.Revision != 3 {
+		t.Fatalf("an audit job changed the collection: state=%q revision=%d", got.State, got.Revision)
+	}
+	if n, err := s.FinishPendingBookkeeping(ctx); err != nil || n != 1 {
+		t.Fatalf("replay = %d err=%v, want 1", n, err)
+	}
+}

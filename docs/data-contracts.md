@@ -148,7 +148,8 @@ phần lẻ giây.
 transaction với trạng thái terminal của job và trạng thái collection
 (`Store.FinishJob`). `RunFinished` xóa dấu khi đã ghi subscription hoặc yêu cầu
 sync sau copy; dấu còn sót (crash giữa hai bước) được phát lại lúc daemon khởi
-động (`FinishPendingBookkeeping`). Job audit/cleanup chưa dùng dấu này.
+động (`FinishPendingBookkeeping`). Job audit, repair và cleanup cũng kết thúc qua
+`FinishJob` (có dấu) nhưng không đổi trạng thái collection — chỉ job `initial` làm việc đó.
 
 ## Ownership và vòng đời
 

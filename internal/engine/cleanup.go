@@ -127,7 +127,7 @@ func (r *run) settleCleanup(ctx context.Context) {
 }
 
 func (r *run) finishCleanup(final, code, msg string) {
-	_, err := r.e.Store.UpdateJob(r.db, r.id, func(j *state.Job) (string, bool) {
+	_, err := r.e.Store.FinishJob(r.db, r.id, func(j *state.Job) (string, bool) {
 		j.State, j.Phase, j.LastError = final, nil, nil
 		if code != "" {
 			j.LastError = &state.Failure{Code: code, Message: msg}

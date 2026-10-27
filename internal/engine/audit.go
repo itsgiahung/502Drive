@@ -63,9 +63,10 @@ func findingCounts(counts map[string]int) map[string]int {
 }
 
 // finishAudit settles an audit job without consulting item counts (an audit
-// owns no items, so finalize() would lie).
+// owns no items, so finalize() would lie). Like every terminal write it goes
+// through FinishJob, so the bookkeeping marker survives a crash before afterRun.
 func (r *run) finishAudit(final, code, msg string) {
-	_, err := r.e.Store.UpdateJob(r.db, r.id, func(j *state.Job) (string, bool) {
+	_, err := r.e.Store.FinishJob(r.db, r.id, func(j *state.Job) (string, bool) {
 		j.State, j.Phase, j.LastError = final, nil, nil
 		if code != "" {
 			j.LastError = &state.Failure{Code: code, Message: msg}
@@ -597,7 +598,7 @@ func (r *run) settleRepair(ctx context.Context) {
 }
 
 func (r *run) finishRepair(final, code, msg string) {
-	_, err := r.e.Store.UpdateJob(r.db, r.id, func(j *state.Job) (string, bool) {
+	_, err := r.e.Store.FinishJob(r.db, r.id, func(j *state.Job) (string, bool) {
 		j.State, j.Phase, j.LastError = final, nil, nil
 		if code != "" {
 			j.LastError = &state.Failure{Code: code, Message: msg}
