@@ -111,7 +111,14 @@ func (a *App) onboardCmd() *cobra.Command {
 						return e
 					}
 				case "destination":
-					path := a.promptLine(bufio.NewReader(a.io.In), i18n.T(lang, i18n.SetupDestinationPrompt))
+					path := strings.TrimSpace(a.promptLine(bufio.NewReader(a.io.In), i18n.T(lang, i18n.SetupDestinationPrompt)))
+					if path == "" { // Enter: copies go to My Drive
+						root, e := a.myDriveID(ctx)
+						if e != nil {
+							return e
+						}
+						path = root
+					}
 					d, e := a.tuiAddDestination(ctx, path)
 					if e != nil {
 						return e
@@ -125,9 +132,22 @@ func (a *App) onboardCmd() *cobra.Command {
 				out = fresh
 			}
 		}
-		// Checklist JSON is always machine-readable, including without --json.
-		b, _ := json.Marshal(map[string]any{"data": out, "request_id": ""})
-		fmt.Fprintln(a.out(), string(b))
+		if interactive {
+			// A person gets a readable checklist; scripts and --json get JSON.
+			for _, c := range out.Checks {
+				mark := "✓"
+				if c.Status != "passed" {
+					mark = "✗"
+				}
+				fmt.Fprintf(a.out(), "%s %s\n", mark, present.SetupStep(c.Name, lang))
+			}
+			if out.Ready {
+				fmt.Fprintln(a.out(), i18n.T(lang, i18n.SetupReady))
+			}
+		} else {
+			b, _ := json.Marshal(map[string]any{"data": out, "request_id": ""})
+			fmt.Fprintln(a.out(), string(b))
+		}
 		if !out.Ready {
 			return localErr(ExitSetupIncomplete, "setup_incomplete", i18n.T(lang, i18n.SetupIncomplete))
 		}
@@ -148,4 +168,25 @@ func cleanPromptPath(p string) string {
 		}
 	}
 	return p
+}
+
+// myDriveID is the real ID of the user's My Drive root ("root" is only an
+// alias that the destination check does not take).
+func (a *App) myDriveID(ctx context.Context) (string, error) {
+	r, err := a.call(ctx, "GET", "/v1/drive/folders/root", nil, nil, "")
+	if err != nil {
+		return "", err
+	}
+	var page struct {
+		Folder struct {
+			ID string `json:"id"`
+		} `json:"folder"`
+	}
+	if err = r.Decode(&page); err != nil {
+		return "", err
+	}
+	if page.Folder.ID == "" {
+		return "", localErr(ExitInternal, "my_drive_unknown", "Could not find My Drive; paste a folder link instead.")
+	}
+	return page.Folder.ID, nil
 }
