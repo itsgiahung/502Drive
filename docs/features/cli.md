@@ -361,3 +361,12 @@ Test: [batch_it_test.go](../../internal/tui/batch_it_test.go), [batch_it2_test.g
   thẳng vào bản xem trước. Khi ô trống, các phím `1`–`7`, `c`, `l`, `r`, `q`, `?` vẫn là
   phím tắt; khi đang gõ, `q` chỉ là chữ q. Esc xóa ô trước khi làm gì khác.
 - Test: [home_test.go](../../internal/tui/home_test.go).
+
+## First-run guide (U1)
+
+`502drive onboard` guides a TTY through OAuth Desktop JSON (regular file, Unix
+0600), detached daemon startup, Google login and a default destination. Existing
+`setup` flags retain their provisioning behavior. Without a TTY, with `--json`
+or `--no-input`, onboard never reads input or starts processes: it emits a JSON
+envelope with `ready` and ordered `checks`, exit **9** when incomplete. An older
+daemon falls back to Doctor. Unknown readiness is reported as unknown.

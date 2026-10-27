@@ -313,11 +313,12 @@ func (a *App) tuiSnapshot(ctx context.Context) (tui.Snapshot, error) {
 // preferences). A realtime refresh happens many times a second during a copy;
 // re-reading these every time would triple the requests for nothing.
 type slowCache struct {
-	mu   sync.Mutex
-	at   time.Time
-	dest []tui.Destination
-	acc  tui.Account
-	pref tui.Prefs
+	mu    sync.Mutex
+	at    time.Time
+	dest  []tui.Destination
+	acc   tui.Account
+	pref  tui.Prefs
+	setup *tui.SetupState
 	// jq is the Jobs filter the TUI asked for; the next snapshots read it.
 	jq tui.JobQuery
 }
@@ -333,9 +334,16 @@ func (a *App) tuiSlowSections(ctx context.Context, snap *tui.Snapshot) {
 		a.tuiDestinations(ctx, &fresh)
 		a.tuiAccount(ctx, &fresh)
 		a.tuiPrefs(ctx, &fresh)
+		if setup, err := a.setupChecklist(ctx); err == nil {
+			c.setup = &tui.SetupState{Ready: setup.Ready}
+			for _, ch := range setup.Checks {
+				c.setup.Checks = append(c.setup.Checks, tui.Check{Name: ch.Name, Status: ch.Status})
+			}
+		}
 		c.dest, c.acc, c.pref, c.at = fresh.Destinations, fresh.Account, fresh.Prefs, time.Now()
 	}
 	snap.Destinations, snap.Account, snap.Prefs = c.dest, c.acc, c.pref
+	snap.Setup = c.setup
 }
 
 // forgetSlow makes the next snapshot re-read the slow sections after a change

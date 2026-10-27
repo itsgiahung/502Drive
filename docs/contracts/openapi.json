@@ -2753,6 +2753,33 @@
      }
     }
    }
+  },
+  "/v1/setup": {
+   "get": {
+    "summary": "First-run readiness from the core Doctor checks",
+    "description": "Owner only.",
+    "responses": {
+     "200": {
+      "description": "Snapshot/query result",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SetupResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "$ref": "#/components/responses/Error409"
+     },
+     "429": {
+      "$ref": "#/components/responses/Error429"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
   }
  },
  "components": {
@@ -5721,6 +5748,64 @@
        "deleted",
        "id"
       ]
+     },
+     "request_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "data",
+     "request_id"
+    ]
+   },
+   "Setup": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+     "ready",
+     "checks"
+    ],
+    "properties": {
+     "ready": {
+      "type": "boolean"
+     },
+     "checks": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "status": {
+         "type": "string",
+         "enum": [
+          "passed",
+          "failed",
+          "unknown",
+          "skipped"
+         ]
+        },
+        "message": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "name",
+        "status",
+        "message"
+       ]
+      }
+     }
+    }
+   },
+   "SetupResponse": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "data": {
+      "$ref": "#/components/schemas/Setup"
      },
      "request_id": {
       "type": "string"

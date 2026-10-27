@@ -9,6 +9,7 @@ import (
 
 	"github.com/itsgiahung/502Drive/internal/autostart"
 	"github.com/itsgiahung/502Drive/internal/i18n"
+	"github.com/itsgiahung/502Drive/internal/present"
 )
 
 // Action IDs are fixed: the tray never passes user text as an action.
@@ -43,8 +44,9 @@ type Status struct {
 	AccountLabel  string
 	// QueuePaused is the global queue pause (S6); Lifecycle is the daemon's
 	// power/network state ("running", "sleeping", "resuming", ...).
-	QueuePaused bool
-	Lifecycle   string
+	QueuePaused  bool
+	Lifecycle    string
+	SetupMissing string
 }
 
 // Job is one recent job shown in the tray submenu.
@@ -146,6 +148,9 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 	if note != "" {
 		title += " · " + plain(note)
 	}
+	if online && status.SetupMissing != "" {
+		line = present.SetupStep(status.SetupMissing, lang)
+	}
 	result := latestResult(snap)
 
 	googleOK := online && (status.AccountStatus == "" || status.AccountStatus == "connected")
@@ -176,6 +181,9 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 			statusRows[1].Title = i18n.T(lang, i18n.TrayPausedRow)
 		}
 		statusRows[2] = Item{ID: "status:attention", Title: i18n.Tf(lang, i18n.TrayBlockedRow, status.Blocked), Hidden: status.Blocked == 0}
+		if status.SetupMissing != "" {
+			statusRows[2] = Item{ID: "status:attention", Title: present.SetupStep(status.SetupMissing, lang)}
+		}
 	}
 	items := append(statusRows, []Item{
 		{Separator: true},

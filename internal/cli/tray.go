@@ -124,6 +124,14 @@ func (a *App) trayStatus(ctx context.Context) (tray.Status, error) {
 	if st.Account.Label != nil {
 		out.AccountLabel = *st.Account.Label
 	}
+	if setup, err := a.setupChecklist(ctx); err == nil {
+		for _, c := range setup.Checks {
+			if c.Status != "passed" {
+				out.SetupMissing = c.Name
+				break
+			}
+		}
+	}
 	return out, nil
 }
 

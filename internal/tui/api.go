@@ -137,8 +137,14 @@ type Prefs struct {
 	Autostart, AutostartKnown bool
 }
 
+type SetupState struct {
+	Ready  bool
+	Checks []Check
+}
+
 // Snapshot is everything one refresh reads.
 type Snapshot struct {
+	Setup        *SetupState
 	Status       Status
 	Jobs         []Job
 	Collections  []Collection

@@ -516,3 +516,7 @@ Bot giả (`httptest`, có `sendDocument`), `drivetest.Fake`, đồng hồ giả
 `gofmt -l cmd internal && go vet ./... && go test -race ./...` cho toàn bộ; load
 probe chạy riêng không `-race`:
 `go test -run TestLoadTenThousandFiles -timeout 15m ./internal/engine`.
+
+| UI batch | Evidence | Status |
+| --- | --- | --- |
+| U1 readiness API/auth, unattended checklist/no stdin, TUI checklist snapshot | `TestSetupChecklistUsesDoctorAndRequiresAuth`, `TestOnboardNonTTYDoesNotReadInput`, `TestSetupHomeDisappearsWhenReady` | local |

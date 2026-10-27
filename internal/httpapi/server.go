@@ -118,6 +118,7 @@ func (s *Server) Handler() http.Handler {
 	route("POST /v1/operators", s.addOperator)
 	route("DELETE /v1/operators/{id}", s.removeOperator)
 	route("GET /v1/doctor", s.doctor)
+	route("GET /v1/setup", s.setup)
 	route("POST /v1/doctor/fix", s.doctorFix)
 	route("GET /v1/collections", s.listCollections)
 	route("GET /v1/collections/{id}", s.getCollection)

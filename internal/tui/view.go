@@ -10,6 +10,7 @@ import (
 
 	"github.com/itsgiahung/502Drive/internal/i18n"
 	"github.com/itsgiahung/502Drive/internal/mascot"
+	"github.com/itsgiahung/502Drive/internal/present"
 )
 
 var spinFrames = []string{"⠋", "⠙", "⠹", "⠸"}
@@ -20,6 +21,23 @@ var spinFramesASCII = []string{"|", "/", "-", "\\"}
 // the output is exactly that many lines (the body is windowed and padded), so
 // a shorter screen never leaves lines of the previous one behind.
 func (m Model) View() string {
+	if m.screen == screenHome && m.snap.Setup != nil && !m.snap.Setup.Ready {
+		lines := []string{m.t(i18n.SetupTitle), ""}
+		for _, c := range m.snap.Setup.Checks {
+			mark := "✗"
+			if c.Status == "passed" {
+				mark = "✓"
+			}
+			if m.opt.ASCII {
+				mark = "[ ]"
+				if c.Status == "passed" {
+					mark = "[x]"
+				}
+			}
+			lines = append(lines, mark+" "+present.SetupStep(c.Name, m.lang))
+		}
+		return m.fitBlock(append(lines, "", m.t(i18n.HomeHint)))
+	}
 	if m.screen == screenHome {
 		return m.homeFrame()
 	}

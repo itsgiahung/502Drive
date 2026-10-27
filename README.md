@@ -226,3 +226,6 @@ tests do not prove live Drive behaviour.
 
 Licensed under GPL-3.0-only, see [LICENSE](LICENSE) and
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+First copy: `502drive onboard` (TTY guide). Scripts can use
+`502drive onboard --no-input` for a JSON readiness checklist (exit 9: incomplete).

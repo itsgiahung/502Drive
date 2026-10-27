@@ -132,3 +132,6 @@ Test: [stream_test.go](../internal/httpapi/stream_test.go).
 Trả `202` rồi dừng sau ~200 ms: API ngừng nhận request, worker về điểm an toàn,
 job đang chạy tiếp tục ở lần khởi động sau. Chỉ owner; `501` nếu daemon không có
 hook dừng. Đây là thứ **Quit trên tray** gọi; TUI/CLI không bao giờ dừng daemon.
+
+- U1: `GET /v1/setup` (owner) returns `{ready,checks}` from Doctor's database,
+  OAuth client, Google account and default destination checks; no Google calls.

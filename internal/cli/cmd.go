@@ -233,7 +233,7 @@ func (a *App) rootCommand() *cobra.Command {
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error { return a.prepare(cmd) }
 	root.SetFlagErrorFunc(func(c *cobra.Command, err error) error { return usage("%s", err.Error()) })
 
-	root.AddCommand(a.versionCmd(), a.setupCmd(), a.serveCmd(), a.statusCmd(), a.inspectCmd(), a.copyCmd(), a.jobsCmd(), a.waitCmd(), a.watchCmd(),
+	root.AddCommand(a.versionCmd(), a.setupCmd(), a.onboardCmd(), a.serveCmd(), a.statusCmd(), a.inspectCmd(), a.copyCmd(), a.jobsCmd(), a.waitCmd(), a.watchCmd(),
 		a.collectionsCmd(), a.historyCmd(), a.syncCmd(), a.destinationsCmd(), a.accountCmd(), a.doctorCmd(), a.menuCmd(), a.auditCmd(),
 		a.lsCmd(), a.infoCmd(), a.mkdirCmd(), a.healthcheckCmd(),
 		a.trayCmd(), a.upCmd(), a.stopCmd(), a.logsCmd(), a.autostartCmd(), a.updateCmd(), a.assetsCmd(),

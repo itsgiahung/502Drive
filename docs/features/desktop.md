@@ -114,3 +114,7 @@ Bubble Tea kể cả khi panic ([run.go](../../internal/tui/run.go)).
 - macOS tray (systray cần CGO; CLI/daemon vẫn chạy).
 - Ký code, auto-update, packaging AppImage/flatpak/snap.
 - Acceptance thật trên KDE/GNOME/Windows 10/11 chưa chạy trong phiên này.
+
+U1: Home displays the Doctor core readiness checklist while first-run setup is
+incomplete. Tray names the first missing prerequisite; Open 502Drive opens Home.
+No client exit stops the daemon. Older servers use the existing Doctor checks.
