@@ -383,3 +383,57 @@ func TestRecentThroughputFromMeasuredJobs(t *testing.T) {
 		t.Fatalf("bytes/s = %v, want about 100", bps)
 	}
 }
+
+// Resuming the queue before a pausing job reached its safe point must not leave
+// it paused forever: the safe point re-checks the durable flag and keeps the
+// job running so its worker can continue.
+func TestQueueResumeWhileJobPausingKeepsItRunning(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	j1 := queueJob(t, s, 1, "")
+	if got := claimID(t, s); got != j1.ID {
+		t.Fatalf("claim = %s", got)
+	}
+	if _, err := s.SetQueuePaused(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if cur, _ := s.GetJob(ctx, "owner", j1.ID); cur.State != JobPausing || !cur.QueuePaused {
+		t.Fatalf("after queue pause = %s queue_paused=%v", cur.State, cur.QueuePaused)
+	}
+	// The queue is resumed before the worker reaches its safe point; the paused
+	// query in the resume transaction cannot see a pausing job.
+	if res, err := s.SetQueuePaused(ctx, false); err != nil || !res.Changed {
+		t.Fatalf("resume queue = %+v err=%v", res, err)
+	}
+	cur, err := s.SettlePause(ctx, j1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cur.State != JobRunning || cur.DesiredState != "run" || cur.QueuePaused {
+		t.Fatalf("settled after resume = %s/%s queue_paused=%v", cur.State, cur.DesiredState, cur.QueuePaused)
+	}
+	// The claim index only lists queued work: the job is not requeued behind its
+	// worker's back (that could be claimed while the first goroutine still runs).
+	if j, err := s.ClaimQueued(ctx); err == nil {
+		t.Fatalf("a running job was claimed a second time: %s", j.ID)
+	}
+}
+
+// A pause the user requested is not turned into a run by the queue being off.
+func TestSettlePauseKeepsUserPause(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	j := queueJob(t, s, 1, "")
+	claimID(t, s)
+	cur, _ := s.GetJob(ctx, "owner", j.ID)
+	if _, err := s.Action(ctx, "owner", "k-user-pause", j.ID, "pause", cur.Revision); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.SettlePause(ctx, j.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != JobPaused || got.DesiredState != "pause" {
+		t.Fatalf("user pause settled as %s/%s", got.State, got.DesiredState)
+	}
+}

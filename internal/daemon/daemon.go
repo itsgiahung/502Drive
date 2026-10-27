@@ -230,6 +230,17 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 		}
 	}
 	var workerUp atomic.Bool
+	// A terminal copy commits its own state and a durable bookkeeping marker in
+	// one transaction; the callback above consumes the marker. Anything left
+	// here is a crash between those two writes: replay it before workers start,
+	// so the collection state and after-copy contract are not lost.
+	if !o.Maintenance {
+		if n, err := store.FinishPendingBookkeeping(bookkeep); err != nil {
+			log.Error("sync: bookkeeping replay failed", "err", err)
+		} else if n > 0 {
+			log.Info("sync: replayed finished-job bookkeeping", "jobs", n)
+		}
+	}
 	srv := &httpapi.Server{Svc: svc, TokenHash: httpapi.HashToken(string(rawToken)), Log: log, OAuthPort: cfg.OAuthCallbackPort,
 		RevokeEndpoint: o.RevokeEndpoint, WorkerReady: workerUp.Load, Maintenance: o.Maintenance, Done: ctx.Done(), Stop: stop,
 		Sleeping: life.suspending}

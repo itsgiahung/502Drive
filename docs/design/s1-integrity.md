@@ -93,7 +93,9 @@ Ba pha, dùng lại đường copy hiện có (intent + reconcile — crash-safe
      `GetFile` xác nhận **có intent của ta** rồi `TrashFile` (404 = coi như xong);
    - `duplicate_at_destination` → xác nhận bản được map vẫn đúng (tên+size) rồi
      trash bản thừa (cùng intent);
-   - đánh dấu `repaired=1` trên finding đã xử lý xong; job `succeeded`/`partial`;
+   - đánh dấu `repaired=1` trên finding đã xử lý xong; job `succeeded`/`partial` (hoặc `blocked`
+     `unknown_remote_outcome` khi còn mục chưa đối soát được, `partial` `findings_unverified`
+     khi không đọc được Drive để kiểm chứng; retry sẽ kiểm lại);
      `extra_at_destination`/`source_removed`/`unreadable_source` không bao giờ đụng.
 
 Restart repair: `ActiveJobs` nhặt lại job → plan chạy lại (kiểm lại từng finding,

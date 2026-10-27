@@ -9,8 +9,10 @@ Sau thời gian vận hành dài (nhiều tháng/năm), SQLite database có th�
 - Bản ghi `events` chi tiết của từng bước copy/sync.
 - Bản ghi `telegram_inbox` đã xử lý (`processed`) hoặc hỏng (`failed`).
 - Bản ghi `notification_outbox` đã gửi (`sent`) hoặc dead (`dead`).
-- Write intents cũ đã xong trên items (`intent_key`).
 - Plans hết hạn chưa từng được tiêu thụ (`consumed_job IS NULL`).
+
+Write intent (`items.intent_key`) **không** bị dọn: dòng `items` là mapping còn sống và
+intent key là bằng chứng sở hữu mà audit/repair dựa vào, bất kể job đã cũ bao lâu.
 
 **Mục tiêu**:
 1. Cung cấp lệnh CLI ngoại tuyến: `502drive maintenance prune [--older-than 90d] [--dry-run]` (và alias `502drive prune`).
@@ -55,7 +57,7 @@ Sau thời gian vận hành dài (nhiều tháng/năm), SQLite database có th�
    - Xóa `notification_outbox` có `state IN ('sent', 'dead') AND updated_at < cutoffMs`.
    - Xóa `callback_states` đã tiêu thụ hoặc hết hạn: `(consumed = 1 OR expires_at < nowMs) AND created_at < cutoffMs`.
    - Xóa `plans` hết hạn không được tiêu thụ: `consumed_job IS NULL AND id NOT IN (SELECT DISTINCT plan_id FROM collections) AND json_extract(body, '$.expires_at') < cutoffStr`.
-   - Dọn sạch `intent_key` trên các items đã hoàn tất (`state IN ('done', 'skipped')`) của các job đã kết thúc cũ hơn cutoff: `UPDATE items SET intent_key = '' WHERE state IN ('done', 'skipped') AND intent_key <> '' ...`.
+   - Không đụng `items.intent_key`: mapping còn dùng, xóa intent sẽ làm audit/repair mất quyền chứng minh sở hữu (xem [clone-jobs](../features/clone-jobs.md)).
 
 4. **Báo cáo kết quả (`PruneReport`)**:
    Trả về:
@@ -64,7 +66,7 @@ Sau thời gian vận hành dài (nhiều tháng/năm), SQLite database có th�
    - `DryRun`: true/false
    - `JobsPruned`: số job
    - `EventsPruned`: số event
-   - `IntentsPruned`: số intent key được giải phóng
+   - `IntentsPruned`: luôn 0 (giữ trường cho tương thích JSON/CLI; intent của mapping sống không bị dọn)
    - `TelegramInboxPruned`: số inbox telegram
    - `TelegramOutboxPruned`: số notification outbox
    - `PlansPruned`: số unconsumed plans

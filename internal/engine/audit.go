@@ -232,21 +232,33 @@ func (r *run) walkTree(ctx context.Context, rootID, resourceKey string, into map
 		}
 		folder := queue[0]
 		queue = queue[1:]
-		files, _, err := r.listPage(ctx, folder)
-		if err != nil {
-			if drive.KindOf(err) == drive.KindAuth {
-				r.setReconnect()
-				return scanned, bad, errStopped
+		// Every page of a folder, not just the first: a short page would hide
+		// children and report them missing or extra.
+		ok := false
+		for {
+			files, next, err := r.listPage(ctx, folder)
+			if err != nil {
+				if drive.KindOf(err) == drive.KindAuth {
+					r.setReconnect()
+					return scanned, bad, errStopped
+				}
+				bad = append(bad, walkBad{folder.SourceID, codeFor(err)})
+				break
 			}
-			bad = append(bad, walkBad{folder.SourceID, codeFor(err)})
-			continue
+			ok = true
+			for _, f := range files {
+				into[f.ID] = f
+				if f.IsFolder() {
+					queue = append(queue, state.Item{SourceID: f.ID, ResourceKey: f.ResourceKey})
+				}
+			}
+			if next == "" {
+				break
+			}
+			folder.PageToken = next
 		}
-		scanned++
-		for _, f := range files {
-			into[f.ID] = f
-			if f.IsFolder() {
-				queue = append(queue, state.Item{SourceID: f.ID, ResourceKey: f.ResourceKey})
-			}
+		if ok {
+			scanned++
 		}
 	}
 	return scanned, bad, nil
@@ -273,6 +285,13 @@ func (r *run) executeRepair(ctx context.Context, job state.Job) {
 		r.block("audit_missing", "The collection for this repair is missing.")
 		return
 	}
+	// A previous repair may have died between a remote write and the mapping
+	// commit. Resolve those items first: preparing a new generation would
+	// forget the intent that can still find the copy it made.
+	if !r.reconcileAll(ctx) {
+		r.settleRepair(ctx)
+		return
+	}
 	findings, err := r.e.Store.FindingsByAudit(r.db, audit.ID, true)
 	if err != nil {
 		r.log("cannot read findings", "err", err)
@@ -288,38 +307,62 @@ func (r *run) executeRepair(ctx context.Context, job state.Job) {
 		bySource[it.SourceID] = it
 	}
 
-	// Plan phase: drop stale findings, keep what still needs work.
+	// Plan phase: drop stale findings, keep what still needs work. Every
+	// finding is re-checked, including the intent marker: a copy that is gone,
+	// trashed, unreadable or no longer ours is never written through.
 	var plan []repairAction
 	var alreadyFixed []state.Finding
+	unverified := 0
 	actions := []map[string]string{}
 	for _, f := range findings {
 		it, ok := bySource[f.SourceID]
 		if f.Kind != state.FindingDuplicate && !ok {
 			continue // the mapping row vanished; nothing to act on
 		}
+		if ok && unresolvedItem(it) {
+			// A blocked or in-flight item needs a reconciliation or a human
+			// decision first; re-arming it from a stale finding would forget
+			// the intent of a write that may have happened.
+			unverified++
+			continue
+		}
 		switch f.Kind {
 		case state.FindingMissing:
 			if it.DestID != "" {
-				if _, err := r.p.GetFile(ctx, it.DestID, ""); err == nil {
+				cur, gerr := r.p.GetFile(ctx, it.DestID, "")
+				if drive.KindOf(gerr) == drive.KindAuth {
+					r.setReconnect()
+					r.settleRepair(ctx)
+					return
+				}
+				switch {
+				case gerr == nil && !cur.Trashed && atMappedFolder(cur, it):
 					alreadyFixed = append(alreadyFixed, f) // the object is back
+					continue
+				case gerr != nil && drive.KindOf(gerr) != drive.KindNotFound:
+					// A read that failed proves nothing about the copy.
+					unverified++
 					continue
 				}
 			}
 			plan = append(plan, repairAction{f, "recopy"})
 		case state.FindingName, state.FindingParent:
-			cur, err := r.p.GetFile(ctx, it.DestID, "")
-			if drive.KindOf(err) == drive.KindAuth {
+			cur, gerr := r.p.GetFile(ctx, it.DestID, "")
+			if drive.KindOf(gerr) == drive.KindAuth {
 				r.setReconnect()
 				r.settleRepair(ctx)
 				return
 			}
-			if err == nil && cur.AppProperties[drive.IntentProperty] == it.IntentKey {
-				fixed := (f.Kind == state.FindingName && cur.Name == it.Name) ||
-					(f.Kind == state.FindingParent && len(cur.Parents) > 0 && cur.Parents[0] == it.DestParentID)
-				if fixed {
-					alreadyFixed = append(alreadyFixed, f)
-					continue
-				}
+			if gerr != nil || cur.Trashed || !ownsGeneration(cur, it) {
+				// Not provably alive and ours: never rename or move it.
+				unverified++
+				continue
+			}
+			fixed := (f.Kind == state.FindingName && cur.Name == it.Name) ||
+				(f.Kind == state.FindingParent && atMappedFolder(cur, it))
+			if fixed {
+				alreadyFixed = append(alreadyFixed, f)
+				continue
 			}
 			plan = append(plan, repairAction{f, "align"})
 		case state.FindingSize:
@@ -332,19 +375,35 @@ func (r *run) executeRepair(ctx context.Context, job state.Job) {
 					return
 				}
 			}
-			if gerr == nil && serr == nil && sizeMatches(cur, src) {
+			switch {
+			case gerr != nil && drive.KindOf(gerr) != drive.KindNotFound,
+				serr != nil:
+				unverified++ // cannot compare without both objects
+				continue
+			case gerr == nil && !cur.Trashed && sizeMatches(cur, src):
 				alreadyFixed = append(alreadyFixed, f)
 				continue
 			}
 			plan = append(plan, repairAction{f, "recopy"})
 		case state.FindingDuplicate:
-			if _, err := r.p.GetFile(ctx, f.DestID, ""); err != nil {
+			cur, gerr := r.p.GetFile(ctx, f.DestID, "")
+			if drive.KindOf(gerr) == drive.KindAuth {
+				r.setReconnect()
+				r.settleRepair(ctx)
+				return
+			}
+			switch {
+			case drive.KindOf(gerr) == drive.KindNotFound, gerr == nil && cur.Trashed:
 				alreadyFixed = append(alreadyFixed, f) // the extra copy is already gone
+				continue
+			case gerr != nil:
+				unverified++
 				continue
 			}
 			mapped, merr := r.p.GetFile(ctx, it.DestID, "")
 			src, serr := r.p.GetFile(ctx, it.SourceID, it.ResourceKey)
-			if merr != nil || serr != nil || mapped.Name != it.Name || !sizeMatches(mapped, src) {
+			if merr != nil || serr != nil || mapped.Trashed || mapped.Name != it.Name || !sizeMatches(mapped, src) {
+				unverified++
 				continue // cannot prove the remaining copy is right: leave both
 			}
 			plan = append(plan, repairAction{f, "trash-duplicate"})
@@ -404,8 +463,12 @@ func (r *run) executeRepair(ctx context.Context, job state.Job) {
 	pr, perr := r.e.Store.JobProgress(r.db, r.id)
 	final, code, msg := state.JobSucceeded, "", ""
 	switch {
+	case perr == nil && pr.Blocked > 0:
+		final, code, msg = state.JobBlocked, "unknown_remote_outcome", "Some writes may have happened but could not be confirmed; retry to re-check them."
 	case perr == nil && pr.Failed > 0:
 		final, code, msg = state.JobPartial, "items_failed", "Some repairs could not be applied; run the repair again."
+	case unverified > 0:
+		final, code, msg = state.JobPartial, "findings_unverified", "Some findings could not be verified against Drive; run the repair again."
 	case r.cleanupFailures > 0:
 		final, code, msg = state.JobPartial, "cleanup_failed", "Some superseded copies could not be trashed; run the repair again."
 	}
@@ -488,30 +551,7 @@ func (r *run) applyRepair(ctx context.Context, col state.Collection, plan []repa
 // expected 502drive intent; empty accepts any intent of ours. A missing object
 // is already as good as trashed; anything without our intent is left alone.
 func (r *run) trashOwned(ctx context.Context, id, exactIntent string) {
-	if err := r.e.acquire(ctx); err != nil {
-		r.cleanupFailures++
-		return
-	}
-	f, err := r.p.GetFile(ctx, id, "")
-	r.e.release()
-	if drive.KindOf(err) == drive.KindNotFound {
-		return
-	}
-	if err != nil {
-		r.cleanupFailures++
-		return
-	}
-	got := f.AppProperties[drive.IntentProperty]
-	if got == "" || (exactIntent != "" && got != exactIntent) {
-		r.cleanupFailures++
-		return
-	}
-	if err = r.e.acquire(ctx); err != nil {
-		r.cleanupFailures++
-		return
-	}
-	err = r.p.TrashFile(ctx, id)
-	r.e.release()
+	err := r.trashOurs(ctx, id, exactIntent)
 	if err == nil || drive.KindOf(err) == drive.KindNotFound {
 		return
 	}
@@ -519,6 +559,23 @@ func (r *run) trashOwned(ctx context.Context, id, exactIntent string) {
 		r.setReconnect()
 	}
 	r.cleanupFailures++
+}
+
+// unresolvedItem reports whether an item's last remote write may still have
+// happened and has not been reconciled: executing, reconciling, or blocked
+// (which includes multiple matches and an unknown outcome).
+func unresolvedItem(it state.Item) bool {
+	switch it.State {
+	case state.ItemExecuting, state.ItemReconciling, state.ItemBlocked:
+		return true
+	}
+	return false
+}
+
+// atMappedFolder reports whether the object still sits in the folder the
+// mapping expects, i.e. it was not moved out of the copied tree.
+func atMappedFolder(cur drive.File, it state.Item) bool {
+	return len(cur.Parents) > 0 && cur.Parents[0] == it.DestParentID
 }
 
 // settleRepair stops a repair the way its control state asks. It never calls

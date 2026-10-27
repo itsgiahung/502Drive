@@ -9,7 +9,7 @@ import (
 // blocking writers (PASSIVE). The daemon calls it before the machine sleeps so
 // the WAL that must be replayed after a crash stays small.
 func (s *Store) Checkpoint(ctx context.Context) error {
-	s.lastCheckpoint = time.Now()
+	s.lastCheckpointAt.Store(time.Now().UnixNano())
 	_, err := s.db.ExecContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)")
 	return err
 }
@@ -17,7 +17,7 @@ func (s *Store) Checkpoint(ctx context.Context) error {
 // CheckpointTruncate asks SQLite to copy all WAL pages and truncate the WAL file
 // to zero bytes. It is called during idle periods and on shutdown.
 func (s *Store) CheckpointTruncate(ctx context.Context) error {
-	s.lastCheckpoint = time.Now()
+	s.lastCheckpointAt.Store(time.Now().UnixNano())
 	_, err := s.db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
 	return err
 }

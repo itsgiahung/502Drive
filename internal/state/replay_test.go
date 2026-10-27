@@ -381,3 +381,123 @@ func jobsFor(t *testing.T, s *Store, collectionID string) int {
 	}
 	return n
 }
+
+// A poll that coalesces into an active run must not lose the coalesce flag when
+// the caller writes its own subscription snapshot afterwards.
+func TestAdvancePollKeepsCoalescedRerun(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	col, _ := auditFixture(t, s)
+	sub, _, err := s.ConfigureSync(ctx, "owner", "", "cfg-rerun", col.ID, SyncChange{
+		Mode: ModeRealtime, ContentPolicy: PolicyVersioned, ExpectedCollection: col.Revision,
+		Cursor: "7", Now: now, FullReconcileEvery: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := s.ActiveRunID(ctx, col.ID)
+	if err != nil || job == "" {
+		t.Fatalf("no baseline run: %v", err)
+	}
+	sub = activate(t, s, col, job)
+
+	// An active delta run: the feed change must coalesce into it.
+	c, err := s.GetCollection(ctx, "", col.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = s.RunNow(ctx, "owner", "", "run-active", col.ID, c.Revision); err != nil {
+		t.Fatal(err)
+	}
+	next := now.Add(time.Minute)
+	admitted, err := s.AdvancePoll(ctx, col.ID, sub.Cursor, "9", true, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if admitted != nil {
+		t.Fatalf("change was admitted instead of coalesced: %s", admitted.ID)
+	}
+	got, err := s.GetSubscription(ctx, col.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.RerunRequested || got.Cursor != "9" {
+		t.Fatalf("after coalesced poll: rerun=%v cursor=%q", got.RerunRequested, got.Cursor)
+	}
+
+	// The flag is not cosmetic: ending the active run admits the follow-up.
+	active, err := s.ActiveRunID(ctx, col.ID)
+	if err != nil || active == "" {
+		t.Fatalf("no active run: %v", err)
+	}
+	if _, err = s.UpdateJob(ctx, active, func(j *Job) (string, bool) {
+		j.State = JobSucceeded
+		return "finished", true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	follow, err := s.RunFinished(ctx, active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if follow == nil || follow.Trigger != "coalesced" {
+		t.Fatalf("coalesced change produced no follow-up run: %+v", follow)
+	}
+}
+
+// Stopping sync must cancel every automatic run of the subscription, including
+// the periodic full reconcile that has already been admitted.
+func TestStopCancelsPeriodicFullReconcile(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		state, want string
+	}{
+		{"queued", JobQueued, JobCancelled},
+		{"running", JobRunning, JobCancelling},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := openStore(t)
+			ctx := context.Background()
+			now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+			col, _ := auditFixture(t, s)
+			if _, _, err := s.ConfigureSync(ctx, "owner", "", "cfg-stop-"+tc.name, col.ID, SyncChange{
+				Mode: ModeRealtime, ContentPolicy: PolicyVersioned, ExpectedCollection: col.Revision,
+				Cursor: "7", Now: now, FullReconcileEvery: int64(DefaultReconcileForTests / time.Second),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			baseline, err := s.ActiveRunID(ctx, col.ID)
+			if err != nil || baseline == "" {
+				t.Fatalf("no baseline run: %v", err)
+			}
+			activate(t, s, col, baseline)
+			if _, err = s.db.ExecContext(ctx, "UPDATE sync_subscriptions SET next_full_reconcile_at=1 WHERE collection_id=?", col.ID); err != nil {
+				t.Fatal(err)
+			}
+			jobs, err := s.ClaimDueFullReconciles(ctx, now)
+			if err != nil || len(jobs) != 1 || jobs[0].Trigger != "full_reconcile" {
+				t.Fatalf("periodic run not admitted: %+v err=%v", jobs, err)
+			}
+			if tc.state == JobRunning {
+				if _, err = s.UpdateJob(ctx, jobs[0].ID, func(j *Job) (string, bool) { j.State = JobRunning; return "", true }); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sub, err := s.GetSubscription(ctx, col.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err = s.SyncAction(ctx, "owner", "owner", "stop-"+tc.name, col.ID, "stop", sub.Revision, now, nil); err != nil {
+				t.Fatal(err)
+			}
+			got, err := s.GetJob(ctx, "", jobs[0].ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.State != tc.want {
+				t.Fatalf("full_reconcile job after stop = %q, want %q", got.State, tc.want)
+			}
+		})
+	}
+}

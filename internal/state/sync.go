@@ -332,11 +332,11 @@ func (s *Store) SyncAction(ctx context.Context, actor, scopePrincipal, key, coll
 			sub.State = SyncStopped
 			// Automatic work that has not started is cancelled; files stay.
 			if _, e = tx.ExecContext(ctx, `UPDATE jobs SET state='cancelled', body=json_set(body,'$.state','cancelled','$.desired_state','cancel','$.revision',json_extract(body,'$.revision')+1)
-				WHERE collection_id=? AND state IN ('queued','paused') AND json_extract(body,'$.trigger') IN ('scheduled','realtime','reconcile','coalesced')`, collectionID); e != nil {
+				WHERE collection_id=? AND state IN ('queued','paused') AND json_extract(body,'$.trigger') IN ('scheduled','realtime','reconcile','coalesced','full_reconcile')`, collectionID); e != nil {
 				return nil, e
 			}
 			res, e := tx.ExecContext(ctx, `UPDATE jobs SET state='cancelling', body=json_set(body,'$.state','cancelling','$.desired_state','cancel','$.revision',json_extract(body,'$.revision')+1)
-				WHERE collection_id=? AND state IN ('running','pausing','reconciling') AND json_extract(body,'$.trigger') IN ('scheduled','realtime','reconcile','coalesced')`, collectionID)
+				WHERE collection_id=? AND state IN ('running','pausing','reconciling') AND json_extract(body,'$.trigger') IN ('scheduled','realtime','reconcile','coalesced','full_reconcile')`, collectionID)
 			if e != nil {
 				return nil, e
 			}
@@ -434,6 +434,19 @@ func admitRun(ctx context.Context, tx *sql.Tx, c Collection, trigger, occurrence
 	return j, false, nil
 }
 
+// keepRerun copies the transaction's rerun_requested into the caller's
+// snapshot. admitRun writes that column inside the same transaction, after the
+// caller read its snapshot; without this re-read the following putSub would
+// write the stale false back and silently drop a coalesced follow-up run.
+func keepRerun(ctx context.Context, tx *sql.Tx, collectionID string, sub *Subscription) error {
+	var rerun int
+	if err := tx.QueryRowContext(ctx, "SELECT rerun_requested FROM sync_subscriptions WHERE collection_id=?", collectionID).Scan(&rerun); err != nil {
+		return err
+	}
+	sub.RerunRequested = rerun == 1
+	return nil
+}
+
 // RunNow starts (or joins) a delta run on a collection regardless of sync mode.
 func (s *Store) RunNow(ctx context.Context, actor, scopePrincipal, key, collectionID string, expected int) (RunOutcome, bool, error) {
 	var out RunOutcome
@@ -525,6 +538,9 @@ func (s *Store) ClaimDueSchedules(ctx context.Context, now time.Time) ([]Job, er
 				la := now.UTC()
 				sub.LastAttemptAt = &la
 			}
+			if e = keepRerun(ctx, tx, sub.CollectionID, &sub); e != nil {
+				return e
+			}
 			sub.NextDue, sub.NextKey = &slot.At, slot.Key
 			sub.Revision++
 			return putSub(ctx, tx, sub)
@@ -614,6 +630,9 @@ func (s *Store) AdvancePoll(ctx context.Context, collectionID, oldCursor, newCur
 				la := time.Now().UTC()
 				sub.LastAttemptAt = &la
 			}
+			if e = keepRerun(ctx, tx, collectionID, &sub); e != nil {
+				return e
+			}
 		}
 		return putSub(ctx, tx, sub)
 	})
@@ -651,6 +670,9 @@ func (s *Store) MarkNeedsReconcile(ctx context.Context, collectionID, newCursor 
 		if _, _, e = admitRun(ctx, tx, c, "reconcile", ""); e != nil && !errors.Is(e, ErrNeedsAction) {
 			return e
 		}
+		if e = keepRerun(ctx, tx, collectionID, &sub); e != nil {
+			return e
+		}
 		return putSub(ctx, tx, sub)
 	})
 }
@@ -684,7 +706,11 @@ func (s *Store) RunFinished(ctx context.Context, jobID string) (*Job, error) {
 			// S8: the initial copy created this collection; a successful run
 			// records the job's explicit mode or the principal's preference
 			// in the same transaction, so a restart cannot lose it.
-			return enqueueAfterCopySync(ctx, tx, j, time.Now().UTC())
+			if e := enqueueAfterCopySync(ctx, tx, j, time.Now().UTC()); e != nil {
+				return e
+			}
+			_, e := tx.ExecContext(ctx, "DELETE FROM job_bookkeeping WHERE job_id=?", jobID)
+			return e
 		}
 		if e != nil {
 			return e
@@ -702,7 +728,9 @@ func (s *Store) RunFinished(ctx context.Context, jobID string) (*Job, error) {
 			if j.Trigger == "initial" && ok {
 				if sub.Mode == ModeScheduled {
 					if sub.Schedule == nil {
-						return nil
+						// Nothing to schedule; the job's bookkeeping is done.
+						_, e := tx.ExecContext(ctx, "DELETE FROM job_bookkeeping WHERE job_id=?", jobID)
+						return e
 					}
 					slot, e := sub.Schedule.Next(now)
 					if e != nil {
@@ -739,11 +767,113 @@ func (s *Store) RunFinished(ctx context.Context, jobID string) (*Job, error) {
 			if e == nil && !coalesced {
 				next = &run
 			}
+			// A coalesced request was written to the active run's subscription
+			// inside admitRun; keep it in this snapshot so putSub cannot clear it.
+			sub.RerunRequested = e == nil && coalesced
 		}
 		sub.Revision++
-		return putSub(ctx, tx, sub)
+		if e = putSub(ctx, tx, sub); e != nil {
+			return e
+		}
+		_, e = tx.ExecContext(ctx, "DELETE FROM job_bookkeeping WHERE job_id=?", jobID)
+		return e
 	})
 	return next, err
+}
+
+// FinishJob commits a terminal job state together with the collection state it
+// implies and a durable bookkeeping marker, in one transaction. RunFinished
+// consumes the marker after it records the subscription or after-copy request;
+// FinishPendingBookkeeping replays any marker a crash left behind, so a restart
+// cannot leave the collection stale or drop an after-copy sync request.
+func (s *Store) FinishJob(ctx context.Context, id string, fn func(j *Job) (string, bool)) (Job, error) {
+	var out Job
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		j, e := readJob(ctx, tx, "", id)
+		if e != nil {
+			return e
+		}
+		kind, bump := fn(&j)
+		if bump {
+			j.Revision++
+		}
+		j.UpdatedAt = time.Now().UTC()
+		if e = saveJob(ctx, tx, j); e != nil {
+			return e
+		}
+		if kind != "" {
+			if e = appendEvent(ctx, tx, j, kind, nil); e != nil {
+				return e
+			}
+		}
+		if e = fillCounts(ctx, tx, &j); e != nil {
+			return e
+		}
+		if j.Trigger == "initial" {
+			// Same rule the engine used after its own terminal write: the
+			// baseline copy defines the collection state.
+			cs := CollectionReady
+			if j.State != JobSucceeded {
+				cs = j.State
+			}
+			var cb []byte
+			if e = tx.QueryRowContext(ctx, "SELECT body FROM collections WHERE id=?", j.CollectionID).Scan(&cb); e != nil {
+				return e
+			}
+			c, e := decodeCollection(cb)
+			if e != nil {
+				return e
+			}
+			c.State = cs
+			c.Revision++
+			nb, _ := encode(c)
+			if _, e = tx.ExecContext(ctx, "UPDATE collections SET body=? WHERE id=?", nb, j.CollectionID); e != nil {
+				return e
+			}
+		}
+		_, e = tx.ExecContext(ctx, "INSERT INTO job_bookkeeping(job_id,created_at) VALUES(?,?) ON CONFLICT(job_id) DO NOTHING", j.ID, time.Now().UnixMilli())
+		out = j
+		return e
+	})
+	return out, err
+}
+
+// FinishPendingBookkeeping replays sync bookkeeping for terminal jobs whose
+// commit did not reach RunFinished (a crash in between). It is idempotent: a
+// job without a marker is skipped, and RunFinished removes the marker in its
+// own transaction.
+func (s *Store) FinishPendingBookkeeping(ctx context.Context) (int, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT job_id FROM job_bookkeeping ORDER BY created_at LIMIT 200")
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return 0, err
+	}
+	done := 0
+	for _, id := range ids {
+		if _, e := s.RunFinished(ctx, id); e != nil {
+			if errors.Is(e, ErrNotFound) {
+				// The job disappeared (pruned) before the replay; do not keep
+				// retrying a row that can never be applied.
+				_, _ = s.db.ExecContext(ctx, "DELETE FROM job_bookkeeping WHERE job_id=?", id)
+				continue
+			}
+			return done, e
+		}
+		done++
+	}
+	return done, nil
 }
 
 // ---- delta scanning ----
@@ -827,9 +957,14 @@ func (s *Store) CommitDeltaPage(ctx context.Context, run string, folder Item, ch
 			} else if ex.Fingerprint != c.Fingerprint && ex.State != ItemExecuting && ex.State != ItemReconciling {
 				// New content (or a renamed file): a new generation is copied; the
 				// previous copy is kept (versioned_copy) or retired after success.
-				if _, e = tx.ExecContext(ctx, `UPDATE items SET name=?, mime_type=?, size=?, fingerprint=?, parent_source_id=?, generation=generation+1, intent_key='', state='pending', op='create',
+				// A renamed source must be named again for the new generation; a
+				// same-name recopy keeps the stored decision (restart stability).
+				if _, e = tx.ExecContext(ctx, `UPDATE items SET name=?, mime_type=?, size=?, fingerprint=?, parent_source_id=?, generation=generation+1, intent_key='',
+					dest_name=CASE WHEN name<>? THEN '' ELSE dest_name END,
+					conflict_action=CASE WHEN name<>? THEN '' ELSE conflict_action END,
+					state='pending', op='create',
 					old_dest_id=CASE WHEN dest_id<>'' THEN dest_id ELSE old_dest_id END, job_id=?, seen_job=?, error_code='', attempts=0, next_attempt_at=0
-					WHERE collection_id=? AND source_id=?`, c.Name, c.MimeType, size, c.Fingerprint, folder.SourceID, run, run, ex.CollectionID, ex.SourceID); e != nil {
+					WHERE collection_id=? AND source_id=?`, c.Name, c.MimeType, size, c.Fingerprint, folder.SourceID, c.Name, c.Name, run, run, ex.CollectionID, ex.SourceID); e != nil {
 					return e
 				}
 				st.Changed++
@@ -931,9 +1066,12 @@ func (s *Store) ApplySingleFile(ctx context.Context, run, collectionID string, c
 			size = sql.NullInt64{Int64: *c.Size, Valid: true}
 		}
 		changed = true
-		_, e = tx.ExecContext(ctx, `UPDATE items SET name=?, mime_type=?, size=?, fingerprint=?, generation=generation+1, intent_key='', state='pending', op='create',
+		_, e = tx.ExecContext(ctx, `UPDATE items SET name=?, mime_type=?, size=?, fingerprint=?, generation=generation+1, intent_key='',
+			dest_name=CASE WHEN name<>? THEN '' ELSE dest_name END,
+			conflict_action=CASE WHEN name<>? THEN '' ELSE conflict_action END,
+			state='pending', op='create',
 			old_dest_id=CASE WHEN dest_id<>'' THEN dest_id ELSE old_dest_id END, job_id=?, error_code='', attempts=0, next_attempt_at=0 WHERE collection_id=? AND source_id=?`,
-			c.Name, c.MimeType, size, c.Fingerprint, run, collectionID, c.SourceID)
+			c.Name, c.MimeType, size, c.Fingerprint, c.Name, c.Name, run, collectionID, c.SourceID)
 		return e
 	})
 	return changed, err

@@ -335,3 +335,102 @@ func TestPausedListingDoesNotReportAnEmptyPage(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// Renaming a source file changes its fingerprint: the new generation must be
+// named from the source again, not copied under the previous generation's name.
+func TestRenamedFileRecopyUsesTheNewDestinationName(t *testing.T) {
+	e := newEnv(t)
+	src := e.fake.Folder("P", "root")
+	f := e.fake.File("a.txt", src.ID, 1)
+	base, root := e.baseline(src)
+	if got := find(e.fake, root, "a.txt"); len(got) != 1 {
+		t.Fatalf("baseline copies named a.txt: %d", len(got))
+	}
+
+	e.fake.Mutate(f.ID, func(x *drive.File) { x.Name = "b.txt" })
+	j := e.runUntil(e.runNow(base.CollectionID).ID, terminal)
+	if j.State != state.JobSucceeded {
+		t.Fatalf("rename run = %s %+v", j.State, j.LastError)
+	}
+	if n := len(find(e.fake, root, "b.txt")); n != 1 {
+		t.Fatalf("second generation used the old destination name: b.txt copies = %d", n)
+	}
+	if n := len(find(e.fake, root, "a.txt")); n != 1 {
+		t.Fatalf("versioned_copy must keep exactly the old copy: a.txt copies = %d", n)
+	}
+}
+
+// The single-file (wrapper) recopy path has its own name decision per
+// generation; a renamed source must not be copied under the old name either.
+func TestRenamedSingleFileRecopyUsesTheNewDestinationName(t *testing.T) {
+	e := newEnv(t)
+	f := e.fake.File("report.txt", "root", 10)
+	base, root := e.baseline(f)
+	e.fake.Mutate(f.ID, func(x *drive.File) { x.Name = "renamed.txt"; x.Version = "2" })
+	j := e.runUntil(e.runNow(base.CollectionID).ID, terminal)
+	if j.State != state.JobSucceeded {
+		t.Fatalf("rename run = %s %+v", j.State, j.LastError)
+	}
+	if n := len(find(e.fake, root, "renamed.txt")); n != 1 {
+		t.Fatalf("wrapper used the old destination name: renamed.txt copies = %d", n)
+	}
+	if n := len(find(e.fake, root, "report.txt")); n != 1 {
+		t.Fatalf("versioned_copy must keep exactly the old copy: report.txt copies = %d", n)
+	}
+}
+
+// A queue pause resumed while the job was still reaching its safe point must
+// not settle the job as paused: settle reports "continue" and the worker's run
+// loop starts over instead of leaving it stuck.
+func TestSettlingALiftedQueuePauseKeepsTheRunGoing(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	src := e.fake.Folder("P", "root")
+	e.fake.File("a", src.ID, 1)
+	job := e.submit(src)
+	if _, err := e.store.ClaimQueued(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.store.SetQueuePaused(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.store.SetQueuePaused(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	r := &run{e: e.engine(), db: ctx, id: job.ID}
+	r.settle(ctx)
+	if !r.resumed {
+		t.Fatal("settle paused a job whose queue pause had been lifted")
+	}
+	got, err := e.store.GetJob(ctx, "owner", job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != state.JobRunning || got.DesiredState != "run" {
+		t.Fatalf("job after lifted queue pause = %s/%s", got.State, got.DesiredState)
+	}
+}
+
+// A pause the user requested still settles to paused.
+func TestSettlingAUserPausePausesTheRun(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	src := e.fake.Folder("P", "root")
+	e.fake.File("a", src.ID, 1)
+	job := e.submit(src)
+	if _, err := e.store.ClaimQueued(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cur, _ := e.store.GetJob(ctx, "owner", job.ID)
+	if _, err := e.store.Action(ctx, "owner", "pause-key", job.ID, "pause", cur.Revision); err != nil {
+		t.Fatal(err)
+	}
+	r := &run{e: e.engine(), db: ctx, id: job.ID}
+	r.settle(ctx)
+	if r.resumed {
+		t.Fatal("settle resumed a job the user paused")
+	}
+	if got, _ := e.store.GetJob(ctx, "owner", job.ID); got.State != state.JobPaused {
+		t.Fatalf("user pause settled as %s", got.State)
+	}
+}

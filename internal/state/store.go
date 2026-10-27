@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofrs/flock"
@@ -25,10 +26,12 @@ const applicationID = 502002
 
 // Store is the single writer for a data directory.
 type Store struct {
-	dir            string
-	db             *dbConn
-	lock           *flock.Flock
-	lastCheckpoint time.Time
+	dir  string
+	db   *dbConn
+	lock *flock.Flock
+	// lastCheckpointAt is UnixNano of the last WAL checkpoint. It is written by
+	// the maintenance loop and read by Doctor, so it is accessed atomically.
+	lastCheckpointAt atomic.Int64
 }
 
 // DataDir returns the path to the store's data directory.
@@ -38,7 +41,11 @@ func (s *Store) DataDir() string {
 
 // LastCheckpoint returns the timestamp of the last checkpoint execution.
 func (s *Store) LastCheckpoint() time.Time {
-	return s.lastCheckpoint
+	n := s.lastCheckpointAt.Load()
+	if n == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, n).UTC()
 }
 
 type migration struct {
@@ -172,7 +179,9 @@ func Open(dir string) (s *Store, err error) {
 			return nil, err
 		}
 	}
-	return &Store{dir: dir, db: &dbConn{DB: db, c: newChanges()}, lock: l, lastCheckpoint: time.Now()}, nil
+	s = &Store{dir: dir, db: &dbConn{DB: db, c: newChanges()}, lock: l}
+	s.lastCheckpointAt.Store(time.Now().UnixNano())
+	return s, nil
 }
 
 func (s *Store) Close() error { return errors.Join(s.db.Close(), s.lock.Unlock()) }

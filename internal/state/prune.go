@@ -14,20 +14,24 @@ type PruneOptions struct {
 
 // PruneReport summarizes the outcome of a retention pass.
 type PruneReport struct {
-	OlderThan            string    `json:"older_than"`
-	Cutoff               time.Time `json:"cutoff"`
-	DryRun               bool      `json:"dry_run"`
-	JobsPruned           int       `json:"jobs_pruned"`
-	EventsPruned         int       `json:"events_pruned"`
-	IntentsPruned        int       `json:"intents_pruned"`
-	TelegramInboxPruned  int       `json:"telegram_inbox_pruned"`
-	TelegramOutboxPruned int       `json:"telegram_outbox_pruned"`
-	PlansPruned          int       `json:"plans_pruned"`
+	OlderThan    string    `json:"older_than"`
+	Cutoff       time.Time `json:"cutoff"`
+	DryRun       bool      `json:"dry_run"`
+	JobsPruned   int       `json:"jobs_pruned"`
+	EventsPruned int       `json:"events_pruned"`
+	// IntentsPruned stays 0: an item row is the live mapping and its intent_key
+	// is the proof of ownership that audit and repair rely on, so retention
+	// never clears it. The field remains in the report for compatibility.
+	IntentsPruned        int `json:"intents_pruned"`
+	TelegramInboxPruned  int `json:"telegram_inbox_pruned"`
+	TelegramOutboxPruned int `json:"telegram_outbox_pruned"`
+	PlansPruned          int `json:"plans_pruned"`
 }
 
 // Prune cleans up completed jobs, associated events, processed/failed telegram inbox,
-// dead/sent outbox entries, expired unconsumed plans, and write intents older than the
-// retention threshold. It preserves collections, active mappings, and any job still
+// dead/sent outbox entries, and expired unconsumed plans older than the retention
+// threshold. It preserves collections, active mappings (including their intent
+// keys, the ownership proof used by audit and repair), and any job still
 // referenced by items, plans, or sync occurrences.
 func (s *Store) Prune(ctx context.Context, opt PruneOptions) (PruneReport, error) {
 	if opt.OlderThan <= 0 {
@@ -89,12 +93,8 @@ func (s *Store) Prune(ctx context.Context, opt PruneOptions) (PruneReport, error
 		}
 	}
 
-	// 3. Count completed write intents on items.
-	_ = s.db.QueryRowContext(ctx, `
-		SELECT count(*) FROM items
-		WHERE state IN ('done', 'skipped') AND intent_key <> ''
-		  AND job_id IN (SELECT id FROM jobs WHERE state IN ('succeeded', 'failed', 'cancelled') AND json_extract(body, '$.updated_at') < ?)
-	`, cutoffStr).Scan(&rep.IntentsPruned)
+	// 3. Write intents are never pruned: item rows are live mappings and their
+	// intent_key proves ownership to audit and repair, whatever the job's age.
 
 	// 4. Count telegram inbox entries older than cutoff.
 	_ = s.db.QueryRowContext(ctx, `
@@ -161,15 +161,6 @@ func (s *Store) Prune(ctx context.Context, opt PruneOptions) (PruneReport, error
 			WHERE (consumed_job IS NULL OR consumed_job = '')
 			  AND id NOT IN (SELECT DISTINCT plan_id FROM collections)
 			  AND json_extract(body, '$.expires_at') < ?
-		`, cutoffStr); e != nil {
-			return e
-		}
-
-		// Clear intent_key on completed items of old finished jobs
-		if _, e := tx.ExecContext(ctx, `
-			UPDATE items SET intent_key = ''
-			WHERE state IN ('done', 'skipped') AND intent_key <> ''
-			  AND job_id IN (SELECT id FROM jobs WHERE state IN ('succeeded', 'failed', 'cancelled') AND json_extract(body, '$.updated_at') < ?)
 		`, cutoffStr); e != nil {
 			return e
 		}

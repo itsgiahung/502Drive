@@ -10,7 +10,9 @@ import (
 	"time"
 )
 
-func intentKey(collection, source, destParent, kind string, generation int) string {
+// IntentKey is the private appProperties value that identifies one write: it
+// encodes the destination parent, so moving an object produces a new key.
+func IntentKey(collection, source, destParent, kind string, generation int) string {
 	h := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d", collection, source, destParent, kind, generation)))
 	return hex.EncodeToString(h[:16])
 }
@@ -182,6 +184,14 @@ func (s *Store) FailListing(ctx context.Context, folder Item, code string) error
 	return err
 }
 
+// RestartListing drops a page checkpoint that Drive rejected, so the folder is
+// listed again from its first page. Children already committed are kept: the
+// replay inserts them with INSERT OR IGNORE.
+func (s *Store) RestartListing(ctx context.Context, folder Item) error {
+	_, err := s.db.ExecContext(ctx, "UPDATE items SET list_state='none', page_token='', error_code='' WHERE collection_id=? AND source_id=?", folder.CollectionID, folder.SourceID)
+	return err
+}
+
 // SkipItem marks an item skipped with a stable error code.
 func (s *Store) SkipItem(ctx context.Context, it Item, code string) error {
 	_, err := s.db.ExecContext(ctx, "UPDATE items SET state='skipped', error_code=? WHERE collection_id=? AND source_id=?", code, it.CollectionID, it.SourceID)
@@ -210,7 +220,7 @@ func (s *Store) ClaimItem(ctx context.Context, jobID string, now int64) (Item, e
 		if e := tx.QueryRowContext(ctx, "SELECT collection_id,kind,generation FROM items WHERE job_id=? AND source_id=?", jobID, source).Scan(&col, &kind, &gen); e != nil {
 			return e
 		}
-		key := intentKey(col, source, destParent, kind, gen)
+		key := IntentKey(col, source, destParent, kind, gen)
 		if _, e := tx.ExecContext(ctx, "UPDATE items SET state='executing', dest_parent_id=?, intent_key=?, attempts=attempts+1 WHERE collection_id=? AND source_id=?", destParent, key, col, source); e != nil {
 			return e
 		}

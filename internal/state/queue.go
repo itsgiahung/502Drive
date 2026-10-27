@@ -197,6 +197,49 @@ func resumeQueuePaused(ctx context.Context, tx *sql.Tx, out *QueueChange) error 
 	return nil
 }
 
+// SettlePause finalizes a job that reached a safe point with a pause request.
+// The durable queue flag is re-checked in the same transaction as the job
+// write: when the queue pause that stopped this job was already resumed, the
+// job stays running (desired_state=run) so its worker can continue instead of
+// leaving it paused with nobody left to resume it. A job paused by the user
+// (queue_paused=false) becomes paused.
+func (s *Store) SettlePause(ctx context.Context, id string) (Job, error) {
+	var out Job
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		j, e := readJob(ctx, tx, "", id)
+		if e != nil {
+			return e
+		}
+		queuePaused, e := queuePausedQuery(ctx, tx)
+		if e != nil {
+			return e
+		}
+		kind := "paused"
+		j.Phase = nil
+		switch {
+		case j.QueuePaused && !queuePaused:
+			j.State, j.DesiredState, j.QueuePaused = JobRunning, "run", false
+			kind = "resumed"
+		case j.State != JobPaused:
+			j.State = JobPaused
+		}
+		j.Revision++
+		j.UpdatedAt = time.Now().UTC()
+		if e = saveJob(ctx, tx, j); e != nil {
+			return e
+		}
+		if e = appendEvent(ctx, tx, j, kind, nil); e != nil {
+			return e
+		}
+		if e = fillCounts(ctx, tx, &j); e != nil {
+			return e
+		}
+		out = j
+		return nil
+	})
+	return out, err
+}
+
 // Move is a queue reordering of one queued job: place it before or after
 // another queued job, and/or set its priority. Only one of Before/After is set.
 type Move struct {

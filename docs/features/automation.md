@@ -43,6 +43,9 @@ versioned_copy/replace_copy, `schedule_revision`, `revision`.
 
 - Run sync dùng **cùng collection/root**; `items` giữ mapping. Folder được list
   lại; file thay đổi fingerprint → generation mới; move/rename → `op=align`.
+  Nếu tên nguồn đổi (fingerprint gồm cả tên nên cũng đổi), generation mới
+  quyết định lại `dest_name` theo tên nguồn mới; cùng tên trong cùng generation
+  giữ quyết định cũ để restart không đổi tên.
 - Item mất khỏi nguồn → `error_code=source_removed`, bản đích giữ nguyên.
 - Chống xoá nhầm: nếu một lần quét mất **>30%** mục đã map (sàn 10 mục), run
   dừng **trước khi copy**, thành `partial` với `last_error.code=source_mass_removal`
@@ -109,7 +112,9 @@ versioned_copy/replace_copy, `schedule_revision`, `revision`.
 
 - `pause`: dừng lập lịch/poll mới; run đang chạy không bị hủy.
 - `stop`: disable subscription, cancel run tự động đang chờ, dừng run đang chạy
-  cooperative (`stopping` → `stopped`), **giữ** file/root/history.
+  cooperative (`stopping` → `stopped`), **giữ** file/root/history. Run tự động gồm
+  mọi trigger `scheduled realtime reconcile coalesced full_reconcile` (kể cả full
+  reconcile định kỳ đã admit).
 - `resume`: validate collection; scheduled coalesce slot lỡ một lần; realtime
   catch-up hoặc `needs_reconcile` nếu cursor mất.
 - `POST .../runs`: chạy delta ngay cả khi sync off; nếu đang có run → trả run hiện
@@ -121,6 +126,11 @@ versioned_copy/replace_copy, `schedule_revision`, `revision`.
   cờ `copy --sync MODE` (hoặc `after_copy_sync_mode` trên `POST /v1/jobs`) áp cho
   **collection mới** khi job initial `succeeded`. Mode ghi trên job nên sống qua
   restart; dòng chờ `after_copy_sync` được ghi cùng transaction với kết quả job.
+- Commit terminal của job copy ghi trạng thái job, trạng thái collection và một
+  marker bookkeeping (`job_bookkeeping`) **trong một transaction**; bookkeeping
+  subscription/after-copy xóa marker đó. Marker còn lại lúc khởi động được replay
+  trước khi worker chạy, nên chết giữa hai bước không làm collection kẹt trạng thái
+  cũ và không mất yêu cầu sync sau copy.
 - Subscription do người dùng đặt trước luôn thắng; job `partial`/`failed` không
   tạo sync. Lỗi tạo subscription chỉ ghi vào dòng chờ (retry 5 lần), không đổi
   kết quả copy. Xem [design/h2-after-copy-sync.md](../design/h2-after-copy-sync.md).

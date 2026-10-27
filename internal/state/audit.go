@@ -424,8 +424,11 @@ func (s *Store) AdmitRepair(ctx context.Context, actor, scopePrincipal, key, aud
 
 // PrepareRepair re-arms mapping items for a repair job: recopy clears the
 // destination (keeping the old id for the cleanup) and align re-runs the
-// rename/move. All inside one transaction, idempotent when repeated.
+// rename/move. All inside one transaction, and only for items whose last write
+// has a settled outcome: an executing, reconciling or blocked item is left for
+// reconciliation, because its intent is the only way to find that copy again.
 func (s *Store) PrepareRepair(ctx context.Context, jobID, collectionID string, ops []RepairOp) error {
+	const settled = "state NOT IN ('executing','reconciling','blocked')"
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		for _, op := range ops {
 			switch op.Action {
@@ -434,13 +437,13 @@ func (s *Store) PrepareRepair(ctx context.Context, jobID, collectionID string, o
 				// as superseded so the cleanup can trash it (and retry after
 				// a crash) without losing track of it.
 				if _, e := tx.ExecContext(ctx,
-					"UPDATE items SET old_dest_id=CASE WHEN dest_id='' THEN old_dest_id ELSE dest_id END, generation=generation+1, intent_key='', state='pending', dest_id='', error_code='', attempts=0, next_attempt_at=0, job_id=? WHERE collection_id=? AND source_id=?",
+					"UPDATE items SET old_dest_id=CASE WHEN dest_id='' THEN old_dest_id ELSE dest_id END, generation=generation+1, intent_key='', state='pending', dest_id='', error_code='', attempts=0, next_attempt_at=0, job_id=? WHERE collection_id=? AND source_id=? AND "+settled,
 					jobID, collectionID, op.SourceID); e != nil {
 					return e
 				}
 			case "align":
 				if _, e := tx.ExecContext(ctx,
-					"UPDATE items SET state='pending', op='align', error_code='', attempts=0, next_attempt_at=0, job_id=? WHERE collection_id=? AND source_id=?",
+					"UPDATE items SET state='pending', op='align', error_code='', attempts=0, next_attempt_at=0, job_id=? WHERE collection_id=? AND source_id=? AND "+settled,
 					jobID, collectionID, op.SourceID); e != nil {
 					return e
 				}

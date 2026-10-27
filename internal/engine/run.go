@@ -52,6 +52,9 @@ type run struct {
 	// superseded collects destination ids retired by this run's re-copies
 	// (CompleteVersionedItem returns them); a repair trashes them in its cleanup.
 	superseded []string
+	// resumed is set when a pause request turned into "keep running" because
+	// the global queue was resumed at the safe point.
+	resumed bool
 }
 
 func (r *run) log(msg string, args ...any) {
@@ -80,6 +83,18 @@ func (r *run) setPhase(phase string) {
 }
 
 func (r *run) execute(ctx context.Context) {
+	// runOnce starts over when a queue pause that had stopped this run was
+	// resumed at its safe point; otherwise a single pass settles the job.
+	for {
+		r.resumed = false
+		r.runOnce(ctx)
+		if !r.resumed || ctx.Err() != nil {
+			return
+		}
+	}
+}
+
+func (r *run) runOnce(ctx context.Context) {
 	st, _, err := r.e.Store.JobControl(r.db, r.id)
 	if err != nil {
 		return
@@ -91,7 +106,13 @@ func (r *run) execute(ctx context.Context) {
 	}
 	if r.control() == "pause" {
 		r.finishPause()
-		return
+		if r.resumed {
+			if st, _, err = r.e.Store.JobControl(r.db, r.id); err != nil {
+				return
+			}
+		} else {
+			return
+		}
 	}
 	if st != state.JobRunning && st != state.JobReconciling {
 		return
@@ -165,7 +186,10 @@ func (r *run) execute(ctx context.Context) {
 	r.settle(ctx)
 }
 
-// settle moves the job to the state its items justify.
+// settle moves the job to the state its items justify. When the pause it
+// stopped for was only the global queue and that queue is already running
+// again, it sets r.resumed so execute starts the run over instead of leaving
+// the job paused with nobody to wake it.
 func (r *run) settle(ctx context.Context) {
 	if ctx.Err() != nil { // shutting down: leave everything durable as-is
 		return
@@ -219,25 +243,29 @@ func (r *run) block(code, msg string) {
 	})
 }
 
+// finishPause settles a pause request. When the durable queue pause that had
+// stopped this job was already resumed, SettlePause leaves the job running and
+// r.resumed tells execute to start the run over.
 func (r *run) finishPause() {
-	r.e.Store.UpdateJob(r.db, r.id, func(j *state.Job) (string, bool) {
-		j.State, j.Phase = state.JobPaused, nil
-		return "paused", true
-	})
+	j, err := r.e.Store.SettlePause(r.db, r.id)
+	if err != nil {
+		r.log("pause could not be settled", "err", err)
+		return // leave the durable request alone; nothing is resumed blindly
+	}
+	if j.State != state.JobPaused {
+		r.resumed = true
+	}
 }
 
 func (r *run) finishCancel() {
 	r.e.Store.CancelPending(r.db, r.id)
-	j, err := r.e.Store.UpdateJob(r.db, r.id, func(j *state.Job) (string, bool) {
+	// The terminal state, the collection state and the bookkeeping marker are
+	// committed together; a restart replays the marker instead of skipping it.
+	_, err := r.e.Store.FinishJob(r.db, r.id, func(j *state.Job) (string, bool) {
 		j.State, j.Phase = state.JobCancelled, nil
 		return "cancelled", true
 	})
 	if err == nil {
-		// Only the baseline copy defines the collection's state; a cancelled
-		// sync run must not make the collection look broken.
-		if j.Trigger == "initial" {
-			r.e.Store.SetCollectionState(r.db, j.CollectionID, "cancelled")
-		}
 		r.afterRun()
 	}
 }
@@ -260,7 +288,7 @@ func (r *run) finalize() {
 	case pr.Failed > 0 || pr.ListingFailed > 0:
 		final, code, msg = state.JobPartial, "items_failed", "Some items could not be copied."
 	}
-	j, err := r.e.Store.UpdateJob(r.db, r.id, func(j *state.Job) (string, bool) {
+	j, err := r.e.Store.FinishJob(r.db, r.id, func(j *state.Job) (string, bool) {
 		j.State, j.Phase, j.LastError = final, nil, nil
 		if code != "" {
 			j.LastError = &state.Failure{Code: code, Message: msg}
@@ -268,14 +296,7 @@ func (r *run) finalize() {
 		return "finished", true
 	})
 	if err == nil {
-		if j.Trigger == "initial" {
-			cs := "ready"
-			if final != state.JobSucceeded {
-				cs = final
-			}
-			r.e.Store.SetCollectionState(r.db, j.CollectionID, cs)
-		}
-		r.log("finished", "state", final)
+		r.log("finished", "state", final, "collection", j.CollectionID)
 		r.afterRun()
 	}
 }
@@ -286,7 +307,7 @@ func (r *run) finalize() {
 // read-only integrity audit instead of syncing a suspect tree silently.
 func (r *run) finishMassRemoval() {
 	msg := fmt.Sprintf("The source scan no longer found %d of %d mapped items. The sync stopped before copying and an integrity audit was queued.", r.massRemoved, r.massTotal)
-	j, err := r.e.Store.UpdateJob(r.db, r.id, func(j *state.Job) (string, bool) {
+	j, err := r.e.Store.FinishJob(r.db, r.id, func(j *state.Job) (string, bool) {
 		j.State, j.Phase, j.LastError = state.JobPartial, nil, &state.Failure{Code: "source_mass_removal", Message: msg}
 		j.SourceRemoved = r.massRemoved
 		return "finished", true
@@ -397,6 +418,18 @@ func (r *run) scanOne(ctx context.Context, folder state.Item, commit pageCommit)
 		}
 		if ctx.Err() != nil {
 			return false
+		}
+		if folder.PageToken != "" && drive.IsInvalidToken(err) {
+			// Google keeps a page token for a few hours. A rejected one would
+			// fail every retry, leaving the folder half listed, so drop the
+			// checkpoint and read the folder again from its first page:
+			// committed pages are replayed by INSERT OR IGNORE.
+			r.log("page token rejected; restarting the folder", "folder", folder.SourceID)
+			if e := r.e.Store.RestartListing(r.db, folder); e != nil {
+				r.log("cannot reset the listing", "err", e)
+				return false
+			}
+			return true
 		}
 		r.e.Store.FailListing(r.db, folder, codeFor(err))
 		return true
@@ -947,11 +980,15 @@ func (r *run) reconcile(ctx context.Context, it state.Item, held bool) {
 		}
 		defer r.e.release()
 	}
+	// Confirmed says the last lookup reached Drive and found no match. Only
+	// that answer proves a resend is safe; a lookup that failed says nothing.
+	confirmed := false
 	for try := 0; try < reconcileTries; try++ {
 		if ctx.Err() != nil || r.control() != "run" {
 			return
 		}
 		found, err := r.p.FindByIntent(ctx, it.DestParentID, it.IntentKey)
+		confirmed = false
 		if err != nil {
 			switch drive.KindOf(err) {
 			case drive.KindAuth:
@@ -981,6 +1018,7 @@ func (r *run) reconcile(ctx context.Context, it state.Item, held bool) {
 			r.complete(ctx, it, found[0].ID)
 			return
 		case 0:
+			confirmed = true
 			if !r.e.sleep(ctx, r.e.Settle) {
 				return
 			}
@@ -992,7 +1030,7 @@ func (r *run) reconcile(ctx context.Context, it state.Item, held bool) {
 	if ctx.Err() != nil {
 		return
 	}
-	if it.ErrorCode == "retry_confirmed" {
+	if confirmed && it.ErrorCode == "retry_confirmed" {
 		r.e.Store.SetItemState(r.db, it, state.ItemPending, "")
 		return
 	}
@@ -1035,18 +1073,60 @@ func (r *run) retireSuperseded(ctx context.Context) (failed int) {
 		if ctx.Err() != nil {
 			return failed
 		}
-		if r.e.acquire(ctx) != nil {
-			return failed
-		}
-		err := r.p.TrashFile(ctx, v.DestID)
-		r.e.release()
-		if err == nil || drive.KindOf(err) == drive.KindNotFound {
+		// The id comes from our own records, but the object may have been
+		// taken over since: only a copy that still carries our intent is ours
+		// to trash.
+		if err := r.trashOurs(ctx, v.DestID, ""); err == nil || drive.KindOf(err) == drive.KindNotFound {
 			r.e.Store.MarkTrashed(r.db, v)
 		} else {
 			failed++
 		}
 	}
 	return failed
+}
+
+// errNotOurs says the object no longer carries the intent that proves 502Drive
+// created it. Nothing may be renamed, moved or trashed through it.
+var errNotOurs = &drive.Error{Kind: drive.KindPermission, Reason: "not_owned"}
+
+// stillOurs reports whether cur carries an intent of ours. exact empty accepts
+// any intent.
+func stillOurs(cur drive.File, exact string) bool {
+	got := cur.AppProperties[drive.IntentProperty]
+	return got != "" && (exact == "" || got == exact)
+}
+
+// ownsGeneration reports whether cur still carries the intent key of this
+// source at this generation. A move rewrites the key, so the key of the folder
+// the object currently sits in is accepted as well.
+func ownsGeneration(cur drive.File, it state.Item) bool {
+	ours := cur.AppProperties[drive.IntentProperty]
+	if ours == "" {
+		return false
+	}
+	if ours == it.IntentKey {
+		return true
+	}
+	return len(cur.Parents) > 0 && ours == state.IntentKey(it.CollectionID, it.SourceID, cur.Parents[0], it.Kind, it.Generation)
+}
+
+// trashOurs moves one of our own objects to the trash. A missing object, or one
+// already in the trash, is as good as trashed; an object without our intent is
+// left alone.
+func (r *run) trashOurs(ctx context.Context, id, exact string) error {
+	if err := r.e.acquire(ctx); err != nil {
+		return err
+	}
+	f, err := r.p.GetFile(ctx, id, "")
+	if err == nil && !f.Trashed {
+		if !stillOurs(f, exact) {
+			err = errNotOurs
+		} else {
+			err = r.p.TrashFile(ctx, id)
+		}
+	}
+	r.e.release()
+	return err
 }
 
 // align renames/moves an object we already own so it matches the source.
@@ -1082,6 +1162,21 @@ func (r *run) align(ctx context.Context, it state.Item) {
 		r.e.Store.ReleaseItem(r.db, it, codeFor(err), r.e.Now().Add(max(r.e.backoff(it.Attempts), drive.RetryAfterOf(err))).UnixMilli())
 	}
 	cur, err := r.p.GetFile(ctx, it.DestID, "")
+	if err == nil {
+		// The object is renamed or moved in place, so it must still be provably
+		// ours: a marker removed between the scan and this write stops the item
+		// instead of writing through a foreign object.
+		switch {
+		case cur.Trashed:
+			r.log("align stopped: the copy is in the trash", "source", it.SourceID)
+			r.e.Store.ReleaseItem(r.db, it, "destination_missing", 0)
+			return
+		case !ownsGeneration(cur, it):
+			r.log("align stopped: the copy no longer carries our intent", "source", it.SourceID)
+			r.e.Store.ReleaseItem(r.db, it, "destination_not_ours", 0)
+			return
+		}
+	}
 	if err == nil && cur.Name != it.Name {
 		err = r.p.RenameFile(ctx, it.DestID, it.Name)
 	}

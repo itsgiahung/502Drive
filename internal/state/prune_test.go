@@ -215,11 +215,12 @@ func TestPruneEnforcesRetentionAndProtectsReferences(t *testing.T) {
 		t.Fatal("Item mapping was wrongly pruned")
 	}
 
-	// Write intent on completed item should be cleared
+	// The mapping's intent is its ownership proof for audit/repair: it must
+	// survive retention even though the job that wrote it is old.
 	var intentKey string
 	_ = s.db.QueryRowContext(ctx, "SELECT intent_key FROM items WHERE collection_id=? AND source_id='src_item_1'", c1.ID).Scan(&intentKey)
-	if intentKey != "" {
-		t.Fatalf("Expected intent_key to be cleared, got %q", intentKey)
+	if intentKey != "intent_123" {
+		t.Fatalf("intent_key of a live mapping was pruned: %q", intentKey)
 	}
 
 	// 6. Foreign Key Integrity Check (CRITICAL)

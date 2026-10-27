@@ -205,7 +205,10 @@ Thiết kế đầy đủ: [design/s6-batch-queue.md](../design/s6-batch-queue.m
   (kiểm bằng `EXPLAIN QUERY PLAN` trong test). `POST /v1/jobs/{id}/move` (before/after/priority, có revision).
 - Tạm dừng toàn hàng đợi: `POST /v1/queue/pause|resume` (owner). Cờ bền `settings.queue_paused`; job đang chạy
   chuyển `pausing` → `paused` ở điểm an toàn; resume chỉ đưa lại job **do hàng đợi** tạm dừng (job người dùng tự
-  tạm dừng vẫn tạm dừng). Trạng thái ở `GET /v1/status` (`queue.paused`).
+  tạm dừng vẫn tạm dừng). Điểm an toàn đọc lại cờ hàng đợi trong cùng transaction với lần ghi job: nếu hàng đợi đã
+  resume khi job còn `pausing`, job được ghi lại `running` (`desired_state=run`) và worker cũ tiếp tục chạy, thay vì
+  nằm `paused` không ai đánh thức.
+  Trạng thái ở `GET /v1/status` (`queue.paused`).
 - Số slot đồng thời do `max_active_jobs` trong config quyết định (mặc định 2, 1..32). Mỗi job vẫn chia sẻ trần
   AIMD toàn tài khoản (`workers`/`max_workers`), nên đây là độ sâu hàng đợi, không phải số call song song.
 

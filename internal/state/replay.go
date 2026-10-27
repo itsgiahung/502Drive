@@ -211,6 +211,9 @@ func (s *Store) FinishReplay(ctx context.Context, collectionID, expectedCursor, 
 				la := time.Now().UTC()
 				sub.LastAttemptAt = &la
 			}
+			if e = keepRerun(ctx, tx, collectionID, &sub); e != nil {
+				return e
+			}
 		}
 		return putSub(ctx, tx, sub)
 	})
@@ -273,6 +276,9 @@ func (s *Store) ClaimDueFullReconciles(ctx context.Context, now time.Time) ([]Jo
 				return e
 			default:
 				j, made = run, !coalesced
+			}
+			if e = keepRerun(ctx, tx, id, &sub); e != nil {
+				return e
 			}
 			sub.NextFullReconcileAt = nextFullReconcile(now, sub.FullReconcileEvery)
 			sub.Revision++
