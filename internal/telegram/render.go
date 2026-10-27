@@ -412,11 +412,8 @@ func jobTextView(tx texts, j state.Job, frame int, v jobView) string {
 		fmt.Fprintf(&b, "%s: %s\n", tx.resultLabel, escape(*j.ResultURL))
 	}
 	if j.LastError != nil {
-		fmt.Fprintf(&b, "%s: %s (%s)\n", tx.problemLabel, escape(short(j.LastError.Message, 160)), escape(j.LastError.Code))
-		// Say what to do next, not only what went wrong (a quota wait already did).
-		if hint := g.errHint[j.LastError.Code]; hint != "" && !quotaBlocked(j) {
-			fmt.Fprintf(&b, "💡 %s\n", escape(hint))
-		}
+		fmt.Fprintf(&b, "%s: %s (%s)\n", tx.problemLabel, escape(present.Advice(j.LastError.Code, string(tx.lang))), escape(j.LastError.Code))
+
 	}
 	fmt.Fprintf(&b, "%s: %s", tx.updated, j.UpdatedAt.UTC().Format("2006-01-02 15:04"))
 	return b.String()

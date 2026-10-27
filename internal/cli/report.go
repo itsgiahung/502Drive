@@ -23,16 +23,17 @@ const exportRowLimit = 5000
 
 // problemItem mirrors one failed/blocked/skipped item (GET /v1/jobs/{id}/items).
 type problemItem struct {
-	SourceID      string `json:"source_id"`
-	Name          string `json:"name"`
-	Path          string `json:"path"`
-	Kind          string `json:"kind"`
-	MimeType      string `json:"mime_type"`
-	State         string `json:"state"`
-	Code          string `json:"code"`
-	Attempts      int    `json:"attempts"`
-	SizeBytes     *int64 `json:"size_bytes"`
-	DestinationID string `json:"destination_id"`
+	Explanation   present.Explanation `json:"explanation"`
+	SourceID      string              `json:"source_id"`
+	Name          string              `json:"name"`
+	Path          string              `json:"path"`
+	Kind          string              `json:"kind"`
+	MimeType      string              `json:"mime_type"`
+	State         string              `json:"state"`
+	Code          string              `json:"code"`
+	Attempts      int                 `json:"attempts"`
+	SizeBytes     *int64              `json:"size_bytes"`
+	DestinationID string              `json:"destination_id"`
 }
 
 func (a *App) reportCmd() *cobra.Command {
@@ -134,6 +135,11 @@ func (a *App) fetchProblems(ctx context.Context, jobID string, maxRows int) ([]p
 		}
 		if err = r.Decode(&page); err != nil {
 			return nil, false, requestID, err
+		}
+		for i := range page.Items {
+			if page.Items[i].Explanation.Code == "" {
+				page.Items[i].Explanation = present.Explain(page.Items[i].Code, "en")
+			}
 		}
 		all = append(all, page.Items...)
 		if len(all) > maxRows {

@@ -370,3 +370,7 @@ Test: [batch_it_test.go](../../internal/tui/batch_it_test.go), [batch_it2_test.g
 or `--no-input`, onboard never reads input or starts processes: it emits a JSON
 envelope with `ready` and ordered `checks`, exit **9** when incomplete. An older
 daemon falls back to Doctor. Unknown readiness is reported as unknown.
+
+U3: human job errors and reports use `present.Explain` (title, explanation,
+next action). Item JSON and failure JSON add `explanation`; codes and existing
+fields remain stable. Unknown codes retain the raw code with generic advice.

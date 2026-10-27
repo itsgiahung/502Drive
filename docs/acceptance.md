@@ -521,3 +521,4 @@ probe chạy riêng không `-race`:
 | --- | --- | --- |
 | U1 readiness API/auth, unattended checklist/no stdin, TUI checklist snapshot | `TestSetupChecklistUsesDoctorAndRequiresAuth`, `TestOnboardNonTTYDoesNotReadInput`, `TestSetupHomeDisappearsWhenReady` | local |
 | U2 fair positions match actual claims, pause/old-server display, HTTP fields | `TestQueuePositionsFollowActualFairClaims`, `TestQueueUsesServerAheadAndSuppressesWhilePaused`, `TestJobQueueFieldsAreFromScheduler` | local |
+| U3 bilingual coverage of K1/provider/item codes, unknown fallback and error snapshot | `TestExplanationCoversProductionCodes`, `TestUnknownExplanationRetainsCode`, `TestPlainErrorJobSnapshot` | local |

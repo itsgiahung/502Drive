@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/itsgiahung/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/present"
 	"github.com/itsgiahung/502Drive/internal/state"
 )
 
@@ -461,7 +462,7 @@ func itemDTO(it state.Item) map[string]any {
 	return map[string]any{
 		"source_id": it.SourceID, "name": it.Name, "path": path, "kind": it.Kind, "mime_type": it.MimeType,
 		"state": it.State, "code": it.ErrorCode, "attempts": it.Attempts, "size_bytes": size,
-		"destination_id": it.DestID,
+		"destination_id": it.DestID, "explanation": present.Explain(it.ErrorCode, "en"),
 	}
 }
 

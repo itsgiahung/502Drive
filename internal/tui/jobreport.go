@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/itsgiahung/502Drive/internal/i18n"
+	"github.com/itsgiahung/502Drive/internal/present"
 )
 
 // The problem report (X1) of a job: the failed, blocked and skipped items with
@@ -154,6 +155,10 @@ func (m Model) reportScreen() []string {
 	}
 	if r.rep.Truncated {
 		lines = append(lines, m.warn(m.tf(i18n.ReportCut, len(r.rep.Items))))
+	}
+	if m.cursor >= 0 && m.cursor < len(r.rep.Items) {
+		it := r.rep.Items[m.cursor]
+		lines = append(lines, wrapLines(Sanitize(present.Advice(it.Code, m.lang)), max(20, m.width-2))...)
 	}
 	return append(lines, m.exportLines()...)
 }

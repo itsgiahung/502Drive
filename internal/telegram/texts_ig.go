@@ -1,5 +1,7 @@
 package telegram
 
+import "github.com/itsgiahung/502Drive/internal/present"
+
 // Strings added by batch IG (multi-link batches and the queue, deep preflight,
 // the after-copy sync choice and the problem report). Same rule as texts_g.go:
 // every key exists in Vietnamese and English (a test compares both) and Drive
@@ -109,19 +111,19 @@ var igVI = igTexts{
 	reportHintLine:  "• %s (%s) ×%d — %s",
 	itemHintDefault: "Mở công việc, nhấn Thử lại; nếu còn lỗi, chạy 502drive doctor trên máy daemon.",
 	itemHint: map[string]string{
-		"filtered":                  "Bình thường: bộ lọc đã loại mục này. Đổi bộ lọc nếu bạn muốn copy nó.",
-		"conflict":                  "Đích đã có mục cùng tên; đổi chính sách Trùng tên trên thẻ xem trước nếu cần.",
-		"shortcut_unresolved":       "Mở đích của shortcut rồi gửi link của nó.",
-		"shortcut_loop":             "Shortcut trỏ vòng; sửa shortcut trên Drive.",
-		"cannot_copy":               "Nhờ chủ sở hữu bật quyền copy hoặc cấp quyền chỉnh sửa.",
-		"google_native_export_only": "Định dạng Google chỉ export được; mở trên Drive và tạo bản sao thủ công.",
-		"too_large_for_quota":       "Giải phóng dung lượng Drive hoặc đổi tài khoản đích.",
-		"unreadable":                "Nhờ chủ sở hữu chia sẻ mục này cho tài khoản Google đã kết nối.",
-		"trashed_source":            "Khôi phục mục khỏi thùng rác ở nguồn nếu bạn cần nó.",
-		"retry_exhausted":           "Nhấn Thử lại; nếu vẫn lỗi, kiểm tra quyền và dung lượng của thư mục đích.",
-		"quota_exceeded":            "Công việc tự tiếp tục khi Google cho phép; không cần thử lại.",
-		"unknown_remote_outcome":    "Nhấn Thử lại: 502Drive đối chiếu với Drive trước nên không copy trùng.",
-		"permission_denied":         "Nhờ chủ sở hữu chia sẻ mục đó cho tài khoản Google đã kết nối.",
+		"filtered":                  present.Explain("filtered", "vi").Action,
+		"conflict":                  present.Explain("conflict", "vi").Action,
+		"shortcut_unresolved":       present.Explain("shortcut_unresolved", "vi").Action,
+		"shortcut_loop":             present.Explain("shortcut_loop", "vi").Action,
+		"cannot_copy":               present.Explain("cannot_copy", "vi").Action,
+		"google_native_export_only": present.Explain("google_native_export_only", "vi").Action,
+		"too_large_for_quota":       present.Explain("too_large_for_quota", "vi").Action,
+		"unreadable":                present.Explain("unreadable", "vi").Action,
+		"trashed_source":            present.Explain("trashed_source", "vi").Action,
+		"retry_exhausted":           present.Explain("retry_exhausted", "vi").Action,
+		"quota_exceeded":            present.Explain("quota_exceeded", "vi").Action,
+		"unknown_remote_outcome":    present.Explain("unknown_remote_outcome", "vi").Action,
+		"permission_denied":         present.Explain("permission_denied", "vi").Action,
 	},
 }
 
@@ -193,18 +195,18 @@ var igEN = igTexts{
 	reportHintLine:  "• %s (%s) ×%d — %s",
 	itemHintDefault: "Open the job and tap Retry; if it still fails, run 502drive doctor on the daemon machine.",
 	itemHint: map[string]string{
-		"filtered":                  "Expected: the filter excluded this item. Change the filter if you want it copied.",
-		"conflict":                  "The destination already has an item with that name; change the name-conflict policy on the preview card if needed.",
-		"shortcut_unresolved":       "Open the shortcut's target and send its link.",
-		"shortcut_loop":             "The shortcut loops back; fix the shortcut on Drive.",
-		"cannot_copy":               "Ask the owner to allow copying or to grant edit access.",
-		"google_native_export_only": "A Google format that can only be exported; open it on Drive and make a copy by hand.",
-		"too_large_for_quota":       "Free up Drive space or use another destination account.",
-		"unreadable":                "Ask the owner to share this item with the connected Google account.",
-		"trashed_source":            "Restore the item from the trash at the source if you need it.",
-		"retry_exhausted":           "Tap Retry; if it still fails, check permissions and space in the destination.",
-		"quota_exceeded":            "The job resumes by itself when Google allows; no retry needed.",
-		"unknown_remote_outcome":    "Tap Retry: 502Drive reconciles with Drive first, so nothing is copied twice.",
-		"permission_denied":         "Ask the owner to share that item with the connected Google account.",
+		"filtered":                  present.Explain("filtered", "en").Action,
+		"conflict":                  present.Explain("conflict", "en").Action,
+		"shortcut_unresolved":       present.Explain("shortcut_unresolved", "en").Action,
+		"shortcut_loop":             present.Explain("shortcut_loop", "en").Action,
+		"cannot_copy":               present.Explain("cannot_copy", "en").Action,
+		"google_native_export_only": present.Explain("google_native_export_only", "en").Action,
+		"too_large_for_quota":       present.Explain("too_large_for_quota", "en").Action,
+		"unreadable":                present.Explain("unreadable", "en").Action,
+		"trashed_source":            present.Explain("trashed_source", "en").Action,
+		"retry_exhausted":           present.Explain("retry_exhausted", "en").Action,
+		"quota_exceeded":            present.Explain("quota_exceeded", "en").Action,
+		"unknown_remote_outcome":    present.Explain("unknown_remote_outcome", "en").Action,
+		"permission_denied":         present.Explain("permission_denied", "en").Action,
 	},
 }

@@ -2845,6 +2845,9 @@
          "null"
         ],
         "minimum": 0
+       },
+       "explanation": {
+        "$ref": "#/components/schemas/Explanation"
        }
       },
       "required": [
@@ -2945,6 +2948,9 @@
          },
          "message": {
           "type": "string"
+         },
+         "explanation": {
+          "$ref": "#/components/schemas/Explanation"
          }
         },
         "required": [
@@ -3414,6 +3420,9 @@
          },
          "message": {
           "type": "string"
+         },
+         "explanation": {
+          "$ref": "#/components/schemas/Explanation"
          }
         },
         "required": [
@@ -4843,6 +4852,9 @@
          },
          "message": {
           "type": "string"
+         },
+         "explanation": {
+          "$ref": "#/components/schemas/Explanation"
          }
         },
         "required": [
@@ -5832,6 +5844,30 @@
      "data",
      "request_id"
     ]
+   },
+   "Explanation": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+     "code",
+     "title",
+     "message",
+     "action"
+    ],
+    "properties": {
+     "code": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "message": {
+      "type": "string"
+     },
+     "action": {
+      "type": "string"
+     }
+    }
    }
   },
   "responses": {

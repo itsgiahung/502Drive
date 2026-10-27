@@ -124,7 +124,7 @@ func (a *App) printJob(ctx context.Context, j jobView) {
 		rows = append(rows, kv{"result", *j.ResultURL})
 	}
 	if j.LastError != nil {
-		rows = append(rows, kv{"problem", s.warn(Sanitize(j.LastError.Message)) + " (" + j.LastError.Code + ")"})
+		rows = append(rows, kv{"problem", s.warn(Sanitize(present.Advice(j.LastError.Code, "en"))) + " (" + j.LastError.Code + ")"})
 	}
 	if j.CreatedAt != "" {
 		rows = append(rows, kv{"created", a.formatTimestamp(ctx, j.CreatedAt)})

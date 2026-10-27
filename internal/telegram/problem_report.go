@@ -116,7 +116,7 @@ func (t *Telegram) buildProblemCSV(ctx context.Context, p app.Principal, jobID s
 // problemCaption is the file's caption: what it is, whether it was cut, and
 // the advice for the most frequent reasons.
 func problemCaption(tx texts, j state.Job, s problemSummary) string {
-	ig, g := tx.ig(), tx.g()
+	ig := tx.ig()
 	var b strings.Builder
 	fmt.Fprintf(&b, ig.reportCaption+"\n", escape(short(j.RootName, 40)), s.rows)
 	if s.truncated {
@@ -143,17 +143,8 @@ func problemCaption(tx texts, j state.Job, s problemSummary) string {
 		if i == reportHintLines {
 			break
 		}
-		label := g.skipLabels[r.code]
-		if label == "" {
-			label = codeText(tx, r.code)
-		}
-		hint := ig.itemHint[r.code]
-		if hint == "" {
-			hint = g.errHint[r.code]
-		}
-		if hint == "" {
-			hint = ig.itemHintDefault
-		}
+		e := present.Explain(r.code, string(tx.lang))
+		label, hint := e.Title, e.Action
 		line := fmt.Sprintf(ig.reportHintLine+"\n", escape(label), escape(r.code), r.n, escape(hint))
 		if len([]rune(b.String()))+len([]rune(line)) > reportCaptionMax {
 			break

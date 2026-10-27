@@ -160,6 +160,9 @@ func (a *App) trayJobs(ctx context.Context) ([]tray.Job, error) {
 	out := make([]tray.Job, 0, len(page.Items))
 	for _, j := range page.Items {
 		job := tray.Job{QueueAhead: j.QueueAhead, QueuePaused: j.QueuePaused, ID: j.ID, SourceName: j.SourceName, State: j.State, Completed: j.Counts.Completed, Total: j.Counts.Total}
+		if j.LastError != nil {
+			job.LastErrorCode = j.LastError.Code
+		}
 		if j.ResultURL != nil {
 			job.ResultURL = *j.ResultURL
 		}

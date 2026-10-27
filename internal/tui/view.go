@@ -352,7 +352,7 @@ func (m Model) jobView() []string {
 		lines = append(lines, m.kv(m.t(i18n.Result), Sanitize(j.ResultURL)))
 	}
 	if j.LastError != "" {
-		lines = append(lines, m.kv(m.t(i18n.Problem), m.warn(Sanitize(j.LastError))))
+		lines = append(lines, m.kv(m.t(i18n.Problem), m.warn(Sanitize(present.Advice(j.LastErrorCode, m.lang)))))
 	}
 	if skipped := m.skippedLines(j); len(skipped) > 0 {
 		lines = append(lines, "")

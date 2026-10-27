@@ -124,24 +124,12 @@ func (m Model) kindLabel(kind string) string {
 	return Sanitize(kind)
 }
 
-var skipKeys = map[string]i18n.Key{
-	"filtered":                  i18n.SkipFiltered,
-	"conflict":                  i18n.SkipConflict,
-	"shortcut_unresolved":       i18n.SkipShortUnres,
-	"shortcut_loop":             i18n.SkipShortLoop,
-	"cannot_copy":               i18n.SkipCannotCopy,
-	"google_native_export_only": i18n.SkipNativeOnly,
-	"too_large_for_quota":       i18n.SkipTooLarge,
-	"unreadable":                i18n.SkipUnreadable,
-	"trashed_source":            i18n.SkipTrashed,
-}
-
-// skipLabel names a skip code; an unknown (newer) code is shown as it is.
 func (m Model) skipLabel(code string) string {
-	if k, ok := skipKeys[code]; ok {
-		return m.t(k)
+	e := present.Explain(code, m.lang)
+	if !e.Known {
+		return Sanitize(code)
 	}
-	return Sanitize(code)
+	return e.Title
 }
 
 // skippedLines lists the skipped items by reason, biggest first, ties by code,

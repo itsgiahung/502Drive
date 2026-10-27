@@ -8,6 +8,7 @@ import (
 
 	"github.com/itsgiahung/502Drive/internal/app"
 	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/present"
 	"github.com/itsgiahung/502Drive/internal/schedule"
 	"github.com/itsgiahung/502Drive/internal/state"
 )
@@ -37,7 +38,7 @@ func failureDTO(f *state.Failure) any {
 	if f == nil {
 		return nil
 	}
-	return map[string]string{"code": f.Code, "message": f.Message}
+	return map[string]any{"code": f.Code, "message": f.Message, "explanation": present.Explain(f.Code, "en")}
 }
 
 func jobDTO(j state.Job) map[string]any {

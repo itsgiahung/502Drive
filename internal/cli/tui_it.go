@@ -46,6 +46,7 @@ func (j tuiJobView) job() tui.Job {
 	}
 	if j.LastError != nil {
 		job.LastError = j.LastError.Message
+		job.LastErrorCode = j.LastError.Code
 	}
 	return job
 }

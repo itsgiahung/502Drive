@@ -51,14 +51,15 @@ type Status struct {
 
 // Job is one recent job shown in the tray submenu.
 type Job struct {
-	QueueAhead  *int
-	QueuePaused bool
-	ID          string
-	SourceName  string
-	State       string
-	Completed   int
-	Total       *int
-	ResultURL   string
+	LastErrorCode string
+	QueueAhead    *int
+	QueuePaused   bool
+	ID            string
+	SourceName    string
+	State         string
+	Completed     int
+	Total         *int
+	ResultURL     string
 }
 
 // Snapshot is what one poll produced.
@@ -152,6 +153,12 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 	}
 	if online && status.SetupMissing != "" {
 		line = present.SetupStep(status.SetupMissing, lang)
+	}
+	for _, j := range snap.Jobs {
+		if j.State == "blocked" && j.LastErrorCode != "" {
+			line += " · " + present.Advice(j.LastErrorCode, lang)
+			break
+		}
 	}
 	result := latestResult(snap)
 

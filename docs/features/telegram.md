@@ -220,3 +220,6 @@ syncer trong daemon:
 - Test: `TestStartInstallsAPersistentKeyboardThenAColourfulWelcome`,
   `TestKeyboardTapsOpenTheSamePagesAsTheButtons`, `TestKeyboardTapFromAStrangerIsIgnored` trong
   [telegram_test.go](../../internal/telegram/telegram_test.go).
+
+U3: job problems and report captions use the shared bilingual explanation
+catalogue. CSV keeps stable codes and English reasons for interchange.

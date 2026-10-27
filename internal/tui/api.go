@@ -47,6 +47,7 @@ type Job struct {
 	Skipped       int
 	Total         *int
 	ResultURL     string
+	LastErrorCode string
 	LastError     string
 	// Kind is empty for a copy or sync run, else audit, repair or cleanup.
 	Kind string
