@@ -150,7 +150,8 @@ func assertDimensions(t *testing.T, lines []string, cols, rows int) {
 			t.Fatalf("width = %d, want %d", got, cols)
 		}
 		for _, ch := range plain(line) {
-			if ch != ' ' && ch != '▀' && ch != '▄' {
+			// Half blocks, plus the sleeping "z Z" (single-width ASCII letters).
+			if ch != ' ' && ch != '▀' && ch != '▄' && ch != 'z' && ch != 'Z' {
 				t.Fatalf("unexpected terminal glyph %q", ch)
 			}
 		}

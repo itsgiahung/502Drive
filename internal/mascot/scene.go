@@ -32,6 +32,9 @@ func (cv *canvas) blend(x, y int, c rgb, a float64) {
 type pose struct {
 	sx, sy, lift, shake, ear, droop     float64
 	tilt, head, tail, paw, curl, fright float64
+	// yarn and fly are idle toys (0 = away, 1 = fully in play). They follow the
+	// fidget timeline directly; the toy motion itself is drawn from the clock.
+	yarn, fly float64
 }
 
 func (p pose) X(lx float64) float64 { return cx + p.shake + lx*p.sx }
@@ -55,8 +58,6 @@ func (cv *canvas) star(x, y int, ph float64, c rgb) {
 		cv.blend(x, y+2, c, .5)
 	}
 }
-
-var glyphZ = []string{"###", "..#", ".#.", "###"}
 
 const (
 	srcX, dstX = 2, 49

@@ -6,6 +6,9 @@ type rgb struct{ r, g, b float64 }
 type px struct {
 	c rgb
 	a float64
+	// ch, when set, is printed in colour c instead of a half block: small
+	// text (the sleeping "z Z") stays crisp where pixels cannot draw a letter.
+	ch rune
 }
 type canvas [H][W]px
 

@@ -94,6 +94,7 @@ func (a *Anim) Step(m Mood, dt float64) *Frame {
 			shake: a.shake.step(tp.shake, h), ear: a.ear.step(tp.ear, h), droop: a.droop.step(tp.droop, h),
 			tilt: a.tilt.step(tp.tilt, h), head: a.head.step(tp.head, h), tail: a.tail.step(tp.tail, h),
 			paw: a.paw.step(tp.paw, h), curl: a.curl.step(tp.curl, h), fright: a.fright.step(tp.fright, h),
+			yarn: tp.yarn, fly: tp.fly,
 		}
 		k, blink := 1-math.Exp(-h/0.10), 1-math.Exp(-h/0.018)
 		a.face.gx += (f.gx - a.face.gx) * k

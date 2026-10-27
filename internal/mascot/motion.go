@@ -76,7 +76,7 @@ func target(mood Mood, t, clock, sc float64, seed uint64) (pose, face) {
 		bucket := int64(clock / 12)
 		local := math.Mod(clock, 12)
 		u := pulse(local, 6.5+noise(seed+3, bucket), 2.4)
-		switch int(noise(seed+4, bucket) * 5) {
+		switch int(noise(seed+4, bucket) * 7) {
 		case 0: // yawn
 			f.open, f.blink, p.droop = u, max(f.blink, u*.8), 2*u
 		case 1: // stretch: compress, then reach up
@@ -92,6 +92,15 @@ func target(mood Mood, t, clock, sc float64, seed uint64) (pose, face) {
 		case 4: // settle into a lower sit
 			p.sy *= 1 - .08*u
 			p.droop, f.blink = u, max(f.blink, .6*u)
+		case 5: // a ball of yarn rolls in; watch it, bat it, watch it roll back
+			p.yarn = smooth(u * 3)
+			f.gx, f.gy, f.pupil = -1.6, .9, .9
+			p.tilt = -.12 * p.yarn
+		case 6: // a butterfly drifts around the ears; the eyes follow it
+			p.fly = smooth(u * 3)
+			bx, by := butterfly(clock)
+			f.gx, f.gy, f.pupil = (bx-7)*.35, (by-1)*.5, .9
+			p.ear += .8 * p.fly * math.Sin(clock*6)
 		}
 	case Busy:
 		f.gx, f.gy = trackPacket(clock)
@@ -153,4 +162,16 @@ func moodAccent(m Mood) rgb {
 	default:
 		return cBlush
 	}
+}
+
+// butterfly is the toy's path in sprite pixels, relative to the cat's head:
+// a lazy figure-eight beside the right ear.
+func butterfly(t float64) (x, y float64) {
+	return 12.5 + 1.8*math.Sin(t*1.7), .6 + 1.2*math.Sin(t*3.4)
+}
+
+// yarnX is the ball's x on the ground, left of the cat: it rolls out after
+// each bat of the paw and drifts back.
+func yarnX(t float64) float64 {
+	return -.5 - 1.5*math.Max(0, math.Sin(t*2.6))
 }

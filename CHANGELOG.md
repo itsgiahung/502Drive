@@ -19,6 +19,10 @@ before 1.0 a minor version may change behaviour, and every such change is listed
 
 - Collection detail arrows select rows in the open collection; Sync opens a
   keyboard-selectable action menu. Job details scroll rather than select another job.
+- The terminal cat sleeps curled up, breathing, with a small "z" and a "Z" drawn as
+  real letters; idle moments now include playing with a ball of yarn and watching
+  a butterfly. Fixed a white square while it washed its cheek and a thin "neck"
+  when it stretched.
 - Left returns from nested views. Live refresh and returning from reports/filter
   editors preserve object identity instead of reusing a stale list position.
 - Public Markdown is English with one Vietnamese introduction, `README_VI.md`.

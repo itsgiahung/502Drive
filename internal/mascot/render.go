@@ -151,6 +151,13 @@ func (f *Frame) lines(o Options, x0, x1, y0, y1 int) []string {
 			bot, bok := final(f.cv[y+1][x], bgc)
 			var fg, bg, ch string
 			switch {
+			case f.cv[y][x].ch != 0 || f.cv[y+1][x].ch != 0:
+				// A letter takes the whole cell on the terminal background.
+				p := f.cv[y][x]
+				if p.ch == 0 {
+					p = f.cv[y+1][x]
+				}
+				fg, ch = pt.seq(p.c, false), string(p.ch)
 			case tok && bok:
 				fg, bg, ch = pt.seq(top, false), pt.seq(bot, true), "▀"
 			case tok:
