@@ -52,6 +52,9 @@ versioned_copy/replace_copy, `schedule_revision`, `revision`.
   dùng nó sẽ copy lại file không đổi. Fingerprint dạng cũ `v<version>|md5|tên`
   được so một lần theo md5 + tên rồi ghi lại dạng mới, nên nâng cấp không copy
   lại hàng loạt. Thư mục đổi tên xóa `dest_name` cũ để `align` dùng tên mới.
+- Đổi tên thuần một file thường (md5 không đổi) chỉ đổi tên bản copy (`op=align`),
+  không copy lại. File Google (không md5) đổi tên thì `modifiedTime` cũng đổi nên vẫn là
+  generation mới — giới hạn của Drive API, không phân biệt được với sửa nội dung.
 - Item mất khỏi nguồn → `error_code=source_removed`, bản đích giữ nguyên.
 - Chống xoá nhầm: nếu một lần quét mất **>30%** mục đã map (sàn 10 mục), run
   dừng **trước khi copy**, thành `partial` với `last_error.code=source_mass_removal`

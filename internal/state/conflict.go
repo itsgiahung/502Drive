@@ -119,3 +119,11 @@ func SameSource(stored, current string) bool {
 	}
 	return cp[1] == ""
 }
+
+// SameBytes reports whether two fingerprints prove identical bytes: both carry
+// the same non-empty md5. Google native files have no md5 (and a rename moves
+// their modifiedTime), so they never qualify.
+func SameBytes(stored, current string) bool {
+	m := ContentFingerprintMD5(current)
+	return m != "" && m == ContentFingerprintMD5(stored)
+}

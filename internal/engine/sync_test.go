@@ -348,7 +348,8 @@ func TestRenamedFileRecopyUsesTheNewDestinationName(t *testing.T) {
 		t.Fatalf("baseline copies named a.txt: %d", len(got))
 	}
 
-	e.fake.Mutate(f.ID, func(x *drive.File) { x.Name = "b.txt" })
+	// Renamed and edited: a new generation, named after the new source name.
+	e.fake.Mutate(f.ID, func(x *drive.File) { x.Name, x.MD5 = "b.txt", "edited" })
 	j := e.runUntil(e.runNow(base.CollectionID).ID, terminal)
 	if j.State != state.JobSucceeded {
 		t.Fatalf("rename run = %s %+v", j.State, j.LastError)
@@ -367,7 +368,7 @@ func TestRenamedSingleFileRecopyUsesTheNewDestinationName(t *testing.T) {
 	e := newEnv(t)
 	f := e.fake.File("report.txt", "root", 10)
 	base, root := e.baseline(f)
-	e.fake.Mutate(f.ID, func(x *drive.File) { x.Name = "renamed.txt"; x.Version = "2" })
+	e.fake.Mutate(f.ID, func(x *drive.File) { x.Name = "renamed.txt"; x.Version = "2"; x.MD5 = "edited" })
 	j := e.runUntil(e.runNow(base.CollectionID).ID, terminal)
 	if j.State != state.JobSucceeded {
 		t.Fatalf("rename run = %s %+v", j.State, j.LastError)
@@ -461,5 +462,46 @@ func TestDeltaRunIgnoresAVersionBumpWithoutAnEdit(t *testing.T) {
 	}
 	if got := find(e.fake, root, "note"); len(got) != 2 {
 		t.Fatalf("an edited doc must get a new generation (versioned_copy keeps both), got %d", len(got))
+	}
+}
+
+// Renaming a file whose bytes did not change renames the existing copy; it is
+// not copied again (no second copy under versioned_copy).
+func TestDeltaRunRenamesTheCopyOnAPureRename(t *testing.T) {
+	e := newEnv(t)
+	src := e.fake.Folder("Ren", "root")
+	f := e.fake.File("b.txt", src.ID, 25)
+	base, root := e.baseline(src)
+	copies, renames := e.fake.Calls["copy"], e.fake.Calls["rename"]
+
+	e.fake.Mutate(f.ID, func(x *drive.File) { x.Name = "b-renamed.txt"; x.Version = "5" })
+	if j := e.runUntil(e.runNow(base.CollectionID).ID, terminal); j.State != state.JobSucceeded {
+		t.Fatalf("delta %s %+v", j.State, j.LastError)
+	}
+	if e.fake.Calls["copy"] != copies || e.fake.Calls["rename"] != renames+1 {
+		t.Fatalf("copy %d->%d rename %d->%d, want no copy and one rename", copies, e.fake.Calls["copy"], renames, e.fake.Calls["rename"])
+	}
+	if len(find(e.fake, root, "b-renamed.txt")) != 1 || len(find(e.fake, root, "b.txt")) != 0 {
+		t.Fatal("the copy was not renamed in place")
+	}
+	// Editing the bytes afterwards still makes a new generation.
+	e.fake.Mutate(f.ID, func(x *drive.File) { x.MD5 = "edited" })
+	if j := e.runUntil(e.runNow(base.CollectionID).ID, terminal); j.State != state.JobSucceeded || e.fake.Calls["copy"] != copies+1 {
+		t.Fatalf("an edit after the rename must copy once: %s copies=%d", j.State, e.fake.Calls["copy"]-copies)
+	}
+}
+
+// A single-file collection renames its copy in place on a pure rename too.
+func TestSingleFilePureRenameRenamesTheCopy(t *testing.T) {
+	e := newEnv(t)
+	f := e.fake.File("report.txt", "root", 10)
+	base, root := e.baseline(f)
+	copies := e.fake.Calls["copy"]
+	e.fake.Mutate(f.ID, func(x *drive.File) { x.Name = "renamed.txt"; x.Version = "2" })
+	if j := e.runUntil(e.runNow(base.CollectionID).ID, terminal); j.State != state.JobSucceeded {
+		t.Fatalf("rename run = %s %+v", j.State, j.LastError)
+	}
+	if e.fake.Calls["copy"] != copies || len(find(e.fake, root, "renamed.txt")) != 1 || len(find(e.fake, root, "report.txt")) != 0 {
+		t.Fatalf("pure rename of a single file: copies +%d", e.fake.Calls["copy"]-copies)
 	}
 }

@@ -954,8 +954,18 @@ func (s *Store) CommitDeltaPage(ctx context.Context, run string, folder Item, ch
 					st.Moved++
 					continue
 				}
+			} else if ex.State == ItemDone && ex.Name != c.Name && SameBytes(ex.Fingerprint, c.Fingerprint) {
+				// A pure rename (same md5): rename the copy in place rather than
+				// copying the same bytes again. The new name is decided afresh.
+				if _, e = tx.ExecContext(ctx, `UPDATE items SET name=?, fingerprint=?, dest_name='', conflict_action='', parent_source_id=?,
+					state='pending', op='align', job_id=?, seen_job=?, error_code='' WHERE collection_id=? AND source_id=?`,
+					c.Name, c.Fingerprint, folder.SourceID, run, run, ex.CollectionID, ex.SourceID); e != nil {
+					return e
+				}
+				st.Moved++
+				continue
 			} else if !SameSource(ex.Fingerprint, c.Fingerprint) && ex.State != ItemExecuting && ex.State != ItemReconciling {
-				// New content (or a renamed file): a new generation is copied; the
+				// New content (or a renamed Google file): a new generation is copied; the
 				// previous copy is kept (versioned_copy) or retired after success.
 				// A renamed source must be named again for the new generation; a
 				// same-name recopy keeps the stored decision (restart stability).
@@ -1062,11 +1072,17 @@ func (s *Store) ApplySingleFile(ctx context.Context, run, collectionID string, c
 			_, e = tx.ExecContext(ctx, "UPDATE items SET error_code=CASE WHEN error_code='source_removed' THEN '' ELSE error_code END, fingerprint=CASE WHEN state IN ('executing','reconciling') THEN fingerprint ELSE ? END WHERE collection_id=? AND source_id=?", c.Fingerprint, collectionID, c.SourceID)
 			return e
 		}
+		changed = true
+		if ex.State == ItemDone && ex.Name != c.Name && SameBytes(ex.Fingerprint, c.Fingerprint) {
+			// A pure rename: rename the copy in place (see CommitDeltaPage).
+			_, e = tx.ExecContext(ctx, `UPDATE items SET name=?, fingerprint=?, dest_name='', conflict_action='', state='pending', op='align', job_id=?, error_code=''
+				WHERE collection_id=? AND source_id=?`, c.Name, c.Fingerprint, run, collectionID, c.SourceID)
+			return e
+		}
 		size := sql.NullInt64{}
 		if c.Size != nil {
 			size = sql.NullInt64{Int64: *c.Size, Valid: true}
 		}
-		changed = true
 		_, e = tx.ExecContext(ctx, `UPDATE items SET name=?, mime_type=?, size=?, fingerprint=?, generation=generation+1, intent_key='',
 			dest_name=CASE WHEN name<>? THEN '' ELSE dest_name END,
 			conflict_action=CASE WHEN name<>? THEN '' ELSE conflict_action END,
