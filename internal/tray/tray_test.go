@@ -330,7 +330,7 @@ func TestBuildViewStripsControlCharacters(t *testing.T) {
 	if strings.ContainsAny(line, "\x1b\n\r\u202e") {
 		t.Fatalf("control characters reached the menu: %q", line)
 	}
-	if !strings.Contains(line, "evil") || !strings.Contains(line, "reversed") {
+	if !strings.Contains(line, "evil") || !strings.Contains(line, "name") {
 		t.Fatalf("the name was mangled: %q", line)
 	}
 }

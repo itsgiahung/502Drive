@@ -225,7 +225,10 @@ func FrameAt(now time.Time) int {
 
 // ICO wraps PNG images in an ICO container, which Windows accepts for tray and
 // shell icons. Each directory entry points at a PNG payload.
-func ICO(st State, sizes []int) ([]byte, error) {
+func ICO(st State, sizes []int) ([]byte, error) { return icoFrame(st, 0, sizes) }
+
+// icoFrame is ICO for one frame of the busy animation.
+func icoFrame(st State, frame int, sizes []int) ([]byte, error) {
 	if len(sizes) == 0 {
 		return nil, errors.New("an ICO needs at least one size")
 	}
@@ -235,7 +238,7 @@ func ICO(st State, sizes []int) ([]byte, error) {
 	}
 	images := make([]image, 0, len(sizes))
 	for _, size := range sizes {
-		data, err := PNG(st, 0, size)
+		data, err := PNG(st, frame, size)
 		if err != nil {
 			return nil, err
 		}

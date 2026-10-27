@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/itsgiahung/502Drive/internal/autostart"
 	"github.com/itsgiahung/502Drive/internal/i18n"
@@ -71,7 +72,9 @@ type Item struct {
 	Enabled   bool
 	Hidden    bool
 	Separator bool
-	Children  []Item
+	// Icon names a menu glyph (see menuicons.go); empty means none.
+	Icon     string
+	Children []Item
 }
 
 // View is the rendered tray state for one poll. Tooltip is the longer
@@ -156,6 +159,10 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 	if status.QueuePaused {
 		toggleKey = i18n.TrayResumeAll
 	}
+	toggleGlyph := glyphPause
+	if status.QueuePaused {
+		toggleGlyph = glyphPlay
+	}
 	toggleTitle := i18n.T(lang, toggleKey)
 	if !online {
 		toggleTitle += " " + i18n.T(lang, i18n.TrayReasonDaemon)
@@ -163,7 +170,7 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 	// The status is a column of short rows, not one long line.
 	statusRows := []Item{{ID: "status", Title: line}, {ID: "status:work", Hidden: true}, {ID: "status:attention", Hidden: true}}
 	if online {
-		statusRows[0].Title = i18n.Tf(lang, i18n.TrayGoogleRow, plain(account))
+		statusRows[0].Title = padRow(i18n.Tf(lang, i18n.TrayGoogleRow, plain(account)))
 		statusRows[1] = Item{ID: "status:work", Title: i18n.Tf(lang, i18n.TrayWorkRow, status.Running, status.Queued)}
 		if status.QueuePaused {
 			statusRows[1].Title = i18n.T(lang, i18n.TrayPausedRow)
@@ -172,18 +179,18 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 	}
 	items := append(statusRows, []Item{
 		{Separator: true},
-		{ID: ActionDaemon, Title: i18n.T(lang, i18n.TrayStartApp), Enabled: !online, Hidden: online},
-		{ID: ActionPaste, Title: cloneTitle, Enabled: googleOK},
-		{ID: ActionOpenTUI, Title: i18n.T(lang, i18n.TrayOpenApp), Enabled: true},
-		{ID: "jobs", Title: i18n.T(lang, i18n.JobsLibrary), Enabled: true, Children: jobItems(snap, lang, result)},
+		{ID: ActionDaemon, Title: i18n.T(lang, i18n.TrayStartApp), Enabled: !online, Hidden: online, Icon: glyphPlay},
+		{ID: ActionPaste, Title: cloneTitle, Enabled: googleOK, Icon: glyphCopy},
+		{ID: ActionOpenTUI, Title: i18n.T(lang, i18n.TrayOpenApp), Enabled: true, Icon: glyphWindow},
+		{ID: "jobs", Title: i18n.T(lang, i18n.JobsLibrary), Enabled: true, Icon: glyphList, Children: jobItems(snap, lang, result)},
 		{Separator: true},
-		{ID: ActionQueueToggle, Title: toggleTitle, Enabled: online},
-		{ID: "settings", Title: i18n.T(lang, i18n.MenuSettings), Enabled: true, Children: []Item{
+		{ID: ActionQueueToggle, Title: toggleTitle, Enabled: online, Icon: toggleGlyph},
+		{ID: "settings", Title: i18n.T(lang, i18n.MenuSettings), Enabled: true, Icon: glyphSettings, Children: []Item{
 			{ID: ActionAutostart, Title: autostartTitle(lang), Enabled: true},
 		}},
 		{Separator: true},
-		{ID: ActionQuit, Title: i18n.T(lang, i18n.Quit), Enabled: true},
-		{ID: ActionStopDaemon, Title: i18n.T(lang, i18n.StopApp), Enabled: online},
+		{ID: ActionQuit, Title: i18n.T(lang, i18n.Quit), Enabled: true, Icon: glyphExit},
+		{ID: ActionStopDaemon, Title: i18n.T(lang, i18n.StopApp), Enabled: online, Icon: glyphStop},
 	}...)
 	return View{State: state, Title: title, StatusLine: line, Tooltip: tooltip(title, line, status, online, lang), Items: items}
 }
@@ -226,7 +233,7 @@ func jobItems(snap Snapshot, lang string, result string) []Item {
 	}
 	items = append(items, Item{Separator: true})
 	items = append(items, Item{ID: ActionOpenAll, Title: i18n.T(lang, i18n.TrayOpenAll), Enabled: true})
-	items = append(items, Item{ID: ActionOpenResult, Title: i18n.T(lang, i18n.OpenResult), Enabled: result != ""})
+	items = append(items, Item{ID: ActionOpenResult, Title: i18n.T(lang, i18n.OpenResult), Enabled: result != "", Icon: glyphFolder})
 	return items
 }
 
@@ -236,7 +243,7 @@ func jobLine(j Job, lang string) string {
 	if j.Total != nil {
 		progress = fmt.Sprintf("%d/%d", j.Completed, *j.Total)
 	}
-	return i18n.Tf(lang, i18n.JobLine, strings.ToUpper(stateWord(j.State, lang)), plain(truncate(j.SourceName, 40)), progress)
+	return i18n.Tf(lang, i18n.JobLine, strings.ToUpper(stateWord(j.State, lang)), plain(truncate(j.SourceName, 22)), progress)
 }
 
 // stateWord names a job state in the requested language.
@@ -331,4 +338,17 @@ func runningProgress(jobs []Job) (done, total int, ok bool) {
 		ok = true
 	}
 	return done, total, ok
+}
+
+// minRowWidth is the width, in characters, of the widest job row. The first
+// row is padded to it so the menu is already as wide as its submenu and does
+// not jump when the submenu opens.
+const minRowWidth = 38
+
+// padRow pads a label with no-break spaces up to minRowWidth.
+func padRow(s string) string {
+	if n := utf8.RuneCountInString(s); n < minRowWidth {
+		return s + strings.Repeat("\u00a0", minRowWidth-n)
+	}
+	return s
 }

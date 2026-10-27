@@ -23,7 +23,7 @@ func runTray(ctx context.Context, o Options) error {
 	defer cancel()
 
 	a := newAgent(o)
-	p := &systrayPresenter{items: map[string]*systray.MenuItem{}, now: o.now, motion: o.Motion}
+	p := &systrayPresenter{items: map[string]*systray.MenuItem{}, glyphs: map[string]string{}, now: o.now, motion: o.Motion}
 	a.p = p
 
 	done := make(chan struct{})
@@ -51,6 +51,7 @@ func runTray(ctx context.Context, o Options) error {
 type systrayPresenter struct {
 	mu     sync.Mutex
 	items  map[string]*systray.MenuItem
+	glyphs map[string]string
 	agent  *agent
 	now    func() time.Time
 	motion bool
@@ -69,6 +70,7 @@ func (p *systrayPresenter) build(a *agent) {
 		if len(it.Children) > 0 {
 			parent := systray.AddMenuItem(it.Title, "")
 			p.items[it.ID] = parent
+			p.glyph(it.ID, parent, it.Icon)
 			for _, c := range it.Children {
 				if c.Separator {
 					parent.AddSeparator()
@@ -83,6 +85,7 @@ func (p *systrayPresenter) build(a *agent) {
 		item := systray.AddMenuItem(it.Title, "")
 		p.items[it.ID] = item
 		p.watch(it.ID, item)
+		p.glyph(it.ID, item, it.Icon)
 	}
 }
 
@@ -130,12 +133,22 @@ func (p *systrayPresenter) apply(it Item) {
 		return
 	}
 	item.Show()
+	p.glyph(it.ID, item, it.Icon)
 	item.SetTitle(it.Title)
 	if it.Enabled {
 		item.Enable()
 	} else {
 		item.Disable()
 	}
+}
+
+// glyph sets a row's glyph once per change, not on every poll.
+func (p *systrayPresenter) glyph(id string, item *systray.MenuItem, key string) {
+	if key == "" || p.glyphs[id] == key {
+		return
+	}
+	p.glyphs[id] = key
+	setMenuGlyph(item, key)
 }
 
 func (p *systrayPresenter) setIcon(st State, frame int) error {
@@ -145,7 +158,7 @@ func (p *systrayPresenter) setIcon(st State, frame int) error {
 }
 
 func (p *systrayPresenter) setIconLocked(st State, frame int) error {
-	data, err := PNG(st, frame%busyFrames, iconSize)
+	data, err := trayIcon(st, frame)
 	if err != nil {
 		return err
 	}
