@@ -75,7 +75,7 @@ Trùng khóa là `(nguồn, đích)` của cùng tài khoản. `POST /v1/jobs` n
 CLI: `copy --update|--new`. Trong script (không có TTY) mặc định là `update`; trong terminal bị hỏi
 `[u]pdate / [n]ew / [c]ancel` khi trùng. Plan đã dùng (replay idempotent) không bị đối chiếu lại.
 Tra cứu dùng chỉ mục `collections_source_dest` (migration 020), có test `EXPLAIN QUERY PLAN`.
-Telegram và TUI hiện vẫn gọi `Submit` (= `new`); móc hộp thoại cho hai nơi này nằm ở "Móc UI cho Claude".
+TUI đã hỏi `u`pdate / `n`ew khi gặp `409 already_copied` (hộp copy, [cli](cli.md#library-jobs-hộp-copy-và-settings-đợt-t)); Telegram vẫn gọi `Submit` (= `new`), móc ở "Móc UI cho Claude".
 
 ## Vòng đời collection (L1)
 

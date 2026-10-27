@@ -28,6 +28,9 @@ func TestStateLabel(t *testing.T) {
 		{"busy", "vi", "Đang sao chép"},
 		{"error", "vi", "Lỗi"},
 		{"offline", "vi", "Ngoại tuyến"},
+		{"resuming", "vi", "Đang kết nối lại"},
+		{"reconnect_required", "vi", "Cần đăng nhập lại Google"},
+		{"retired", "vi", "Đã ngừng theo dõi"},
 		{"unknown_state", "vi", "unknown_state"},
 
 		// English
@@ -46,6 +49,9 @@ func TestStateLabel(t *testing.T) {
 		{"busy", "en", "Busy"},
 		{"error", "en", "Error"},
 		{"offline", "en", "Offline"},
+		{"resuming", "en", "Reconnecting"},
+		{"reconnect_required", "en", "Sign in to Google again"},
+		{"retired", "en", "Retired"},
 		{"unknown_state", "en", "unknown_state"},
 
 		// Case-insensitivity and trimming

@@ -147,7 +147,7 @@ func (m Model) workLine() string {
 		if perSec > 0 {
 			text += " · " + m.tf(i18n.FilesPerSec, perSec)
 			if total > done {
-				text += " · " + m.tf(i18n.ETALeft, humanDuration(time.Duration(float64(total-done)/perSec*float64(time.Second))))
+				text += " · " + m.tf(i18n.ETALeft, m.humanDuration(time.Duration(float64(total-done)/perSec*float64(time.Second))))
 			}
 		}
 		return m.accent(text)
@@ -207,10 +207,11 @@ func mascotArt(mood string, ascii bool) []string {
 
 func (m Model) jobsView() []string {
 	if len(m.snap.Jobs) == 0 {
-		return []string{"", m.bold(m.t(i18n.Jobs)), "", m.dim(m.t(i18n.NoJobs))}
+		return append(append([]string{""}, m.lifeBanner()...), m.bold(m.t(i18n.Jobs)), "", m.dim(m.t(i18n.NoJobs)))
 	}
 	start, end := m.window()
 	lines := append([]string{""}, m.jobsBanner()...)
+	lines = append(lines, m.lifeBanner()...)
 	lines = append(lines, m.bold(m.t(i18n.Jobs))+" "+m.dim(m.scrollLabel(start, end, len(m.snap.Jobs))))
 	barWidth := min(36, m.width-49)
 	for i := start; i < end; i++ {
@@ -221,6 +222,10 @@ func (m Model) jobsView() []string {
 			row += " " + m.spinChar()
 		}
 		lines = append(lines, row)
+		if m.waitingForQuota(j) {
+			lines = append(lines, "            "+m.warn(m.quotaText(j))) // no bar and no retry: it resumes by itself
+			continue
+		}
 		lines = append(lines, "            "+m.progressRow(j, barWidth))
 	}
 	return lines
@@ -251,7 +256,7 @@ func (m Model) progressRow(j Job, barWidth int) string {
 	if perSec, eta, ok := m.speed(j); ok && barWidth >= 10 {
 		text += m.dim(" · " + m.tf(i18n.FilesPerSec, perSec))
 		if eta > 0 {
-			text += m.dim(" · " + m.tf(i18n.ETALeft, humanDuration(eta)))
+			text += m.dim(" · " + m.tf(i18n.ETALeft, m.humanDuration(eta)))
 		}
 	}
 	return text
@@ -264,31 +269,57 @@ func (m Model) jobView() []string {
 	}
 	lines := []string{"", m.bold(m.t(i18n.Job)+" ") + Sanitize(j.ID), ""}
 	lines = append(lines, m.kv(m.t(i18n.Source), Sanitize(j.SourceName)), m.kv(m.t(i18n.State), m.stateWord(j.State)))
+	if j.Kind != "" {
+		lines = append(lines, m.kv(m.t(i18n.KindLabel), m.kindLabel(j.Kind)))
+	}
+	if m.waitingForQuota(j) {
+		lines = append(lines, m.kv(m.t(i18n.Blocked), m.warn(m.quotaText(j))), m.kv("", m.dim(m.t(i18n.QuotaWaitNote))))
+	}
 	if j.Phase != "" {
 		lines = append(lines, m.kv(m.t(i18n.Phase), Sanitize(j.Phase)))
 	}
 	lines = append(lines, m.kv(m.t(i18n.Progress), m.progress(j, max(10, min(32, m.width-36)))))
 	lines = append(lines, m.kv(m.t(i18n.Counts), fmt.Sprintf("%d · %d · %d · %d",
 		j.Completed, j.Failed, j.Blocked, j.Skipped)))
+	if j.Bytes > 0 {
+		lines = append(lines, m.kv(m.t(i18n.SizeLabel), bytesText(j.Bytes)))
+	}
 	if j.ResultURL != "" {
 		lines = append(lines, m.kv(m.t(i18n.Result), Sanitize(j.ResultURL)))
 	}
 	if j.LastError != "" {
 		lines = append(lines, m.kv(m.t(i18n.Problem), m.warn(Sanitize(j.LastError))))
 	}
-	lines = append(lines, "", m.dim(m.t(i18n.JobKeys)))
+	if skipped := m.skippedLines(j); len(skipped) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, skipped...)
+	}
+	keys := i18n.JobKeys
+	if m.waitingForQuota(j) {
+		keys = i18n.FooterJobWait
+	}
+	lines = append(lines, "", m.dim(m.t(keys)))
 	return lines
 }
 
 func (m Model) libraryView() []string {
 	if len(m.snap.Collections) == 0 {
-		return []string{"", m.bold(m.t(i18n.Library)), "", m.dim(m.t(i18n.NoSources))}
+		lines := append([]string{""}, m.lifeBanner()...)
+		lines = append(lines, m.bold(m.t(i18n.Library)))
+		lines = append(lines, m.libraryNote()...)
+		return append(lines, "", m.dim(m.t(i18n.NoSources)))
 	}
 	start, end := m.window()
-	lines := []string{"", m.bold(m.t(i18n.Library)) + " " + m.dim(m.scrollLabel(start, end, len(m.snap.Collections)))}
+	lines := append([]string{""}, m.lifeBanner()...)
+	lines = append(lines, m.bold(m.t(i18n.Library))+" "+m.dim(m.scrollLabel(start, end, len(m.snap.Collections))))
+	lines = append(lines, m.libraryNote()...)
 	for i := start; i < end; i++ {
 		c := m.snap.Collections[i]
 		lines = append(lines, fmt.Sprintf("%s%-10s %s", m.marker(i, c.ID), m.stateWord(c.State), cut(Sanitize(c.SourceName), max(8, m.width-14))))
+		if c.State == "retired" {
+			lines = append(lines, "            "+m.dim(m.t(i18n.LibRetiredTag)))
+			continue
+		}
 		lines = append(lines, "            "+m.syncLine(c))
 	}
 	return lines
@@ -340,7 +371,23 @@ func (m Model) collectionView() []string {
 	if c.ResultURL != "" {
 		lines = append(lines, m.kv(m.t(i18n.Output), Sanitize(c.ResultURL)))
 	}
-	lines = append(lines, "", m.dim(m.t(i18n.CollKeys)))
+	if c.State == "retired" {
+		lines = append(lines, m.kv("", m.dim(m.t(i18n.LibRetiredTag))))
+	}
+	lines = append(lines, m.kv(m.t(i18n.FilterTitle), m.filterText(c.Filter)))
+	if c.OnConflict != "" && c.OnConflict != "rename" {
+		lines = append(lines, m.kv(m.t(i18n.ConflictTitle), m.conflictLabel(c.OnConflict)))
+	}
+	lines = append(lines, m.auditLines(c)...)
+	lines = append(lines, m.cleanupLines(c)...)
+	keys := m.t(i18n.CollKeys)
+	if m.hasLibraryExt() {
+		keys += " · " + m.t(i18n.CollKeysExt)
+	}
+	lines = append(lines, "")
+	for _, l := range wrapLines(keys, max(20, m.width-2)) {
+		lines = append(lines, m.dim(l))
+	}
 	return lines
 }
 
@@ -397,24 +444,6 @@ func (m Model) accountView() []string {
 	return lines
 }
 
-func (m Model) settingsView() []string {
-	cur := m.effectiveLanguage()
-	pick := func(label string, on bool) string {
-		if on {
-			return m.good("● " + label)
-		}
-		return m.dim("○ " + label)
-	}
-	mark := m.accent("> ")
-	if m.tabFocus {
-		mark = "  " // the cursor is on the tab bar
-	}
-	return []string{"", m.bold(m.t(i18n.Settings)), "",
-		mark + m.kv(m.t(i18n.Language), pick("Tiếng Việt", cur != "en")+"   "+pick("English", cur == "en")),
-		"  " + m.kv(m.t(i18n.Timezone), Sanitize(orDash(m.snap.Prefs.Timezone))),
-		"", m.dim(m.t(i18n.SettingsKeys2))}
-}
-
 func (m Model) helpView() []string {
 	lines := []string{"", m.bold(m.t(i18n.Help))}
 	help := i18n.HelpLines(m.lang)
@@ -432,12 +461,21 @@ func (m Model) footer() string {
 		keys = m.t(i18n.FooterHome)
 	case screenJob:
 		keys = m.t(i18n.FooterJob)
+		if j, ok := m.currentJob(); ok && m.waitingForQuota(j) {
+			keys = m.t(i18n.FooterJobWait)
+		}
 	case screenCollection:
 		keys = m.t(i18n.FooterColl)
+		if m.hasLibraryExt() {
+			keys = m.t(i18n.FooterCollExt)
+		}
 	case screenJobs:
 		keys = m.t(i18n.FooterList)
 	case screenLibrary:
 		keys = m.t(i18n.FooterLib)
+		if m.acts.ShowRetired != nil {
+			keys = m.t(i18n.FooterLibExt)
+		}
 	case screenDrive:
 		keys = m.t(i18n.FooterDrive)
 		if m.drv != nil && m.drv.pick {
@@ -447,6 +485,9 @@ func (m Model) footer() string {
 		keys = m.t(i18n.FooterCopyPlan)
 		if m.cp != nil && m.cp.input != nil {
 			keys = m.t(i18n.FooterCopySrc)
+		}
+		if m.cp != nil && m.cp.choose {
+			keys = m.t(i18n.ExistingCopyKeys)
 		}
 	case screenHelp:
 		keys = m.t(i18n.FooterHelp)

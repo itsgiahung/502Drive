@@ -38,6 +38,8 @@ type jobCounts struct {
 	Blocked   int   `json:"blocked_items"`
 	Skipped   int   `json:"skipped_items"`
 	Bytes     int64 `json:"logical_bytes"`
+	// SkippedByCode counts the skipped items by stable reason code (K1).
+	SkippedByCode map[string]int `json:"skipped_by_code"`
 }
 
 type failure struct {
@@ -60,6 +62,10 @@ type jobView struct {
 	ResultURL    *string   `json:"result_url"`
 	LastError    *failure  `json:"last_error"`
 	UpdatedAt    string    `json:"updated_at"`
+	// Kind is audit, repair or cleanup (empty for a copy); ResumeAfter is when
+	// a quota-blocked job continues by itself.
+	Kind        string  `json:"kind"`
+	ResumeAfter *string `json:"resume_after"`
 }
 
 type planView struct {
@@ -76,6 +82,13 @@ type planView struct {
 		Folders  int       `json:"observed_folders"`
 		Complete bool      `json:"scan_complete"`
 		Deep     *deepView `json:"deep,omitempty"`
+		Filter   *struct {
+			Included        int      `json:"included"`
+			Excluded        int      `json:"excluded"`
+			IncludedSamples []string `json:"included_samples"`
+			ExcludedSamples []string `json:"excluded_samples"`
+			Scope           string   `json:"scope"`
+		} `json:"filter"`
 	} `json:"preview"`
 	Warnings []string `json:"warnings"`
 }
@@ -693,6 +706,9 @@ type collectionView struct {
 	Baseline   string    `json:"baseline_job_id"`
 	Sync       *syncView `json:"sync"`
 	RootName   string    `json:"root_name"`
+	// Filter and OnConflict are the rules later runs use (S5, N1).
+	Filter     filter.Spec `json:"filter"`
+	OnConflict string      `json:"on_conflict"`
 }
 
 func (a *App) collectionsCmd() *cobra.Command {

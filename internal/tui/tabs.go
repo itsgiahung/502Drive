@@ -133,6 +133,9 @@ func (m Model) statusChip() string {
 		dot = m.warn("○")
 	}
 	chip := dot
+	if lc := m.lifeChip(); lc != "" {
+		chip += " " + lc
+	}
 	if st.Running > 0 {
 		chip += " " + m.accent(fmt.Sprintf("▶%d", st.Running))
 	}

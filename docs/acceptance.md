@@ -336,7 +336,7 @@ power source trong test; mô phỏng không thay thế kiểm trên OS thật.
 
 | ID | Kịch bản | Trạng thái | Test |
 | --- | --- | --- | --- |
-| S13-1 | StateLabel: song ngữ vi/en, 18 trạng thái, case/trim insensitive, fallback trạng thái lạ | local | [present/present_test.go](../internal/present/present_test.go) `TestStateLabel` |
+| S13-1 | StateLabel: song ngữ vi/en, 21 trạng thái (thêm `resuming`, `reconnect_required`, `retired`), case/trim insensitive, fallback trạng thái lạ | local | [present/present_test.go](../internal/present/present_test.go) `TestStateLabel` |
 | S13-2 | HumanBytes: B, KB, MB, GB, TB, âm trả "-", 0 B | local | [present/present_test.go](../internal/present/present_test.go) `TestHumanBytes` |
 | S13-3 | HumanDuration: giây/phút/giờ/ngày, vi (`2p30s`, `1g05p`) và en (`2m30s`, `1h05m`) | local | [present/present_test.go](../internal/present/present_test.go) `TestHumanDuration` |
 | S13-4 | Progress: hoàn thành/tổng số, tốc độ, ETA, lỗi/chặn | local | [present/present_test.go](../internal/present/present_test.go) `TestProgress` |
@@ -389,6 +389,25 @@ power source trong test; mô phỏng không thay thế kiểm trên OS thật.
 | T4-8 | Clipboard chỉ đọc khi bấm; đúng một link | local | `TestReadDriveLinkValidatesTheClipboard` (có từ trước) |
 | T4-9 | CPU nhàn rỗi trước/sau thay đổi tray | chưa chạy | cần desktop thật |
 | T4-10 | Linux SNI/AppIndicator, Windows: click, icon, Explorer restart, tooltip thật | chưa chạy | cần máy desktop thật |
+## TUI: Library, Jobs, hộp copy, Settings (Đợt T)
+
+Chỉ ghi `local` khi có test. Chưa chạy trong terminal thật và chưa chạy với Google thật.
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| TUI-1 | Dòng vòng đời (ngủ, đang kết nối lại + khoảng ngủ, cần đăng nhập lại) trên Home/Jobs/Library, vi và en, 40–120 cột; im lặng khi mọi thứ ổn hoặc daemon cũ không báo; dấu trên thanh tab; `l` đăng nhập ở các tab có dòng này | local | [batch_t_test.go](../internal/tui/batch_t_test.go) `TestLifecycleBanner…`, `TestLifecycleIsSilent…`, `TestLifecycleChip…`, `TestSignInAgainKey…` |
+| TUI-2 | Job `blocked` có `resume_after` hiện "Chờ quota tới HH:MM", không gửi retry (danh sách và chi tiết), `p`/`c` vẫn gửi; thời điểm đã qua thì retry bình thường; Home recent hiện giờ | local | `TestBlockedJobShowsWhenQuotaReturns…`, `TestBlockedJobWithoutAFutureTime…`, `TestQuotaWaitInVietnamese…` |
+| TUI-3 | Chi tiết job: số bỏ qua theo mã K1 (lớn trước, mã 0 ẩn, mã lạ nguyên văn, đủ 9 mã có nhãn vi+en), loại job, dung lượng | local | `TestJobDetailListsSkippedItems…`, `TestEverySkipCodeHasALabel…`, `TestAuditAndCleanupJobsShowTheirKind…` |
+| TUI-4 | Hộp copy: `f`/`o`/`k` chạy lại bản xem trước với `filter`/`on_conflict`/`shortcuts`; hiện Đạt/Bị loại, "chỉ tính cấp cao nhất", mẫu; không đổi khi đang tải; vi/en mọi độ rộng; không có action mới vẫn chạy | local | `TestCopyDialogOptionsTravel…`, `TestCopyDialogOptionsReadInVietnamese…`, `TestCopyDialogOptionKeysAreIgnored…`, `TestCopyDialogWithoutTheNewActions…` |
+| TUI-5 | `409 already_copied` mở câu hỏi cập nhật/tạo mới, gửi `mode` tương ứng, `esc` giữ hộp, phím khác đứng yên; adapter chỉ biến đúng `already_copied` thành câu hỏi | local | `TestExistingCopyAsks…`, `TestExistingCopyNewCopyAnswer`; [tui_ext_test.go](../internal/cli/tui_ext_test.go) `TestTUISubmitModeAsks…` |
+| TUI-6 | Audit trong TUI: quét một lượt, đọc kết quả theo làm mới, danh sách sai lệch, kế hoạch sửa dry-run trước, sửa thật phải có kế hoạch và `y`, báo cáo sạch/thất bại/lỗi daemon, mọi độ rộng | local | `TestAuditScanViewResultsAndRepair`, `TestAuditCleanFailedAndErrors`, `TestAuditScreenFits…`; cli `TestTUIAuditAdapters…` |
+| TUI-7 | Retire/forget/resume: hỏi trước, gửi đúng revision, forget từ chối khi chưa retired, `u` cũng tiếp tục sync tạm dừng; nguồn đã ngừng ẩn trừ khi bấm `H`; adapter không kéo bản sao của người khác | local | `TestRetireAsksFirst…`, `TestForgetNeedsRetiredFirst…`, `TestResumeBringsARetiredCopyBack…`, `TestRetiredSourcesAreHidden…`; cli `TestTUIListsRetired…`, `TestTUILifecycleCleanupAndFilterCalls` |
+| TUI-8 | Cleanup: dry-run trước và hiện số mục + dung lượng, `C` bắt gõ lại tên thư mục, `esc` hủy không gửi gì, plan rỗng/thất bại không cho xác nhận, nguồn chưa retired bị từ chối trước khi gửi | local | `TestCleanupPlansFirst…`, `TestCleanupWithNothingToMove…`, `TestCollectionScreenFits…` |
+| TUI-9 | Bộ lọc của collection: hiển thị luật đang dùng (preset hoặc "tùy chỉnh (N luật)"), `b` đổi preset kèm revision, báo "áp dụng cho lần chạy sau" | local | `TestCollectionFilterIsShown…`; cli `TestTUIFilterPresetsMatch…` |
+| TUI-10 | Settings: dòng ngôn ngữ en → vi → auto (auto theo locale máy), tự chạy, giờ yên tĩnh gõ/kiểm tra/xóa, giữ lịch sử, ba công tắc thông báo; hiện ngay, lưu qua action cố định, lỗi lưu hiện ra; dòng không có action thì ẩn; vi/en mọi độ rộng | local | `TestSettings…`, `TestAutoLanguageFollowsTheMachineLocale`, `TestParseQuiet`, `TestStepRetentionFromAnOddValue` |
+| TUI-11 | Adapter CLI: snapshot đọc lifecycle, `resume_after`, `skipped_by_code`, bytes, filter/on_conflict của collection, preferences; daemon cũ không có các trường này vẫn chạy; `SetPreference` chỉ nhận 5 trường, sai kiểu bị từ chối trước khi gửi; autostart ghi/xóa file người dùng | local | [tui_ext_test.go](../internal/cli/tui_ext_test.go) |
+| TUI-12 | Không màu / `--ascii`: không mã ESC, không thanh unicode, nghĩa nằm trong chữ chứ không chỉ màu | local | `TestNewScreensReadWithoutColourOrUnicodeBars` |
+| TUI-13 | Terminal thật (màu, chuột, resize), daemon thật đang ngủ/dậy, audit/cleanup trên Drive thật | chưa chạy | cần máy và tài khoản thật |
 
 ## Cách chạy
 

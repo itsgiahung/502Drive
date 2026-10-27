@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -37,6 +38,14 @@ type copyFlow struct {
 	sync int
 	req  int
 	err  string
+	// opt are the shortcut, name clash and filter choices; they travel with
+	// the preview, so the preview always matches what will run.
+	opt                          CopyOptions
+	filterIdx, clashIdx, scutIdx int
+	// choose is set when the daemon says this source is already copied to
+	// this destination: the dialog then asks update or new.
+	choose bool
+	exists string
 }
 
 type planMsg struct {
@@ -56,7 +65,7 @@ var syncPresets = []string{"", presetHourly, presetDaily, presetRealtime}
 
 // startCopy opens the dialog. An empty source asks for a link first.
 func (m Model) startCopy(source string, from screen) (Model, tea.Cmd) {
-	if m.acts.Inspect == nil {
+	if m.acts.Inspect == nil && m.acts.InspectWith == nil {
 		return m, nil
 	}
 	m.screen, m.drv = screenCopy, nil
@@ -90,9 +99,15 @@ func (m Model) replan() tea.Cmd {
 	c.req++
 	c.planning, c.err = true, ""
 	req, acts, ctx := c.req, m.acts, m.ctx
-	source, dest, name := c.source, c.destID, m.rootName()
+	source, dest, name, opt := c.source, c.destID, m.rootName(), c.opt
 	return func() tea.Msg {
-		plan, err := acts.Inspect(ctx, source, dest, name)
+		var plan Plan
+		var err error
+		if acts.InspectWith != nil {
+			plan, err = acts.InspectWith(ctx, source, dest, name, opt)
+		} else {
+			plan, err = acts.Inspect(ctx, source, dest, name)
+		}
 		return planMsg{req: req, plan: plan, err: err}
 	}
 }
@@ -123,6 +138,11 @@ func (m Model) onSubmit(msg submitMsg) (tea.Model, tea.Cmd) {
 	}
 	m.cp.planning, m.cp.submitting = false, false
 	if msg.err != nil {
+		var existing *ExistingCopyError
+		if errors.As(msg.err, &existing) {
+			m.cp.choose, m.cp.exists, m.cp.err = true, Sanitize(existing.Message), ""
+			return m, nil
+		}
 		m.cp.err = Sanitize(msg.err.Error())
 		return m, nil
 	}
@@ -141,22 +161,33 @@ func (m Model) copyKey(key string) (tea.Model, tea.Cmd) {
 	if c == nil {
 		return m, nil
 	}
+	if c.choose { // the dialog waits for update or new
+		switch key {
+		case "u":
+			return m.submit("update")
+		case "n":
+			return m.submit("new")
+		}
+		return m, nil
+	}
 	switch key {
 	case "enter":
-		if c.plan == nil || c.planning || m.acts.Submit == nil {
-			return m, nil
-		}
-		plan, acts, ctx, preset := *c.plan, m.acts, m.ctx, syncPresets[c.sync]
-		c.planning, c.submitting, c.err = true, true, ""
-		return m, tea.Batch(func() tea.Msg {
-			id, collection, err := acts.Submit(ctx, plan)
-			res := submitMsg{jobID: id, err: err}
-			if err == nil && preset != "" && collection != "" && acts.SyncPreset != nil {
-				// A schedule that cannot be set must not hide that the copy started.
-				res.syncErr = acts.SyncPreset(ctx, collection, preset)
-			}
-			return res
-		}, m.startSpinner())
+		return m.submit("")
+	case "f":
+		return m.setOption(func(c *copyFlow) {
+			c.filterIdx = (c.filterIdx + 1) % len(filterPresets)
+			c.opt.FilterPreset = filterPresets[c.filterIdx]
+		})
+	case "o":
+		return m.setOption(func(c *copyFlow) {
+			c.clashIdx = (c.clashIdx + 1) % len(clashChoices)
+			c.opt.OnConflict = clashChoices[c.clashIdx]
+		})
+	case "k":
+		return m.setOption(func(c *copyFlow) {
+			c.scutIdx = (c.scutIdx + 1) % len(shortcutChoices)
+			c.opt.Shortcuts = shortcutChoices[c.scutIdx]
+		})
 	case "1":
 		return m.setNameMode(nameKeep)
 	case "2":
@@ -174,6 +205,50 @@ func (m Model) copyKey(key string) (tea.Model, tea.Cmd) {
 		c.sync = (c.sync + 1) % len(syncPresets)
 	}
 	return m, nil
+}
+
+// clashChoices and shortcutChoices are what o and k cycle through; "" is the
+// daemon default (rename, follow).
+var (
+	clashChoices    = []string{"", "skip", "update"}
+	shortcutChoices = []string{"", "skip"}
+)
+
+// setOption changes one copy option and asks for a fresh preview.
+func (m Model) setOption(change func(*copyFlow)) (tea.Model, tea.Cmd) {
+	c := m.cp
+	if c.planning || c.plan == nil {
+		return m, nil
+	}
+	change(c)
+	return m, m.replan()
+}
+
+// submit starts the job. mode answers an existing copy: "" lets the daemon
+// ask (the dialog then offers update or new), "update" refreshes the old copy,
+// "new" copies again.
+func (m Model) submit(mode string) (tea.Model, tea.Cmd) {
+	c := m.cp
+	if c.plan == nil || c.planning || (m.acts.Submit == nil && m.acts.SubmitMode == nil) {
+		return m, nil
+	}
+	plan, acts, ctx, preset := *c.plan, m.acts, m.ctx, syncPresets[c.sync]
+	c.planning, c.submitting, c.err, c.choose = true, true, "", false
+	return m, tea.Batch(func() tea.Msg {
+		var id, collection string
+		var err error
+		if acts.SubmitMode != nil {
+			id, collection, err = acts.SubmitMode(ctx, plan, mode)
+		} else {
+			id, collection, err = acts.Submit(ctx, plan)
+		}
+		res := submitMsg{jobID: id, err: err}
+		if err == nil && preset != "" && collection != "" && acts.SyncPreset != nil {
+			// A schedule that cannot be set must not hide that the copy started.
+			res.syncErr = acts.SyncPreset(ctx, collection, preset)
+		}
+		return res
+	}, m.startSpinner())
 }
 
 func (m Model) setNameMode(mode int) (tea.Model, tea.Cmd) {
@@ -251,8 +326,19 @@ func (m Model) copyView() []string {
 		m.kv(m.t(i18n.CopyOutName), m.accent(Sanitize(p.RootName))),
 		m.kv(m.t(i18n.SyncOption), m.syncChoice()),
 		"", m.nameOptions())
+	lines = append(lines, m.copyOptionLines()...)
+	lines = append(lines, m.filterPreviewLines(p)...)
 	for _, w := range p.Warnings {
 		lines = append(lines, m.warn("! "+Sanitize(w)))
+	}
+	if c.choose {
+		lines = append(lines, "", m.warn(m.t(i18n.ExistingCopyTitle)))
+		if c.exists != "" {
+			for _, l := range wrapLines(c.exists, max(20, m.width-2)) {
+				lines = append(lines, m.dim(l))
+			}
+		}
+		lines = append(lines, m.accent(m.t(i18n.ExistingCopyAsk)+" "+m.t(i18n.ExistingCopyKeys)))
 	}
 	switch {
 	case c.planning:
@@ -262,6 +348,49 @@ func (m Model) copyView() []string {
 	}
 	if c.typing == "name" && c.input != nil {
 		lines = append(lines, "", m.accent(m.t(i18n.NamePrompt)), c.input.View())
+	}
+	return lines
+}
+
+// copyOptionLines shows the filter, name clash and shortcut choices in one
+// wrapped line, so a narrow terminal reads all three.
+func (m Model) copyOptionLines() []string {
+	c := m.cp
+	clash := c.opt.OnConflict
+	short := m.t(i18n.ShortcutsFollow)
+	if c.opt.Shortcuts == "skip" {
+		short = m.t(i18n.ShortcutsSkip)
+	}
+	text := m.t(i18n.FilterTitle) + ": " + m.presetLabel(c.opt.FilterPreset) +
+		" · " + m.t(i18n.ConflictTitle) + ": " + m.conflictLabel(clash) +
+		" · " + m.t(i18n.ShortcutsTitle) + ": " + short
+	out := []string{""}
+	for _, l := range wrapLines(text, max(20, m.width-2)) {
+		out = append(out, l)
+	}
+	return append(out, m.dim(m.t(i18n.CopyOptsKeys)))
+}
+
+// filterPreviewLines tells what the rule would keep and drop. It says the
+// numbers cover only the top level, as the daemon does.
+func (m Model) filterPreviewLines(p *Plan) []string {
+	f := p.Filter
+	if f == nil {
+		return nil
+	}
+	head := m.tf(i18n.FilterPreview, f.Included, f.Excluded)
+	if f.Scope == "top_level" {
+		head += " (" + m.t(i18n.FilterTopLevel) + ")"
+	}
+	lines := []string{m.good(head)}
+	if len(f.ExcludedSamples) > 0 {
+		lines = append(lines, m.dim(m.t(i18n.FilterSamples)+":"))
+		for i, s := range f.ExcludedSamples {
+			if i >= 3 {
+				break
+			}
+			lines = append(lines, "  - "+cut(Sanitize(s), max(10, m.width-6)))
+		}
 	}
 	return lines
 }
@@ -312,6 +441,10 @@ func (m Model) copyScreenKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quits = true
 		return m, tea.Quit
 	case tea.KeyEsc:
+		if m.cp != nil && m.cp.choose { // cancel the question, keep the dialog
+			m.cp.choose = false
+			return m, nil
+		}
 		return m.leaveCopy()
 	}
 	return m.copyKey(msg.String())

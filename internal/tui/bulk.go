@@ -2,12 +2,12 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/itsgiahung/502Drive/internal/i18n"
+	"github.com/itsgiahung/502Drive/internal/present"
 )
 
 // rate estimates items per second for one running job with an exponential
@@ -76,16 +76,9 @@ func (m Model) speed(j Job) (perSec float64, eta time.Duration, ok bool) {
 	return perSec, 0, true
 }
 
-func humanDuration(d time.Duration) string {
-	d = d.Round(time.Second)
-	switch {
-	case d >= time.Hour:
-		return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
-	case d >= time.Minute:
-		return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
-	}
-	return fmt.Sprintf("%ds", int(d.Seconds()))
-}
+// humanDuration formats a duration in the model's language with the shared
+// presenter (see internal/present).
+func (m Model) humanDuration(d time.Duration) string { return present.HumanDuration(d, m.lang) }
 
 // rowID is the stable identity of the highlighted or listed row.
 func (m Model) rowID(i int) string {
@@ -217,7 +210,7 @@ func (m Model) jobsKey(key string) (tea.Model, tea.Cmd) {
 	eligible := 0
 	for _, j := range rows {
 		t := target{id: j.ID}
-		if jobEligible(action, j.State) {
+		if m.jobEligibleFor(action, j) {
 			job := j
 			t.do = func(ctx context.Context) error { return m.acts.JobAction(ctx, job.ID, action, job.Revision) }
 			eligible++
@@ -260,6 +253,8 @@ func (m Model) libraryKey(key string) (tea.Model, tea.Cmd) {
 			}
 			targets = append(targets, t)
 		}
+	case "H":
+		return m.toggleRetired()
 	case "p", "x":
 		if m.acts.SyncAction == nil {
 			return m, nil
@@ -323,4 +318,13 @@ func (m Model) bulkStatus(r bulkMsg) string {
 		text += " — " + r.firstErr
 	}
 	return text
+}
+
+// terminalState says a job has ended for good (a blocked job may still resume).
+func terminalState(s string) bool {
+	switch s {
+	case "succeeded", "partial", "failed", "cancelled":
+		return true
+	}
+	return false
 }

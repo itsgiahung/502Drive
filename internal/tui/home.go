@@ -314,6 +314,11 @@ func (m Model) infoColumn() []string {
 		}
 		lines = append(lines, m.warn(line))
 	}
+	if t := m.lifeText(); t != "" {
+		for _, l := range wrapLines(t, infoCols) {
+			lines = append(lines, m.warn(l))
+		}
+	}
 	if b := m.snap.Status.BotState; b != "" && b != "disabled" {
 		lines = append(lines, m.dim(m.t(i18n.Telegram)+": "+Sanitize(b)))
 	}
@@ -349,12 +354,15 @@ func (m Model) recentBlock(room int) []string {
 			break
 		}
 		lines = append(lines, fmt.Sprintf("  %s %-32s %s %s", m.stateGlyph(j.State), cut(Sanitize(j.SourceName), 32),
-			m.stateWord(j.State), m.dim(jobBrief(j))))
+			m.stateWord(j.State), m.dim(m.jobBrief(j))))
 	}
 	return lines
 }
 
-func jobBrief(j Job) string {
+func (m Model) jobBrief(j Job) string {
+	if m.waitingForQuota(j) {
+		return m.tf(i18n.QuotaWaitShot, m.when(j.ResumeAfter))
+	}
 	if j.Total != nil && *j.Total > 0 {
 		return fmt.Sprintf("%d%%", min(100, j.Completed*100 / *j.Total))
 	}

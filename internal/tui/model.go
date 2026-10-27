@@ -100,6 +100,13 @@ type Model struct {
 	cmdSel   int
 	drv      *explorer
 	cp       *copyFlow
+	// Library: audits by collection (the map is shared between copies), the
+	// cleanup in progress, and whether retired sources are listed.
+	audits      map[string]*auditState
+	clean       *cleanupFlow
+	showRetired bool
+	// Settings: the field being typed (quiet hours), if any.
+	setInput *textinput.Model
 
 	watching bool // the realtime stream is connected
 	watchCh  <-chan WatchEvent
@@ -131,9 +138,10 @@ func New(acts Actions, opt Options) Model {
 	if lang == "" {
 		lang = "vi"
 	}
+	lang = i18n.Resolve(lang) // "auto" follows the machine's locale
 	now := opt.now()
 	m := Model{acts: acts, opt: opt, ctx: context.Background(), screen: screenHome, width: width, height: opt.Height,
-		lang: lang, fetching: true, selected: map[string]bool{}, rates: map[string]*rate{}, prevStates: map[string]string{},
+		lang: lang, fetching: true, selected: map[string]bool{}, rates: map[string]*rate{}, prevStates: map[string]string{}, audits: map[string]*auditState{},
 		started: now, lastInput: now, anim: mascot.NewMini(), cmd: newPrompt(), sc: &spinCtl{}, cache: newFolderCache()}
 	m.frame = mascot.StaticMini(mascot.Idle, .3)
 	return m
@@ -252,6 +260,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onPlan(msg)
 	case submitMsg:
 		return m.onSubmit(msg)
+	case auditMsg:
+		return m.onAudit(msg)
+	case repairMsg:
+		return m.onRepair(msg)
+	case cleanupMsg:
+		return m.onCleanup(msg)
 	case loginStartedMsg, loginPollMsg, loginStateMsg:
 		return m.onLogin(msg)
 	case watchStartedMsg:
@@ -306,6 +320,10 @@ func (m Model) forwardToInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 		*m.cp.input, cmd = m.cp.input.Update(msg)
 	case m.screen == screenDrive && m.drv != nil && m.drv.prompt != nil:
 		*m.drv.prompt, cmd = m.drv.prompt.Update(msg)
+	case m.screen == screenCollection && m.clean != nil && m.clean.input != nil:
+		*m.clean.input, cmd = m.clean.input.Update(msg)
+	case m.screen == screenSettings && m.setInput != nil:
+		*m.setInput, cmd = m.setInput.Update(msg)
 	}
 	return m, cmd
 }
@@ -327,13 +345,19 @@ func (m Model) onSnapshot(msg snapshotMsg) (tea.Model, tea.Cmd) {
 		m.observe(msg.snap)
 		m.snap = msg.snap
 		if m.opt.Language == "" && msg.snap.Prefs.Language != "" {
-			m.lang = msg.snap.Prefs.Language
+			m.lang = i18n.Resolve(msg.snap.Prefs.Language)
 		}
 		m.pruneSelection()
 		m.clampCursor()
 		m.fixTop()
+		m.cleanupProgress()
 	}
 	cmds := []tea.Cmd{}
+	if msg.err == nil {
+		if cmd := m.pollAudits(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
 	if m.dirty {
 		m.dirty, m.fetching = false, true
 		cmds = append(cmds, tea.Tick(fetchDelay, func(time.Time) tea.Msg { return fetchNowMsg{} }))
@@ -453,6 +477,11 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.screen == screenCopy { // the dialog owns 1/2/3, d and enter
 		return m.copyScreenKey(msg)
 	}
+	if m.screen == screenCollection && !m.tabFocus {
+		if next, cmd, handled := m.collectionKey(msg); handled {
+			return next, cmd
+		}
+	}
 	if m.tabFocus {
 		switch msg.String() {
 		case "down", "j", "enter", " ":
@@ -497,7 +526,7 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.back()
 	case tea.KeySpace:
 		if m.screen == screenSettings {
-			return m.cycleLanguage()
+			return m.settingsStep(1)
 		}
 		return m.toggle(), nil
 	}
@@ -580,6 +609,7 @@ func (m Model) back() (tea.Model, tea.Cmd) {
 		m.screen = screenJobs
 	case screenCollection:
 		m.screen = screenLibrary
+		m.clean = nil
 	case screenHome:
 		m.quits = true
 		return m, tea.Quit
@@ -593,7 +623,7 @@ func (m Model) back() (tea.Model, tea.Cmd) {
 func (m Model) enter() (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case screenSettings:
-		return m.cycleLanguage()
+		return m.settingsStep(1)
 	case screenDrive:
 		return m.driveKey("enter")
 	case screenJobs:
@@ -618,6 +648,14 @@ func (m Model) enter() (tea.Model, tea.Cmd) {
 
 // screenKey handles the action keys of each screen.
 func (m Model) screenKey(key string) (tea.Model, tea.Cmd) {
+	// The "sign in again" banner says "press l": it must work wherever the
+	// banner shows, not only on Home and Account.
+	if key == "l" && m.snap.Status.Lifecycle == "reconnect_required" && m.online {
+		switch m.screen {
+		case screenJobs, screenJob, screenLibrary, screenCollection, screenDestination:
+			return m.startLogin()
+		}
+	}
 	switch m.screen {
 	case screenJobs:
 		return m.jobsKey(key)
@@ -628,6 +666,10 @@ func (m Model) screenKey(key string) (tea.Model, tea.Cmd) {
 		}
 		actions := map[string]string{"p": "pause", "u": "resume", "c": "cancel", "t": "retry"}
 		if action, found := actions[key]; found {
+			if action == "retry" && m.waitingForQuota(j) {
+				m.status = m.tf(i18n.QuotaNoRetry, m.when(j.ResumeAfter))
+				return m, nil
+			}
 			return m, m.act(func(ctx context.Context) error {
 				return m.acts.JobAction(ctx, j.ID, action, j.Revision)
 			})
@@ -676,8 +718,10 @@ func (m Model) screenKey(key string) (tea.Model, tea.Cmd) {
 		}
 	case screenSettings:
 		switch key {
-		case "l", "left", "right", "h", "tab":
-			return m.cycleLanguage()
+		case "l", "right", "tab":
+			return m.settingsStep(1)
+		case "h", "left":
+			return m.settingsStep(-1)
 		}
 	}
 	return m, nil
@@ -730,6 +774,8 @@ func (m Model) listLen() int {
 		return len(m.snap.Collections)
 	case screenDestination:
 		return len(m.snap.Destinations)
+	case screenSettings:
+		return len(m.settingsRows())
 	case screenHelp:
 		return len(i18n.HelpLines(m.lang))
 	}
@@ -755,9 +801,9 @@ func (m *Model) clampCursor() {
 func (m Model) listShape() (per, title int) {
 	switch m.screen {
 	case screenJobs:
-		return 2, 2 + len(m.jobsBanner())
+		return 2, 2 + len(m.jobsBanner()) + len(m.lifeBanner())
 	case screenLibrary:
-		return 2, 2
+		return 2, 2 + len(m.lifeBanner()) + len(m.libraryNote())
 	case screenDestination:
 		return 1, 2
 	case screenHelp:
@@ -862,24 +908,28 @@ func (m Model) loading() bool {
 	return (m.drv != nil && m.drv.loading) || (m.cp != nil && (m.cp.planning || m.cp.submitting))
 }
 
-// cycleLanguage switches vi <-> en at once: the screen changes immediately and
-// the preference is saved in the background (a failed save is reported and the
-// next refresh shows the truth).
-func (m Model) cycleLanguage() (tea.Model, tea.Cmd) {
+// cycleLanguage steps English → Vietnamese → Auto (or back) at once: the
+// screen changes immediately and the preference is saved in the background (a
+// failed save is reported and the next refresh shows the truth). Auto follows
+// the machine's locale.
+func (m Model) cycleLanguage(step int) (tea.Model, tea.Cmd) {
 	if m.acts.SetLanguage == nil {
 		return m, nil
 	}
-	next := "en"
-	if m.effectiveLanguage() == "en" {
-		next = "vi"
+	cur := m.effectiveLanguage()
+	idx := -1
+	for i, l := range langOrder {
+		if l == cur {
+			idx = i
+		}
 	}
+	n := len(langOrder)
+	next := langOrder[((idx+step)%n+n)%n]
 	m.snap.Prefs.Language = next
-	if m.opt.Language == "" {
-		m.lang = next
-	} else {
+	if m.opt.Language != "" {
 		m.opt.Language = next
-		m.lang = next
 	}
+	m.lang = i18n.Resolve(next)
 	return m, m.act(func(ctx context.Context) error { return m.acts.SetLanguage(ctx, next) })
 }
 
