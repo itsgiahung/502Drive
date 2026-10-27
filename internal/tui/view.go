@@ -241,6 +241,9 @@ func mascotArt(mood string, ascii bool) []string {
 }
 
 func (m Model) jobsView() []string {
+	if m.statePick != nil {
+		return m.statePickerView()
+	}
 	if len(m.snap.Jobs) == 0 {
 		empty := m.t(i18n.NoJobs)
 		if m.filterLine() != "" {

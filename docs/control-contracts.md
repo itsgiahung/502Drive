@@ -141,3 +141,7 @@ hook dừng. Đây là thứ **Quit trên tray** gọi; TUI/CLI không bao giờ
 
 - U5: audit findings add `path` (empty if no mapping) and shared `explanation`.
   Paths resolve only inside the authorized audit collection. Repair routes unchanged.
+
+- U7: `GET /v1/jobs?state=a,b,c` accepts multiple states (trimmed, deduplicated,
+  canonical order); invalid members return 400 `invalid_request`. Cursor remains
+  bound to the state set, principal and collection. Missing query is unchanged.

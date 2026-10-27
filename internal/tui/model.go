@@ -113,6 +113,7 @@ type Model struct {
 	// made in the queue, batch progress, the newest audit per collection (the
 	// maps are shared between copies), the problem report and the CSV path
 	// being typed.
+	statePick  *statePicker
 	jq         JobQuery
 	jqName     string
 	qm         *queueMoves
@@ -532,6 +533,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.status = ""
 		return m, nil
+	}
+	if m.statePick != nil {
+		return m.statePickerKey(msg.String())
 	}
 	if m.screen == screenAudit {
 		return m.auditBrowserKey(msg.String())

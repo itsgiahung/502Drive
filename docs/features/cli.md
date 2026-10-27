@@ -378,3 +378,7 @@ fields remain stable. Unknown codes retain the raw code with generic advice.
 U4: watch/wait use shared recent progress (completed/total, copied bytes, sampled
 rate). No rate before three observations; no ETA for unknown/unstable totals.
 JSON counters and exit codes retain their existing meaning.
+
+U7: `jobs list --state queued,blocked,failed` accepts a comma-separated set.
+Invalid/empty members return HTTP 400 `invalid_request`; missing `state` means all.
+TUI keeps **f** for single-state cycling; **F**, Space, Enter selects several.

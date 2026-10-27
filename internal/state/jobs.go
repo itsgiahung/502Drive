@@ -421,9 +421,15 @@ func (s *Store) ListJobs(ctx context.Context, principal, state, collectionID str
 		query += " AND principal=?"
 		args = append(args, principal)
 	}
-	if state != "" {
-		query += " AND state=?"
-		args = append(args, state)
+	states, err := ParseJobStates(state)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(states) > 0 {
+		query += " AND state IN (" + strings.TrimSuffix(strings.Repeat("?,", len(states)), ",") + ")"
+		for _, st := range states {
+			args = append(args, st)
+		}
 	}
 	if collectionID != "" {
 		query += " AND collection_id=?"

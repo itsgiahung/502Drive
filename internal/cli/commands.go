@@ -569,7 +569,7 @@ func (a *App) jobsCmd() *cobra.Command {
 		})
 		return nil
 	}}
-	list.Flags().StringVar(&state, "state", "", "filter by state")
+	list.Flags().StringVar(&state, "state", "", "filter by state (comma-separated list)")
 	list.Flags().StringVar(&cursor, "cursor", "", "cursor from a previous page")
 	list.Flags().IntVar(&limit, "limit", 20, "page size (1-100)")
 	list.Flags().BoolVar(&all, "all", false, "owner: include other principals' jobs")

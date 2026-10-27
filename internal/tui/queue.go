@@ -134,7 +134,7 @@ func (m Model) filterLine() string {
 	}
 	parts := []string{}
 	if m.jq.State != "" {
-		parts = append(parts, present.StateLabel(m.jq.State, m.lang))
+		parts = append(parts, stateSetLabel(m.jq.State, m.lang))
 	}
 	if m.jq.CollectionID != "" {
 		parts = append(parts, m.tf(i18n.JobsFilterSource, cut(Sanitize(orElse(m.jqName, m.jq.CollectionID)), 28)))
@@ -167,6 +167,9 @@ func (m Model) hasJobsExt() bool {
 // jobsKeyIT handles the keys added by batch IT; it reports false for the rest.
 func (m Model) jobsKeyIT(key string) (tea.Model, tea.Cmd, bool) {
 	switch key {
+	case "F":
+		m = m.openStatePicker()
+		return m, nil, true
 	case "f":
 		next, cmd := m.cycleJobState()
 		return next, cmd, true

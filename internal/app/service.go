@@ -380,7 +380,11 @@ func (s *Service) Job(ctx context.Context, p Principal, id string) (state.Job, e
 }
 
 func (s *Service) Jobs(ctx context.Context, p Principal, all bool, st, collectionID string, limit int, cursor int64) ([]state.Job, int64, error) {
-	jobs, next, err := s.Store.ListJobs(ctx, scope(p, all), st, collectionID, limit, cursor)
+	states, err := state.ParseJobStates(st)
+	if err != nil {
+		return nil, 0, Fail(400, "invalid_request", "Unknown job state.")
+	}
+	jobs, next, err := s.Store.ListJobs(ctx, scope(p, all), strings.Join(states, ","), collectionID, limit, cursor)
 	if err == nil {
 		err = s.jobQueuePositions(ctx, jobs)
 	}

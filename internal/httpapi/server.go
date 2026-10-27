@@ -383,9 +383,11 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request, p app.Principa
 	q := r.URL.Query()
 	all := q.Get("all") == "true"
 	st := q.Get("state")
-	if st != "" && !validJobState(st) {
+	states, parseErr := state.ParseJobStates(st)
+	if parseErr != nil {
 		return 0, nil, app.Fail(400, "invalid_request", "Unknown job state.")
 	}
+	st = strings.Join(states, ",")
 	collectionID := strings.TrimSpace(q.Get("collection_id"))
 	if len(collectionID) > 64 {
 		return 0, nil, app.Fail(400, "invalid_request", "collection_id is too long.")
@@ -407,14 +409,6 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request, p app.Principa
 		items = append(items, jobDTO(j))
 	}
 	return 200, map[string]any{"items": items, "next_cursor": encodeCursor("jobs", scopeKey, st+"\x1e"+collectionID, next)}, nil
-}
-
-func validJobState(s string) bool {
-	switch s {
-	case "queued", "running", "pausing", "paused", "cancelling", "reconciling", "blocked", "succeeded", "partial", "failed", "cancelled":
-		return true
-	}
-	return false
 }
 
 func (s *Server) getJob(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {

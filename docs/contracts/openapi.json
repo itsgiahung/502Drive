@@ -240,20 +240,9 @@
       "in": "query",
       "schema": {
        "type": "string",
-       "enum": [
-        "queued",
-        "running",
-        "pausing",
-        "paused",
-        "cancelling",
-        "reconciling",
-        "blocked",
-        "succeeded",
-        "partial",
-        "failed",
-        "cancelled"
-       ]
-      }
+       "maxLength": 256
+      },
+      "description": "One state or a comma-separated set; invalid members return 400 invalid_request."
      },
      {
       "name": "collection_id",
