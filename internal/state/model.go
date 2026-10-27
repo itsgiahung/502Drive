@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"time"
+
+	"github.com/itsgiahung/502Drive/internal/filter"
 )
 
 var (
@@ -44,6 +46,19 @@ const (
 	ItemCancelled   = "cancelled"
 )
 
+// Skipped reasons (stable codes for skipped items).
+const (
+	SkipShortcutUnresolved = "shortcut_unresolved"
+	SkipShortcutLoop       = "shortcut_loop"
+	SkipCannotCopy         = "cannot_copy"
+	SkipGoogleNativeExport = "google_native_export_only"
+	SkipTooLargeForQuota   = "too_large_for_quota"
+	SkipUnreadable         = "unreadable"
+	SkipTrashedSource      = "trashed_source"
+	SkipFiltered           = "filtered" // reserved for S5
+	SkipConflict           = "conflict"
+)
+
 // Item operations. create writes a new object; align renames and/or moves an
 // object we already own to match the source, and is idempotent.
 const (
@@ -67,31 +82,35 @@ func ID(prefix string) string {
 }
 
 type Plan struct {
-	ID                  string    `json:"id"`
-	Principal           string    `json:"principal_id"`
-	SourceID            string    `json:"source_id"`
-	SourceName          string    `json:"source_name"`
-	SourceKind          string    `json:"source_kind"` // folder or file
-	SourceMime          string    `json:"source_mime,omitempty"`
-	SourceSize          *int64    `json:"source_size,omitempty"`
-	SourceVersion       string    `json:"source_version"`
-	ResourceKey         string    `json:"resource_key,omitempty"`
-	DestinationID       string    `json:"destination_id"`
-	DestinationFolder   string    `json:"destination_folder"`
-	DestinationRevision int       `json:"destination_revision"`
-	RootName            string    `json:"root_name"`
-	ExpiresAt           time.Time `json:"expires_at"`
-	Revision            int       `json:"revision"`
+	ID                  string      `json:"id"`
+	Principal           string      `json:"principal_id"`
+	SourceID            string      `json:"source_id"`
+	SourceName          string      `json:"source_name"`
+	SourceKind          string      `json:"source_kind"` // folder or file
+	SourceMime          string      `json:"source_mime,omitempty"`
+	SourceSize          *int64      `json:"source_size,omitempty"`
+	SourceVersion       string      `json:"source_version"`
+	ResourceKey         string      `json:"resource_key,omitempty"`
+	DestinationID       string      `json:"destination_id"`
+	DestinationFolder   string      `json:"destination_folder"`
+	DestinationRevision int         `json:"destination_revision"`
+	RootName            string      `json:"root_name"`
+	Shortcuts           string      `json:"shortcuts,omitempty"`
+	OnConflict          string      `json:"on_conflict,omitempty"`
+	Filter              filter.Spec `json:"filter,omitempty"`
+	ExpiresAt           time.Time   `json:"expires_at"`
+	Revision            int         `json:"revision"`
 }
 
 type Counts struct {
-	Observed  int   `json:"observed_items"`
-	Total     *int  `json:"total_items"`
-	Completed int   `json:"completed_items"`
-	Failed    int   `json:"failed_items"`
-	Blocked   int   `json:"blocked_items"`
-	Skipped   int   `json:"skipped_items"`
-	Bytes     int64 `json:"logical_bytes"`
+	Observed      int            `json:"observed_items"`
+	Total         *int           `json:"total_items"`
+	Completed     int            `json:"completed_items"`
+	Failed        int            `json:"failed_items"`
+	Blocked       int            `json:"blocked_items"`
+	Skipped       int            `json:"skipped_items"`
+	Bytes         int64          `json:"logical_bytes"`
+	SkippedByCode map[string]int `json:"skipped_by_code,omitempty"`
 }
 
 type Failure struct {
@@ -106,22 +125,25 @@ type Job struct {
 	Trigger      string `json:"trigger"`
 	// Kind distinguishes the job families: "" is a copy, "audit" scans a
 	// collection read-only, "repair" applies the fixes of an audit.
-	Kind          string    `json:"kind,omitempty"`
-	AuditID       string    `json:"audit_id,omitempty"`
-	DryRun        bool      `json:"dry_run,omitempty"`
-	SourceName    string    `json:"source_name"`
-	DestinationID string    `json:"destination_id"`
-	RootName      string    `json:"root_name"`
-	State         string    `json:"state"`
-	Phase         *string   `json:"phase"`
-	DesiredState  string    `json:"desired_state"`
-	Revision      int       `json:"revision"`
-	Counts        Counts    `json:"counts"`
-	ResultURL     *string   `json:"result_url"`
-	LastError     *Failure  `json:"last_error"`
-	NextAttemptAt *int64    `json:"next_attempt_at,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	Kind          string      `json:"kind,omitempty"`
+	AuditID       string      `json:"audit_id,omitempty"`
+	DryRun        bool        `json:"dry_run,omitempty"`
+	SourceName    string      `json:"source_name"`
+	DestinationID string      `json:"destination_id"`
+	RootName      string      `json:"root_name"`
+	State         string      `json:"state"`
+	Phase         *string     `json:"phase"`
+	DesiredState  string      `json:"desired_state"`
+	Shortcuts     string      `json:"shortcuts,omitempty"`
+	OnConflict    string      `json:"on_conflict,omitempty"`
+	Filter        filter.Spec `json:"filter,omitempty"`
+	Revision      int         `json:"revision"`
+	Counts        Counts      `json:"counts"`
+	ResultURL     *string     `json:"result_url"`
+	LastError     *Failure    `json:"last_error"`
+	NextAttemptAt *int64      `json:"next_attempt_at,omitempty"`
+	CreatedAt     time.Time   `json:"created_at"`
+	UpdatedAt     time.Time   `json:"updated_at"`
 	// SourceRemoved counts mapping items that a delta scan no longer found at
 	// the source. It is a body-only field (no column) used by the mass-removal
 	// guard to ask for an audit.
@@ -132,20 +154,23 @@ type Job struct {
 }
 
 type Collection struct {
-	ID            string  `json:"id"`
-	SourceID      string  `json:"source_id"`
-	SourceName    string  `json:"source_name"`
-	SourceKind    string  `json:"source_kind"`
-	SourceMime    string  `json:"source_mime,omitempty"`
-	ResourceKey   string  `json:"resource_key,omitempty"`
-	DestinationID string  `json:"destination_id"`
-	RootName      string  `json:"root_name"`
-	RootID        *string `json:"destination_root_id"`
-	ResultURL     *string `json:"result_url"`
-	BaselineJobID string  `json:"baseline_job_id"`
-	State         string  `json:"state"`
-	Revision      int     `json:"revision"`
-	Sync          any     `json:"sync"`
+	ID            string      `json:"id"`
+	SourceID      string      `json:"source_id"`
+	SourceName    string      `json:"source_name"`
+	SourceKind    string      `json:"source_kind"`
+	SourceMime    string      `json:"source_mime,omitempty"`
+	ResourceKey   string      `json:"resource_key,omitempty"`
+	DestinationID string      `json:"destination_id"`
+	RootName      string      `json:"root_name"`
+	RootID        *string     `json:"destination_root_id"`
+	ResultURL     *string     `json:"result_url"`
+	BaselineJobID string      `json:"baseline_job_id"`
+	State         string      `json:"state"`
+	Revision      int         `json:"revision"`
+	Sync          any         `json:"sync"`
+	Shortcuts     string      `json:"shortcuts,omitempty"`
+	OnConflict    string      `json:"on_conflict,omitempty"`
+	Filter        filter.Spec `json:"filter,omitempty"`
 }
 
 type Event struct {
@@ -201,4 +226,12 @@ type Item struct {
 	SeenJob           string
 	ScanJob           string
 	OldDestID         string
+	ConflictAction    string
+	DestName          string
+	// RelPath is the path below the copied root ("a/b/c.txt"), stored so a
+	// filter's path rules keep working after a restart.
+	RelPath string
+	// Modified is the source modification time seen while listing. It is not
+	// stored: the filter decides during discovery, before the item is written.
+	Modified time.Time
 }

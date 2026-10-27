@@ -333,7 +333,7 @@ func TestSuspendDuringCopyReconcilesInsteadOfDuplicating(t *testing.T) {
 	eng.Network = gate
 	eng.OnUnreachable = func(error) { gate.Set(false) }
 
-	var sleepOnce, findOnce sync.Once
+	var sleepOnce sync.Once
 	e.fake.LoseResponse = func(op string, f drive.File) bool {
 		if op != "copy" {
 			return false
@@ -346,9 +346,11 @@ func TestSuspendDuringCopyReconcilesInsteadOfDuplicating(t *testing.T) {
 		if op != "find" {
 			return nil
 		}
-		offline := false
-		findOnce.Do(func() { offline = true })
-		if offline {
+		// The gate is the single source of truth for "asleep": a query made
+		// while it is down never leaves the machine, and one made after the
+		// wake succeeds. (A one-shot flag raced with the wake and could
+		// re-sleep the machine after the test had already woken it.)
+		if !gate.Online() {
 			return unreachable() // the machine is asleep: nothing leaves
 		}
 		return nil

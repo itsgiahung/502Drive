@@ -28,14 +28,55 @@ type Fake struct {
 	Calls  map[string]int
 	Writes int
 
+	sharedRoles   map[string]string
 	log           []drive.Change // append-only change feed; token = index
 	InvalidTokens bool           // makes every feed cursor expire
 }
 
 func New() *Fake {
-	f := &Fake{files: map[string]drive.File{}, PageSize: 100, Calls: map[string]int{}}
+	f := &Fake{files: map[string]drive.File{}, PageSize: 100, Calls: map[string]int{}, sharedRoles: map[string]string{}}
 	f.files["root"] = drive.File{ID: "root", Name: "My Drive", MimeType: drive.MimeFolder, CanAddChildren: true, CanCopy: true}
 	return f
+}
+
+// SharedDrive creates a new shared drive root with its own DriveID.
+func (f *Fake) SharedDrive(name string) drive.File {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	driveID := f.id()
+	x := drive.File{
+		ID:             driveID,
+		Name:           name,
+		MimeType:       drive.MimeFolder,
+		DriveID:        driveID,
+		Version:        "1",
+		CanAddChildren: true,
+		CanCopy:        true,
+	}
+	f.files[x.ID] = x
+	f.sharedRoles[driveID] = "organizer"
+	f.record(x)
+	return x
+}
+
+// SetSharedDriveRole sets the current user's role on the given shared drive
+// ("organizer", "contributor", "viewer").
+func (f *Fake) SetSharedDriveRole(driveID, role string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sharedRoles[driveID] = role
+	for id, file := range f.files {
+		if file.DriveID == driveID {
+			if role == "viewer" {
+				file.CanAddChildren = false
+				file.CanCopy = false
+			} else {
+				file.CanAddChildren = file.IsFolder()
+				file.CanCopy = true
+			}
+			f.files[id] = file
+		}
+	}
 }
 
 func (f *Fake) id() string { f.next++; return fmt.Sprintf("fake%06d", f.next) }
@@ -52,7 +93,15 @@ func (f *Fake) CallCount(op string) int {
 func (f *Fake) Put(name, mime, parent string, size int64) drive.File {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	x := drive.File{ID: f.id(), Name: name, MimeType: mime, Parents: []string{parent}, Version: "1", CanCopy: true, CanAddChildren: mime == drive.MimeFolder}
+	drv := ""
+	if p, ok := f.files[parent]; ok && p.DriveID != "" {
+		drv = p.DriveID
+	}
+	x := drive.File{ID: f.id(), Name: name, MimeType: mime, Parents: []string{parent}, Version: "1", CanCopy: true, CanAddChildren: mime == drive.MimeFolder, DriveID: drv}
+	if drv != "" && f.sharedRoles[drv] == "viewer" {
+		x.CanAddChildren = false
+		x.CanCopy = false
+	}
 	if size >= 0 {
 		s := size
 		x.Size = &s
@@ -73,6 +122,23 @@ func (f *Fake) Folder(name, parent string) drive.File {
 }
 func (f *Fake) File(name, parent string, size int64) drive.File {
 	return f.Put(name, "application/octet-stream", parent, size)
+}
+
+func (f *Fake) Shortcut(name, parent, targetID string) drive.File {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	drv := ""
+	if p, ok := f.files[parent]; ok && p.DriveID != "" {
+		drv = p.DriveID
+	}
+	x := drive.File{ID: f.id(), Name: name, MimeType: drive.MimeShortcut, Parents: []string{parent}, Version: "1", ShortcutTargetID: targetID, CanCopy: true, DriveID: drv}
+	if drv != "" && f.sharedRoles[drv] == "viewer" {
+		x.CanAddChildren = false
+		x.CanCopy = false
+	}
+	f.files[x.ID] = x
+	f.record(x)
+	return x
 }
 
 func (f *Fake) Mutate(id string, fn func(*drive.File)) {
@@ -236,6 +302,8 @@ func (f *Fake) write(op string, x drive.File, mk func() drive.File) (drive.File,
 	}
 	if p, ok := f.files[parent]; !ok || !p.IsFolder() {
 		return drive.File{}, &drive.Error{Kind: drive.KindNotFound, Status: 404}
+	} else if p.DriveID != "" && f.sharedRoles[p.DriveID] == "viewer" {
+		return drive.File{}, &drive.Error{Kind: drive.KindPermission, Status: 403, Reason: "destination_not_writable"}
 	}
 	out := mk()
 	f.files[out.ID] = out
@@ -256,23 +324,47 @@ func props(intent string) map[string]string {
 
 func (f *Fake) CreateFolder(ctx context.Context, name, parent, intent string) (drive.File, error) {
 	return f.write("folder", drive.File{Name: name, Parents: []string{parent}}, func() drive.File {
-		return drive.File{ID: f.id(), Name: name, MimeType: drive.MimeFolder, Parents: []string{parent}, Version: "1", CanAddChildren: true, CanCopy: true, AppProperties: props(intent)}
+		drv := ""
+		if p, ok := f.files[parent]; ok {
+			drv = p.DriveID
+		}
+		return drive.File{ID: f.id(), Name: name, MimeType: drive.MimeFolder, Parents: []string{parent}, Version: "1", CanAddChildren: true, CanCopy: true, AppProperties: props(intent), DriveID: drv}
 	})
 }
 
 func (f *Fake) CopyFile(ctx context.Context, src drive.File, parent, intent string) (drive.File, error) {
 	req := src
 	req.Parents = []string{parent}
+	f.mu.Lock()
+	sf, ok := f.files[src.ID]
+	f.mu.Unlock()
+	if ok {
+		if !sf.CanCopy {
+			return drive.File{}, &drive.Error{Kind: drive.KindPermission, Reason: "cannot_copy"}
+		}
+		if drive.IsGoogleNativeExportOnly(sf.MimeType) {
+			return drive.File{}, &drive.Error{Kind: drive.KindInvalid, Reason: "google_native_export_only"}
+		}
+	}
 	return f.write("copy", req, func() drive.File {
 		x := f.files[src.ID]
-		x.ID, x.Parents, x.AppProperties = f.id(), []string{parent}, props(intent)
+		drv := ""
+		if p, ok := f.files[parent]; ok {
+			drv = p.DriveID
+		}
+		x.ID, x.Parents, x.AppProperties, x.DriveID = f.id(), []string{parent}, props(intent), drv
+		x.Name = src.Name // the caller may choose a conflict-free name
 		return x
 	})
 }
 
 func (f *Fake) CreateShortcut(ctx context.Context, name, parent, target, key, intent string) (drive.File, error) {
 	return f.write("shortcut", drive.File{Name: name, Parents: []string{parent}}, func() drive.File {
-		return drive.File{ID: f.id(), Name: name, MimeType: drive.MimeShortcut, Parents: []string{parent}, Version: "1", ShortcutTargetID: target, AppProperties: props(intent)}
+		drv := ""
+		if p, ok := f.files[parent]; ok {
+			drv = p.DriveID
+		}
+		return drive.File{ID: f.id(), Name: name, MimeType: drive.MimeShortcut, Parents: []string{parent}, Version: "1", ShortcutTargetID: target, AppProperties: props(intent), DriveID: drv}
 	})
 }
 
@@ -285,6 +377,21 @@ func (f *Fake) FindByIntent(ctx context.Context, parent, intent string) ([]drive
 	var out []drive.File
 	for _, c := range f.childrenLocked(parent) {
 		if c.AppProperties[drive.IntentProperty] == intent {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+func (f *Fake) FindChildrenByName(ctx context.Context, parent, name string) ([]drive.File, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.call("find_by_name", drive.File{}); err != nil {
+		return nil, err
+	}
+	var out []drive.File
+	for _, c := range f.childrenLocked(parent) {
+		if c.Name == name && !c.Trashed {
 			out = append(out, c)
 		}
 	}

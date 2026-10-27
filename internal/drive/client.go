@@ -276,6 +276,29 @@ func (c *Client) FindByIntent(ctx context.Context, parentID, intent string) ([]F
 	}
 }
 
+func (c *Client) FindChildrenByName(ctx context.Context, parentID, name string) ([]File, error) {
+	q := fmt.Sprintf("'%s' in parents and trashed=false and name='%s'", QueryEscape(parentID), QueryEscape(name))
+	var out []File
+	token := ""
+	for {
+		call := c.svc.Files.List().Q(q).Corpora("allDrives").SupportsAllDrives(true).IncludeItemsFromAllDrives(true).
+			PageSize(10).Fields("nextPageToken,files(" + fileFields + ")").Context(ctx)
+		if token != "" {
+			call.PageToken(token)
+		}
+		r, err := call.Do()
+		if err != nil {
+			return nil, wrap(err)
+		}
+		for _, f := range r.Files {
+			out = append(out, convert(f))
+		}
+		if token = r.NextPageToken; token == "" || len(out) > 20 {
+			return out, nil
+		}
+	}
+}
+
 func (c *Client) RenameFile(ctx context.Context, id, name string) error {
 	_, err := c.svc.Files.Update(id, &gdrive.File{Name: name}).SupportsAllDrives(true).Fields("id").Context(ctx).Do()
 	return wrap(err)

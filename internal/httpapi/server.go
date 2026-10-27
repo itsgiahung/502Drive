@@ -111,6 +111,8 @@ func (s *Server) Handler() http.Handler {
 	route("GET /v1/doctor", s.doctor)
 	route("GET /v1/collections", s.listCollections)
 	route("GET /v1/collections/{id}", s.getCollection)
+	route("GET /v1/collections/{id}/filter", s.getCollectionFilter)
+	route("PUT /v1/collections/{id}/filter", s.setCollectionFilter)
 	route("POST /v1/collections/{id}/audits", s.startAudit)
 	route("GET /v1/audits/{id}", s.getAudit)
 	route("GET /v1/audits/{id}/findings", s.auditFindings)

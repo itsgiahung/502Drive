@@ -162,6 +162,21 @@ func fillCounts(ctx context.Context, q queryer, j *Job) error {
 		return err
 	}
 	j.Counts = Counts{Observed: observed, Completed: done, Failed: failed, Blocked: blocked, Skipped: skipped, Bytes: bytes}
+	if skipped > 0 {
+		rows, err := q.QueryContext(ctx, `SELECT coalesce(nullif(error_code,''),'unknown'), count(*) FROM items WHERE job_id=? AND kind<>'wrapper' AND state IN ('skipped','cancelled') GROUP BY error_code`, j.ID)
+		if err == nil {
+			defer rows.Close()
+			byCode := make(map[string]int)
+			for rows.Next() {
+				var code string
+				var cnt int
+				if err := rows.Scan(&code, &cnt); err == nil {
+					byCode[code] = cnt
+				}
+			}
+			j.Counts.SkippedByCode = byCode
+		}
+	}
 	// The total is unknown until every folder has been fully listed.
 	if observed > 0 && listing == 0 && (j.Phase == nil || *j.Phase != "discovering") {
 		t := observed
@@ -245,8 +260,8 @@ func (s *Store) AdmitGuarded(ctx context.Context, principal, key, planID string,
 			return nil, ErrCapacity
 		}
 		now := time.Now().UTC()
-		j := Job{ID: ID("job"), Principal: principal, CollectionID: ID("col"), Trigger: "initial", SourceName: p.SourceName, DestinationID: p.DestinationID, RootName: p.RootName, State: JobQueued, DesiredState: "run", Revision: 1, CreatedAt: now, UpdatedAt: now}
-		c := Collection{ID: j.CollectionID, SourceID: p.SourceID, SourceName: p.SourceName, SourceKind: p.SourceKind, SourceMime: p.SourceMime, ResourceKey: p.ResourceKey, DestinationID: p.DestinationID, RootName: p.RootName, BaselineJobID: j.ID, State: "copying", Revision: 1}
+		j := Job{ID: ID("job"), Principal: principal, CollectionID: ID("col"), Trigger: "initial", SourceName: p.SourceName, DestinationID: p.DestinationID, RootName: p.RootName, State: JobQueued, DesiredState: "run", Shortcuts: p.Shortcuts, OnConflict: p.OnConflict, Filter: p.Filter, Revision: 1, CreatedAt: now, UpdatedAt: now}
+		c := Collection{ID: j.CollectionID, SourceID: p.SourceID, SourceName: p.SourceName, SourceKind: p.SourceKind, SourceMime: p.SourceMime, ResourceKey: p.ResourceKey, DestinationID: p.DestinationID, RootName: p.RootName, BaselineJobID: j.ID, State: "copying", Shortcuts: p.Shortcuts, OnConflict: p.OnConflict, Filter: p.Filter, Revision: 1}
 		cb, _ := json.Marshal(c)
 		if _, e = tx.ExecContext(ctx, "INSERT INTO collections VALUES(?,?,?,?)", c.ID, principal, p.ID, cb); e != nil {
 			return nil, e

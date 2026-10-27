@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/filter"
 	"github.com/itsgiahung/502Drive/internal/state"
 )
 
@@ -27,6 +28,12 @@ type run struct {
 	e  *Engine
 	db context.Context // never cancelled: durable writes must finish
 	id string
+	// policy is the job's on_conflict, read once when the run starts.
+	policy string
+	// filter is the job's selective-sync rule (nil keeps everything), and
+	// keepEmpty says whether folders left empty by it are still created.
+	filter    *filter.Matcher
+	keepEmpty bool
 
 	p          drive.Provider
 	trigger    string
@@ -98,6 +105,18 @@ func (r *run) execute(ctx context.Context) {
 
 	// Audit and repair are separate job families with their own phases.
 	job, _ := r.e.Store.GetJob(r.db, "", r.id)
+	r.policy = job.OnConflict
+	if job.Filter.Active() || job.Filter.KeepEmptyFolders {
+		m, err := job.Filter.Compile()
+		if err != nil {
+			r.block("invalid_filter", "The saved filter is not valid: "+err.Error())
+			return
+		}
+		if job.Filter.Active() {
+			r.filter = m
+		}
+		r.keepEmpty = job.Filter.KeepEmptyFolders
+	}
 	switch job.Kind {
 	case state.JobKindAudit:
 		r.executeAudit(ctx, job)
@@ -123,6 +142,15 @@ func (r *run) execute(ctx context.Context) {
 	if !ok {
 		r.settle(ctx)
 		return
+	}
+	if r.filter != nil && !r.keepEmpty {
+		// With a filter, a folder that ends up with nothing kept is not created
+		// (keep_empty_folders opts out of this).
+		if _, err := r.e.Store.PruneEmptyFolders(r.db, r.collection); err != nil {
+			r.log("prune empty folders failed", "err", err)
+			r.settle(ctx)
+			return
+		}
 	}
 	if r.massRemoval {
 		// Never copy a tree that the scan says mostly disappeared.
@@ -280,6 +308,7 @@ const maxBatchFiles = 20000
 // should stop (control request, shutdown, fatal provider state).
 func (r *run) discover(ctx context.Context) bool {
 	return r.scanTree(ctx, func(folder state.Item, children []state.Item, next string) error {
+		r.filterPage(folder, children)
 		return r.e.Store.CommitPage(r.db, folder, children, next)
 	})
 }
@@ -493,7 +522,11 @@ func (r *run) listBatch(ctx context.Context, bl drive.BatchLister, parents []dri
 }
 
 func toItem(f drive.File) state.Item {
-	it := state.Item{SourceID: f.ID, Name: f.Name, MimeType: f.MimeType, ResourceKey: f.ResourceKey, Size: f.Size, Fingerprint: f.Fingerprint(), Kind: state.KindFile}
+	it := state.Item{SourceID: f.ID, Name: f.Name, MimeType: f.MimeType, ResourceKey: f.ResourceKey, Size: f.Size, Fingerprint: f.Fingerprint(), Kind: state.KindFile, Modified: f.Modified}
+	if f.Trashed {
+		it.State = state.ItemSkipped
+		it.ErrorCode = state.SkipTrashedSource
+	}
 	switch {
 	case f.IsFolder():
 		it.Kind = state.KindFolder
@@ -653,6 +686,36 @@ func (r *run) worker(ctx context.Context) {
 	}
 }
 
+// filterPage gives each listed child its path below the copied root and, when
+// a filter is set, decides whether it is copied. A filtered child is stored as
+// skipped with the stable code "filtered": it is never written, and a folder
+// the filter excludes is never listed, so nothing below it is read.
+func (r *run) filterPage(folder state.Item, children []state.Item) {
+	for i := range children {
+		c := &children[i]
+		c.RelPath = c.Name
+		if folder.RelPath != "" {
+			c.RelPath = folder.RelPath + "/" + c.Name
+		}
+		if r.filter == nil || c.State == state.ItemSkipped {
+			continue
+		}
+		keep := r.filter.Decide(filter.Entry{Name: c.Name, Rel: c.RelPath, IsFolder: c.Kind == state.KindFolder,
+			MimeType: c.MimeType, Size: c.Size, Modified: c.Modified})
+		if !keep {
+			c.State, c.ErrorCode = state.ItemSkipped, state.SkipFiltered
+		}
+	}
+}
+
+func (r *run) shortcuts() string {
+	j, err := r.e.Store.GetJob(r.db, "", r.id)
+	if err == nil && j.Shortcuts == "skip" {
+		return "skip"
+	}
+	return "follow"
+}
+
 func (r *run) process(ctx context.Context, it state.Item) {
 	if it.Op == state.OpAlign {
 		r.align(ctx, it)
@@ -663,11 +726,36 @@ func (r *run) process(ctx context.Context, it state.Item) {
 	var err error
 	switch it.Kind {
 	case state.KindWrapper, state.KindFolder:
-		out, err = r.p.CreateFolder(ctx, it.Name, it.DestParentID, it.IntentKey)
+		var ok bool
+		if it, ok = r.settleName(ctx, it); !ok {
+			return
+		}
+		out, err = r.p.CreateFolder(ctx, it.DestName, it.DestParentID, it.IntentKey)
 	case state.KindFile:
+		if drive.IsGoogleNativeExportOnly(it.MimeType) {
+			r.skipItem(it, state.SkipGoogleNativeExport)
+			return
+		}
+		var ok bool
+		if it, ok = r.settleName(ctx, it); !ok {
+			return
+		}
+		src.Name = it.DestName
 		out, err = r.p.CopyFile(ctx, src, it.DestParentID, it.IntentKey)
 	case state.KindShortcut:
-		out, err = r.p.CreateShortcut(ctx, it.Name, it.DestParentID, it.ShortcutTarget, it.ResourceKey, it.IntentKey)
+		if r.shortcuts() == "skip" {
+			r.skipItem(it, state.SkipShortcutUnresolved)
+			return
+		}
+		targetID, targetKey, resolved := r.resolveShortcut(ctx, it)
+		if !resolved {
+			return
+		}
+		var named bool
+		if it, named = r.settleName(ctx, it); !named {
+			return
+		}
+		out, err = r.p.CreateShortcut(ctx, it.DestName, it.DestParentID, targetID, targetKey, it.IntentKey)
 	default:
 		err = &drive.Error{Kind: drive.KindInvalid, Reason: "unsupported_kind"}
 	}
@@ -683,16 +771,29 @@ func (r *run) process(ctx context.Context, it state.Item) {
 		r.noteUnreachable(err)
 		r.e.Store.ReleaseItemNoPenalty(r.db, it, "waiting_for_network")
 	case drive.NotExecuted(err):
-		switch k {
-		case drive.KindAuth:
+		reason := drive.ReasonOf(err)
+		switch {
+		case k == drive.KindPermission && (reason == "cannot_copy" || reason == "copyRequiresWriterPermission" || reason == "cannotCopyFile" || reason == "cannotCopy"):
+			r.skipItem(it, state.SkipCannotCopy)
+			return
+		case k == drive.KindInvalid && (reason == "google_native_export_only" || reason == "cannotCopyGoogleDoc" || reason == "export_only"):
+			r.skipItem(it, state.SkipGoogleNativeExport)
+			return
+		case k == drive.KindQuota && reason == "too_large_for_quota":
+			r.skipItem(it, state.SkipTooLargeForQuota)
+			return
+		case k == drive.KindPermission && reason == "unreadable":
+			r.skipItem(it, state.SkipUnreadable)
+			return
+		case k == drive.KindAuth:
 			r.setReconnect()
 			r.e.Store.ReleaseItem(r.db, it, "account_reconnect_required", 1)
-		case drive.KindThrottled:
+		case k == drive.KindThrottled:
 			// A throttle is not this item's failure: give the attempt back and
 			// wait with an account-wide, jittered backoff (plus Retry-After).
 			d := max(r.e.throttleWait(), drive.RetryAfterOf(err))
 			r.e.Store.ReleaseItemThrottled(r.db, it, codeFor(err), r.e.Now().Add(d).UnixMilli())
-		case drive.KindQuota:
+		case k == drive.KindQuota:
 			// Account-wide: stop the run, give the attempt back, and let the
 			// engine continue after the documented reset.
 			item := it
@@ -706,6 +807,110 @@ func (r *run) process(ctx context.Context, it state.Item) {
 		if ctx.Err() == nil {
 			r.reconcile(ctx, it, true)
 		}
+	}
+}
+
+// resolveShortcut follows a shortcut one level and returns the object the
+// destination shortcut must point at: the target itself, or the target's
+// target when the target is a shortcut. ok=false means the item was already
+// settled here (skipped with a stable code, or released for a retry).
+func (r *run) resolveShortcut(ctx context.Context, it state.Item) (id, key string, ok bool) {
+	if it.ShortcutTarget == "" {
+		r.skipItem(it, state.SkipShortcutUnresolved)
+		return "", "", false
+	}
+	if it.ShortcutTarget == it.SourceID {
+		r.skipItem(it, state.SkipShortcutLoop)
+		return "", "", false
+	}
+	target, err := r.p.GetFile(ctx, it.ShortcutTarget, it.ResourceKey)
+	if err != nil {
+		r.lookupFailed(it, state.SkipShortcutUnresolved, err)
+		return "", "", false
+	}
+	if target.Trashed {
+		r.skipItem(it, state.SkipShortcutUnresolved)
+		return "", "", false
+	}
+	if !target.IsShortcut() {
+		return target.ID, target.ResourceKey, true
+	}
+	// Second hop: the policy follows exactly one level of shortcut chain.
+	second := target.ShortcutTargetID
+	if second == it.SourceID || second == target.ID {
+		r.skipItem(it, state.SkipShortcutLoop)
+		return "", "", false
+	}
+	if second == "" {
+		r.skipItem(it, state.SkipShortcutUnresolved)
+		return "", "", false
+	}
+	target2, err := r.p.GetFile(ctx, second, target.ShortcutTargetKey)
+	if err != nil {
+		r.lookupFailed(it, state.SkipShortcutUnresolved, err)
+		return "", "", false
+	}
+	if target2.Trashed {
+		r.skipItem(it, state.SkipShortcutUnresolved)
+		return "", "", false
+	}
+	if target2.IsShortcut() {
+		if t3 := target2.ShortcutTargetID; t3 == it.SourceID || t3 == target.ID || t3 == target2.ID {
+			r.skipItem(it, state.SkipShortcutLoop)
+			return "", "", false
+		}
+		r.skipItem(it, state.SkipShortcutUnresolved)
+		return "", "", false
+	}
+	return target2.ID, target2.ResourceKey, true
+}
+
+// skipItem records a stable skip reason. A failed write here must not be
+// silent: it is logged and the item is retried on the next claim.
+func (r *run) skipItem(it state.Item, code string) {
+	if err := r.e.Store.SkipItem(r.db, it, code); err != nil {
+		r.log("skip failed", "err", err)
+		r.check(r.e.Store.ReleaseItem(r.db, it, "skip_write_failed", r.e.Now().Add(r.e.backoff(it.Attempts+1)).UnixMilli()))
+	}
+}
+
+// lookupFailed settles a failed read of a shortcut's target. Only a definitive
+// answer (the target is missing, forbidden or invalid) becomes a stable skip.
+// Anything else says nothing about the target and goes back to the queue.
+func (r *run) lookupFailed(it state.Item, code string, err error) {
+	switch drive.KindOf(err) {
+	case drive.KindNotFound, drive.KindPermission, drive.KindInvalid:
+		r.skipItem(it, code)
+	default:
+		r.releaseTransient(it, err)
+	}
+}
+
+// releaseTransient puts an item back after a read or write that proves
+// nothing about the item itself: offline (no attempt spent), throttled
+// (account-wide backoff), auth (reconnect) or a transient failure (backoff).
+func (r *run) releaseTransient(it state.Item, err error) {
+	switch drive.KindOf(err) {
+	case drive.KindUnreachable:
+		r.noteUnreachable(err)
+		r.check(r.e.Store.ReleaseItemNoPenalty(r.db, it, "waiting_for_network"))
+	case drive.KindAuth:
+		r.setReconnect()
+		r.check(r.e.Store.ReleaseItem(r.db, it, "account_reconnect_required", 1))
+	case drive.KindThrottled:
+		d := max(r.e.throttleWait(), drive.RetryAfterOf(err))
+		r.check(r.e.Store.ReleaseItemThrottled(r.db, it, codeFor(err), r.e.Now().Add(d).UnixMilli()))
+	default:
+		d := r.e.backoff(it.Attempts + 1)
+		r.check(r.e.Store.ReleaseItem(r.db, it, codeFor(err), r.e.Now().Add(d).UnixMilli()))
+	}
+}
+
+// check logs a durable write that failed; the item is then re-examined on
+// the next run after restart, because its state was not committed.
+func (r *run) check(err error) {
+	if err != nil {
+		r.log("durable write failed", "err", err)
 	}
 }
 
@@ -923,6 +1128,7 @@ func (r *run) discoverDelta(ctx context.Context) bool {
 		return err == nil
 	}
 	if !r.scanTree(ctx, func(folder state.Item, children []state.Item, next string) error {
+		r.filterPage(folder, children)
 		_, err := r.e.Store.CommitDeltaPage(r.db, r.id, folder, children, next)
 		return err
 	}) {

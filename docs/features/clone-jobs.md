@@ -96,6 +96,67 @@ Kết quả nằm ở `GET /v1/audits/{id}` (counts) + `GET /v1/audits/{id}/find
 
 Thiết kế: [design/s1-integrity.md](../design/s1-integrity.md).
 
+## Phân loại mục bị bỏ qua (skipped) và chính sách shortcut (K1)
+
+Khi gặp các đối tượng không thể sao chép, engine đánh dấu trạng thái `skipped` kèm mã lỗi ổn định và tổng hợp số lượng trong `counts.skipped_by_code`:
+
+- `shortcut_unresolved`: shortcut trỏ tới mục không tồn tại, bị xoá hoặc không thể truy cập; hoặc khi dùng chính sách `--shortcuts skip`.
+- `shortcut_loop`: phát hiện vòng lặp shortcut (tự trỏ chính nó hoặc vòng lặp nhiều cấp).
+- `cannot_copy`: tệp nguồn bị chủ sở hữu khoá quyền sao chép (`canCopy=false`, `copyRequiresWriterPermission`).
+- `google_native_export_only`: định dạng tài liệu Google Workspace chỉ hỗ trợ xuất, không hỗ trợ `Files.Copy` server-side (như My Maps, Google Sites, Scripts, Fusion Tables, Jamboard).
+- `too_large_for_quota`: chỉ được gán khi API trả lý do `too_large_for_quota`. Đây không phải lý do Google đã
+  xác nhận; giới hạn dung lượng thật (`storageQuotaExceeded`, `dailyLimitExceeded`) vẫn làm job `blocked` (Q1).
+  Chưa kiểm với Drive thật.
+- `conflict`: tệp đã có ở đích cùng nội dung hoặc bị chính sách `skip` loại (N1).
+- `unreadable`: không thể đọc nội dung hoặc metadata do quyền truy cập.
+- `trashed_source`: tệp nguồn nằm trong thùng rác Drive.
+- `filtered`: mục bị loại bởi bộ lọc (S5), kể cả thư mục bị loại cả cây con.
+
+Chính sách shortcut điều khiển qua cờ CLI `--shortcuts follow|skip` (mặc định `follow`: theo đích 1 cấp, phát hiện vòng lặp; `skip`: bỏ qua mọi shortcut).
+
+## Hỗ trợ Shared Drives (Drive dùng chung — D1)
+
+502Drive hỗ trợ đầy đủ các thao tác sao chép từ và đến Shared Drives (Team Drives):
+
+- **Tương thích toàn diện**: Mọi lệnh gọi Drive API đều truyền `supportsAllDrives=true` và `includeItemsFromAllDrives=true`, cho phép truy cập tài nguyên trong Shared Drives mà không cần thay đổi OAuth scope (`drive` scope đầy đủ hiện có).
+- **Nhận diện `driveId`**: Nhận biết và kế thừa `driveId` trên cây thư mục nguồn và đích.
+- **Kiểm soát quyền truy cập rõ ràng**:
+  - Khi thư mục đích nằm trong Shared Drive mà tài khoản không có quyền thêm tệp (`canAddChildren=false`), hệ thống từ chối ngay ở bước Inspect với mã lỗi 409 `destination_not_writable`.
+  - Khi tệp nguồn trong Shared Drive bị giới hạn quyền sao chép đối với người xem (`canCopy=false`), bước Inspect từ chối tệp đơn lẻ với mã lỗi 403 `copy_not_permitted`; khi sao chép toàn bộ cây, các tệp này được đánh dấu `skipped` với mã `cannot_copy`.
+
+## Trùng tên ở đích (N1)
+
+Drive cho phép nhiều tệp cùng tên trong một thư mục. Khi một mục chuẩn bị được ghi, 502Drive giữ tên
+của nó trong cơ sở dữ liệu (`items.dest_name`, dưới `dest_parent_id`) trước khi ghi, rồi:
+
+1. Tên còn trống → ghi với tên gốc.
+2. Đã có bản cùng nội dung (cùng size và md5, chỉ khi Drive trả md5) → không ghi lại (`skipped`, `conflict`).
+3. Khác nội dung, theo `--on-conflict`: `rename` (mặc định) → `name (2).ext`, `(3)`, … giữ phần mở rộng
+   (`archive.tar.gz` → `archive (2).tar.gz`); `skip` → bỏ qua (`conflict`); `update` → ghi cùng tên, không xóa
+   bản nào.
+
+Quyết định được lưu cùng lúc với việc giữ tên, nên khởi động lại không đổi ý. Thư mục luôn đổi tên khi trùng
+(bỏ qua thư mục sẽ bỏ cả cây con). Thư mục gốc được kiểm tra trực tiếp trên Drive, vì nó nằm trong thư mục đích
+do người dùng chọn; các mục bên trong thư mục do 502Drive tạo chỉ kiểm tra qua cơ sở dữ liệu, nên không thêm lệnh
+`files.list` nào trong đường copy.
+
+Giới hạn: `update` chưa xóa bản cũ (sẽ cần `replace_copy`/repair); mục `align` (đổi tên nguồn) không quyết định lại tên.
+Thiết kế: [design/n1-conflict-policy.md](../design/n1-conflict-policy.md).
+
+## Lọc khi đồng bộ (S5)
+
+Bộ lọc (`filter`) của kế hoạch được lưu vào job và collection. Nó được áp dụng khi liệt kê, trước khi ghi:
+
+- Mục bị loại được lưu với trạng thái `skipped`, mã `filtered`, và không bao giờ được ghi. Thư mục bị loại không
+  được liệt kê, nên cây con của nó không bị đọc.
+- Thư mục không còn mục nào được giữ sẽ không được tạo, trừ khi `keep_empty_folders`.
+- Đổi bộ lọc (`sync filter set`) chỉ ảnh hưởng lần chạy sau. Không xóa gì ở đích; mục đã copy vẫn ở đó; mục bị loại
+  trước đó được copy khi bộ lọc cho phép.
+- Xem trước (`inspect`) cho biết số mục cấp cao nhất đạt/bị loại và 10 mẫu mỗi loại, trên một trang liệt kê.
+- Chỉ áp dụng cho nguồn là thư mục. Nguồn là một tệp đơn không bị lọc.
+
+Chi tiết: [design/s5-selective-sync.md](../design/s5-selective-sync.md).
+
 ## Giới hạn / chưa hỗ trợ
 
 - Không giữ owner/permission/revision/history của bản gốc; không tải/upload bytes.

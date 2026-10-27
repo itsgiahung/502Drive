@@ -77,7 +77,7 @@ func weekdayNames(days []int) string {
 func (a *App) syncCmd() *cobra.Command {
 	sc := &cobra.Command{Use: "sync", Short: "Scheduled or realtime sync of copied sources"}
 	sc.AddCommand(a.syncEnableCmd(), a.syncStatusCmd(), a.syncRunCmd(),
-		a.syncActionCmd("pause"), a.syncActionCmd("resume"), a.syncActionCmd("stop"))
+		a.syncActionCmd("pause"), a.syncActionCmd("resume"), a.syncActionCmd("stop"), a.syncFilterCmd())
 	return sc
 }
 

@@ -16,6 +16,20 @@ const (
 	IntentProperty = "502drive_intent"
 )
 
+// IsGoogleNativeExportOnly reports whether a Google Workspace mime type
+// cannot be copied server-side via Files.Copy and only supports export.
+func IsGoogleNativeExportOnly(mime string) bool {
+	switch mime {
+	case "application/vnd.google-apps.map",
+		"application/vnd.google-apps.site",
+		"application/vnd.google-apps.script",
+		"application/vnd.google-apps.fusiontable",
+		"application/vnd.google-apps.jam":
+		return true
+	}
+	return false
+}
+
 // File is the subset of Drive metadata the product relies on.
 type File struct {
 	ID                 string
@@ -67,6 +81,8 @@ type Provider interface {
 	CreateShortcut(ctx context.Context, name, parentID, targetID, targetKey, intent string) (File, error)
 	// FindByIntent returns children of parentID tagged with the intent key.
 	FindByIntent(ctx context.Context, parentID, intent string) ([]File, error)
+	// FindChildrenByName returns non-trashed children of parentID with the exact given name.
+	FindChildrenByName(ctx context.Context, parentID, name string) ([]File, error)
 	// RenameFile, MoveFile and TrashFile change objects we created; they are
 	// idempotent, so an unknown outcome may simply be repeated.
 	RenameFile(ctx context.Context, id, name string) error
@@ -184,6 +200,14 @@ func RetryAfterOf(err error) time.Duration {
 		return de.RetryAfter
 	}
 	return 0
+}
+
+func ReasonOf(err error) string {
+	var de *Error
+	if errors.As(err, &de) {
+		return de.Reason
+	}
+	return ""
 }
 
 // Executed reports whether a failed write is proven not to have happened.

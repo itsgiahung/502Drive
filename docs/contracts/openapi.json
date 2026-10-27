@@ -1423,7 +1423,7 @@
   "/v1/stream": {
    "get": {
     "summary": "Realtime change stream (Server-Sent Events)",
-    "description": "Owner token. Emits `hello` on connect, then `changed` whenever the daemon wrote state; both carry {\"version\":N}. Bursts are coalesced (\u2265150 ms apart). Clients re-read the resources they show; nothing is replayed after a reconnect. A `: ping` comment is sent every 15 s. At most 16 streams are open at once (429 too_many_streams).",
+    "description": "Owner token. Emits `hello` on connect, then `changed` whenever the daemon wrote state; both carry {\"version\":N}. Bursts are coalesced (≥150 ms apart). Clients re-read the resources they show; nothing is replayed after a reconnect. A `: ping` comment is sent every 15 s. At most 16 streams are open at once (429 too_many_streams).",
     "responses": {
      "200": {
       "description": "Event stream",
@@ -1843,6 +1843,95 @@
      "$ref": "#/components/parameters/Cursor"
     }
    ]
+  },
+  "/v1/collections/{collection_id}/filter": {
+   "get": {
+    "summary": "Selective-sync rule that the next runs of this collection use",
+    "description": "Own collection or owner.",
+    "responses": {
+     "200": {
+      "description": "Current filter and revision",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FilterResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "$ref": "#/components/responses/Error409"
+     },
+     "429": {
+      "$ref": "#/components/responses/Error429"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    },
+    "parameters": [
+     {
+      "name": "collection_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 128
+      }
+     }
+    ]
+   },
+   "put": {
+    "summary": "Replace the selective-sync rule",
+    "description": "Changes only what later runs copy; nothing already at the destination is removed, and a running job keeps its own rule. expected_revision must equal the collection revision (409 stale_revision otherwise).",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FilterInput"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Saved filter and revision",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FilterResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "$ref": "#/components/responses/Error409"
+     },
+     "429": {
+      "$ref": "#/components/responses/Error429"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error400"
+     }
+    },
+    "parameters": [
+     {
+      "name": "collection_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 128
+      }
+     }
+    ]
+   }
   }
  },
  "components": {
@@ -2084,6 +2173,47 @@
      },
      "scan_complete": {
       "type": "boolean"
+     },
+     "filter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "included": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "excluded": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "included_samples": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 10
+       },
+       "excluded_samples": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 10
+       },
+       "scope": {
+        "type": "string",
+        "enum": [
+         "top_level"
+        ]
+       }
+      },
+      "required": [
+       "included",
+       "excluded",
+       "included_samples",
+       "excluded_samples",
+       "scope"
+      ]
      }
     },
     "required": [
@@ -2110,6 +2240,25 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 255
+     },
+     "shortcuts": {
+      "type": "string",
+      "enum": [
+       "follow",
+       "skip"
+      ]
+     },
+     "on_conflict": {
+      "type": "string",
+      "enum": [
+       "skip",
+       "rename",
+       "update"
+      ],
+      "description": "Decision for a name already taken at the destination (never overwrites)."
+     },
+     "filter": {
+      "$ref": "#/components/schemas/FilterSpec"
      }
     },
     "required": [
@@ -2175,6 +2324,22 @@
       "items": {
        "type": "string"
       }
+     },
+     "shortcuts": {
+      "type": "string",
+      "enum": [
+       "follow",
+       "skip"
+      ]
+     },
+     "on_conflict": {
+      "type": "string",
+      "enum": [
+       "skip",
+       "rename",
+       "update"
+      ],
+      "description": "Decision for a name already taken at the destination (never overwrites)."
      }
     },
     "required": [
@@ -2253,6 +2418,12 @@
      "skipped_items": {
       "type": "integer",
       "minimum": 0
+     },
+     "skipped_by_code": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "integer"
+      }
      },
      "logical_bytes": {
       "type": "integer",
@@ -2410,6 +2581,25 @@
        "null"
       ],
       "format": "date-time"
+     },
+     "shortcuts": {
+      "type": "string",
+      "enum": [
+       "follow",
+       "skip"
+      ]
+     },
+     "on_conflict": {
+      "type": "string",
+      "enum": [
+       "skip",
+       "rename",
+       "update"
+      ],
+      "description": "Decision for a name already taken at the destination (never overwrites)."
+     },
+     "filter": {
+      "$ref": "#/components/schemas/FilterSpec"
      }
     },
     "required": [
@@ -3547,6 +3737,18 @@
         "type": "null"
        }
       ]
+     },
+     "filter": {
+      "$ref": "#/components/schemas/FilterSpec"
+     },
+     "on_conflict": {
+      "type": "string",
+      "enum": [
+       "skip",
+       "rename",
+       "update"
+      ],
+      "description": "Decision for a name already taken at the destination (never overwrites)."
      }
     },
     "required": [
@@ -4191,6 +4393,97 @@
       "type": "boolean"
      }
     }
+   },
+   "FilterSpec": {
+    "type": "object",
+    "description": "Selective sync rule (S5). Rules: glob (a pattern without / matches the name; with / it matches the path below the root, ** spans segments), ext:.pdf, class:image|video|audio|doc|archive|native|other. Exclude always wins over include.",
+    "additionalProperties": false,
+    "properties": {
+     "include": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 512
+      },
+      "maxItems": 100
+     },
+     "exclude": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 512
+      },
+      "maxItems": 100
+     },
+     "min_size": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "max_size": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "modified_after": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "keep_empty_folders": {
+      "type": "boolean"
+     }
+    }
+   },
+   "FilterInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "filter": {
+      "$ref": "#/components/schemas/FilterSpec"
+     },
+     "expected_revision": {
+      "type": "integer",
+      "minimum": 0
+     }
+    },
+    "required": [
+     "filter",
+     "expected_revision"
+    ]
+   },
+   "FilterResponse": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "collection_id": {
+        "type": "string"
+       },
+       "revision": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "filter": {
+        "$ref": "#/components/schemas/FilterSpec"
+       }
+      },
+      "required": [
+       "collection_id",
+       "revision",
+       "filter"
+      ]
+     },
+     "request_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "data",
+     "request_id"
+    ]
    }
   },
   "responses": {

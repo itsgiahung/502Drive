@@ -186,3 +186,51 @@ func TestBatchListRejectsMoreThanFortyParents(t *testing.T) {
 		t.Fatal("an oversized batch was sent")
 	}
 }
+
+// Every Files and Changes call must carry the shared-drive flags; a single
+// missed call would make items in a Shared Drive invisible or unwritable.
+func TestEveryFilesCallSendsSharedDriveFlags(t *testing.T) {
+	var got []*http.Request
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Clone(context.Background()))
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"x1","name":"n","mimeType":"application/octet-stream","files":[],"version":"3","changes":[],"startPageToken":"7","newStartPageToken":"8"}`)
+	})
+	ctx := context.Background()
+	src := File{ID: "SRC1", Name: "doc", ResourceKey: "rk"}
+	steps := []func() error{
+		func() error { _, err := c.GetFile(ctx, "SRC1", "rk"); return err },
+		func() error { _, _, err := c.ListChildren(ctx, "F1", "", ""); return err },
+		func() error { _, _, err := c.ListChildrenBatch(ctx, []Parent{{ID: "F1"}, {ID: "F2"}}, ""); return err },
+		func() error { _, err := c.CreateFolder(ctx, "d", "P1", "i1"); return err },
+		func() error { _, err := c.CopyFile(ctx, src, "P1", "i2"); return err },
+		func() error { _, err := c.CreateShortcut(ctx, "s", "P1", "T1", "", "i3"); return err },
+		func() error { _, err := c.FindByIntent(ctx, "P1", "i2"); return err },
+		func() error { _, err := c.FindChildrenByName(ctx, "P1", "doc"); return err },
+		func() error { return c.RenameFile(ctx, "F1", "n2") },
+		func() error { return c.MoveFile(ctx, "F1", "P1", "P2") },
+		func() error { return c.TrashFile(ctx, "F1") },
+		func() error { _, err := c.StartPageToken(ctx); return err },
+		func() error { _, _, _, err := c.ListChanges(ctx, "7"); return err },
+	}
+	for i, step := range steps {
+		if err := step(); err != nil {
+			t.Fatalf("step %d: %v", i, err)
+		}
+	}
+	if len(got) < len(steps) {
+		t.Fatalf("requests = %d, want at least %d", len(got), len(steps))
+	}
+	for _, r := range got {
+		q := r.URL.Query()
+		if !strings.Contains(r.URL.Path, "/files") && !strings.Contains(r.URL.Path, "/changes") {
+			continue
+		}
+		if q.Get("supportsAllDrives") != "true" {
+			t.Errorf("%s %s without supportsAllDrives=true", r.Method, r.URL.Path)
+		}
+		if r.Method == "GET" && (strings.HasSuffix(r.URL.Path, "/files") || strings.HasSuffix(r.URL.Path, "/changes")) && q.Get("includeItemsFromAllDrives") != "true" {
+			t.Errorf("%s %s without includeItemsFromAllDrives=true", r.Method, r.URL.Path)
+		}
+	}
+}

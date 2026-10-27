@@ -140,7 +140,7 @@ func (a *App) trayJobs(ctx context.Context) ([]tray.Job, error) {
 }
 
 func (a *App) trayCopy(ctx context.Context, link string) (string, error) {
-	job, _, err := a.submitCopy(ctx, link, "", "", "")
+	job, _, err := a.submitCopy(ctx, link, "", "", "", planOpts{})
 	return job.ID, err
 }
 

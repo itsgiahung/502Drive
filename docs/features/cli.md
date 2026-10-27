@@ -18,14 +18,16 @@ Test: [cli_test.go](../../internal/cli/cli_test.go), [drive_test.go](../../inter
                [--env-file PATH] [--no-env]   # keys from .env/env; hỏi trong terminal nếu còn thiếu
 502drive serve [--maintenance]
 502drive status
-502drive inspect SOURCE [--to ID] [--name NAME]
-502drive copy [SOURCE|--stdin] [--to ID] [--name NAME|--auto-name] [--wait] [--idempotency-key K]
+502drive inspect SOURCE [--to ID] [--name NAME] [--shortcuts follow|skip] [--on-conflict skip|rename|update] [FILTER]
+502drive copy [SOURCE|--stdin] [--to ID] [--name NAME|--auto-name] [--wait] [--idempotency-key K] [--shortcuts follow|skip] [--on-conflict skip|rename|update] [FILTER]
 502drive ls [FOLDER] [--all]                 # FOLDER = link/ID/root (mặc định root)
 502drive info LINK|ID
 502drive mkdir NAME [--in PARENT] [--idempotency-key K]
 502drive jobs list|get|wait|events|pause|resume|cancel|retry
 502drive collections list|get
 502drive sync enable|status|run|pause|resume|stop COLLECTION
+502drive sync filter show COLLECTION
+502drive sync filter set COLLECTION [FILTER] [--keep-empty-folders] | --clear
 502drive destinations list|add|default
 502drive account status|login|revoke
 502drive doctor [--online]
@@ -67,6 +69,18 @@ plain. Tên Drive qua `Sanitize` (ESC/control/bidi). Lệnh nghiệp vụ in ti�
 (theo contract); **menu/TUI/tray** dùng vi/en từ `Preferences.Language`.
 
 ## Sync CLI
+
+Bộ lọc (`FILTER`, S5) dùng chung cho `inspect`, `copy` và `sync filter set`:
+
+- `--include GLOB|ext:.pdf|class:doc` và `--exclude ...` (lặp được; exclude luôn thắng include);
+  `--ext pdf,docx` là `ext:` vào include; `--min-size 10MB`, `--max-size 1GB`;
+- `--filter-file FILE`: mỗi dòng một luật `include|exclude|ext|min-size|max-size|modified-after|keep-empty-folders`,
+  dòng bắt đầu bằng `#` là chú thích.
+- Lớp MIME: `image|video|audio|doc|archive|native|other`. Glob không có `/` khớp tên; có `/` khớp đường dẫn
+  từ gốc, `**` khớp nhiều cấp.
+
+`--on-conflict` (N1) quyết định khi tên đã có ở đích: `rename` (mặc định, thêm ` (2)`), `skip` (không ghi),
+`update` (cùng tên, giữ cả hai). Không bao giờ ghi đè.
 
 ```text
 502drive sync enable ID --daily 22:00 [--timezone IANA] [--policy versioned_copy|replace_copy] [--dry-run]

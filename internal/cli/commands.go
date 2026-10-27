@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/itsgiahung/502Drive/internal/config"
+	"github.com/itsgiahung/502Drive/internal/filter"
 )
 
 func newLogger(w io.Writer) *slog.Logger {
@@ -151,8 +152,12 @@ func (a *App) statusCmd() *cobra.Command {
 
 func (a *App) inspectCmd() *cobra.Command {
 	var to, name string
+	var opts planOpts
 	c := &cobra.Command{Use: "inspect SOURCE", Short: "Preview a copy; writes nothing to Drive", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		plan, r, err := a.makePlan(cmd.Context(), args[0], to, name, NewKey())
+		if err := opts.validate(); err != nil {
+			return err
+		}
+		plan, r, err := a.makePlan(cmd.Context(), args[0], to, name, NewKey(), opts)
 		if err != nil {
 			return err
 		}
@@ -161,10 +166,41 @@ func (a *App) inspectCmd() *cobra.Command {
 	}}
 	c.Flags().StringVar(&to, "to", "", "destination profile ID (default destination if empty)")
 	c.Flags().StringVar(&name, "name", "", "root folder name")
+	opts.bind(c.Flags())
 	return c
 }
 
-func (a *App) makePlan(ctx context.Context, source, to, name, key string) (planView, *Response, error) {
+// planOpts are the copy choices that travel with a plan. Empty fields mean the
+// server default.
+type planOpts struct {
+	Shortcuts  string      // follow or skip
+	OnConflict string      // skip, rename or update
+	Filter     filter.Spec // selective sync; filled by validate from the filter flags
+	ff         filterFlags
+}
+
+func (o *planOpts) bind(f flagSet) {
+	f.StringVar(&o.Shortcuts, "shortcuts", "follow", "shortcut handling: follow or skip")
+	f.StringVar(&o.OnConflict, "on-conflict", "rename", "name already taken at the destination: skip, rename or update")
+	o.ff.bind(f)
+}
+
+func (o *planOpts) validate() error {
+	if o.Shortcuts != "" && o.Shortcuts != "follow" && o.Shortcuts != "skip" {
+		return usage("--shortcuts must be follow or skip")
+	}
+	if o.OnConflict != "" && o.OnConflict != "skip" && o.OnConflict != "rename" && o.OnConflict != "update" {
+		return usage("--on-conflict must be skip, rename or update")
+	}
+	spec, err := o.ff.spec()
+	if err != nil {
+		return err
+	}
+	o.Filter = spec
+	return nil
+}
+
+func (a *App) makePlan(ctx context.Context, source, to, name, key string, o planOpts) (planView, *Response, error) {
 	var plan planView
 	body := map[string]any{"source": source}
 	if to != "" {
@@ -172,6 +208,15 @@ func (a *App) makePlan(ctx context.Context, source, to, name, key string) (planV
 	}
 	if name != "" {
 		body["root_name"] = name
+	}
+	if o.Shortcuts != "" {
+		body["shortcuts"] = o.Shortcuts
+	}
+	if o.OnConflict != "" {
+		body["on_conflict"] = o.OnConflict
+	}
+	if o.Filter.Active() || o.Filter.KeepEmptyFolders {
+		body["filter"] = o.Filter
 	}
 	r, err := a.call(ctx, "POST", "/v1/plans", nil, body, key)
 	if err != nil {
@@ -286,9 +331,13 @@ func readStdinRef(r io.Reader) (string, error) {
 
 func (a *App) copyCmd() *cobra.Command {
 	var to, name, key string
+	var opts planOpts
 	var wait, useStdin, dry, autoName bool
 	var waitTimeout time.Duration
 	c := &cobra.Command{Use: "copy [SOURCE]", Short: "Plan and durably submit a server-side copy", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if err := opts.validate(); err != nil {
+			return err
+		}
 		var source string
 		switch {
 		case useStdin && len(args) == 1:
@@ -307,21 +356,21 @@ func (a *App) copyCmd() *cobra.Command {
 			return usage("give --name or --auto-name, not both")
 		}
 		if autoName {
-			plan, _, err := a.makePlan(cmd.Context(), source, to, "", NewKey())
+			plan, _, err := a.makePlan(cmd.Context(), source, to, "", NewKey(), opts)
 			if err != nil {
 				return err
 			}
 			name = autoCopyName(plan.SourceName)
 		}
 		if dry {
-			plan, r, err := a.makePlan(cmd.Context(), source, to, name, NewKey())
+			plan, r, err := a.makePlan(cmd.Context(), source, to, name, NewKey(), opts)
 			if err != nil {
 				return err
 			}
 			a.emit(r, plan.ID, func() { a.printPlan(plan) })
 			return nil
 		}
-		job, r, err := a.submitCopy(cmd.Context(), source, to, name, key)
+		job, r, err := a.submitCopy(cmd.Context(), source, to, name, key, opts)
 		if err != nil {
 			return err
 		}
@@ -340,6 +389,7 @@ func (a *App) copyCmd() *cobra.Command {
 	f := c.Flags()
 	f.StringVar(&to, "to", "", "destination profile ID")
 	f.StringVar(&name, "name", "", "root folder name")
+	opts.bind(f)
 	f.BoolVar(&autoName, "auto-name", false, "name the root \"<source> (copy YYYY-MM-DD)\"")
 	f.BoolVar(&wait, "wait", false, "follow the job; exit 0 only when it succeeds")
 	f.BoolVar(&useStdin, "stdin", false, "read exactly one reference from stdin")
@@ -350,10 +400,10 @@ func (a *App) copyCmd() *cobra.Command {
 }
 
 // submitCopy plans and submits with keys that survive a lost response.
-func (a *App) submitCopy(ctx context.Context, source, to, name, explicitKey string) (jobView, *Response, error) {
+func (a *App) submitCopy(ctx context.Context, source, to, name, explicitKey string, o planOpts) (jobView, *Response, error) {
 	var job jobView
 	ps := a.pending()
-	id := requestID(source, to, name, explicitKey)
+	id := requestID(source, to, name, explicitKey, o.Shortcuts, o.OnConflict, fmt.Sprint(o.Filter))
 	var planKey, jobKey string
 	if explicitKey != "" {
 		planKey, jobKey = explicitKey+"-plan", explicitKey
@@ -368,7 +418,7 @@ func (a *App) submitCopy(ctx context.Context, source, to, name, explicitKey stri
 		var ae *APIError
 		return errors.As(err, &ae) && ae.Status > 0 && ae.Status < 500 && ae.Status != 429
 	}
-	plan, _, err := a.makePlan(ctx, source, to, name, planKey)
+	plan, _, err := a.makePlan(ctx, source, to, name, planKey, o)
 	if err != nil {
 		if definitive(err) {
 			ps.release(id)

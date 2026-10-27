@@ -48,6 +48,15 @@ func jobDTO(j state.Job) map[string]any {
 		"last_error": failureDTO(j.LastError), "created_at": ts(j.CreatedAt), "updated_at": ts(j.UpdatedAt),
 		"resume_after": tsPtr(j.ResumeAfter),
 	}
+	if j.Shortcuts != "" {
+		out["shortcuts"] = j.Shortcuts
+	}
+	if j.OnConflict != "" {
+		out["on_conflict"] = j.OnConflict
+	}
+	if j.Filter.Active() {
+		out["filter"] = j.Filter
+	}
 	if j.Kind != "" {
 		out["kind"] = j.Kind
 		if j.AuditID != "" {
@@ -79,8 +88,28 @@ func planDTO(v app.PlanView) map[string]any {
 		"id": v.ID, "revision": v.Revision, "expires_at": ts(v.ExpiresAt), "source_id": v.SourceID, "source_name": v.SourceName,
 		"source_kind": kindDTO(v.SourceKind, v.SourceMime), "destination_id": v.DestinationID, "destination_revision": v.DestinationRevision,
 		"root_name": v.RootName, "warnings": v.Warnings,
-		"preview": map[string]any{"observed_files": v.Preview.ObservedFiles, "observed_folders": v.Preview.ObservedFolders, "scan_complete": v.Preview.ScanComplete},
+		"shortcuts": v.Shortcuts, "on_conflict": v.OnConflict,
+		"preview": previewDTO(v),
 	}
+}
+
+func previewDTO(v app.PlanView) map[string]any {
+	out := map[string]any{"observed_files": v.Preview.ObservedFiles, "observed_folders": v.Preview.ObservedFolders, "scan_complete": v.Preview.ScanComplete}
+	if v.Filter.Active() {
+		out["filter"] = map[string]any{
+			"included": v.Preview.FilterIncluded, "excluded": v.Preview.FilterExcluded,
+			"included_samples": nonNil(v.Preview.IncludedSamples), "excluded_samples": nonNil(v.Preview.ExcludedSamples),
+			"scope": "top_level",
+		}
+	}
+	return out
+}
+
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func destinationDTO(d state.Destination) map[string]any {
@@ -188,5 +217,13 @@ func (s *Server) collectionDTO(ctx context.Context, c state.Collection) (map[str
 		"id": c.ID, "source_id": c.SourceID, "source_name": c.SourceName, "source_kind": kindDTO(c.SourceKind, c.SourceMime),
 		"destination_id": c.DestinationID, "destination_root_id": c.RootID, "result_url": c.ResultURL, "baseline_job_id": c.BaselineJobID,
 		"state": collectionState(c.State), "revision": c.Revision, "sync": sync,
+		"filter": c.Filter, "on_conflict": nonEmpty(c.OnConflict, "rename"),
 	}, nil
+}
+
+func nonEmpty(v, def string) string {
+	if v == "" {
+		return def
+	}
+	return v
 }

@@ -247,7 +247,7 @@ func (a *App) menuCopy(ctx context.Context, p prompter) error {
 	if err != nil {
 		return err
 	}
-	job, _, err := a.submitCopy(ctx, link, "", "", "")
+	job, _, err := a.submitCopy(ctx, link, "", "", "", planOpts{})
 	if err != nil {
 		return err
 	}

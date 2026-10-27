@@ -178,3 +178,30 @@ copied-24h:     SEARCH copy_ledger USING INDEX sqlite_autoindex_copy_ledger_1 (p
 - `grep -rniE "tauri|cargo|rust|react|npm" --include=*.md .` chỉ còn câu nói về
   việc đã gỡ Rust/Tauri/React.
 - `docs/handoff/` đã xóa (spec nội bộ, không phải tài liệu sản phẩm).
+
+## Đợt C1 (K1 · D1 · N1 · S5)
+
+Đo trên cây giả 10 000 file / 1 000 thư mục (pageSize 1000, mỗi mode một tiến trình riêng, fake provider, không phải Drive thật):
+
+| Chỉ số | F1 (`after`, trước C1) | C1 `after` (không lọc) | C1 `filter` (loại 2/10 file) |
+| --- | --- | --- | --- |
+| `files.list` | 26 | **26** | **26** |
+| Thời gian khám phá | 2,35 s | 2,41 s | 3,16 s |
+| Heap sau copy | 21 MiB | 21 MiB | 19 MiB |
+| RSS đỉnh (`VmHWM`) | 71 924 kB | 71 792 kB | 69 104 kB |
+| Kết quả | succeeded | succeeded | succeeded, `filtered=2000` |
+
+Lệnh: `FASTLIST_MODE=after|filter go test -count=1 -run TestFastListTenThousand -timeout 900s -v ./internal/engine`.
+Lọc không thêm lệnh `files.list`. Thời gian khám phá tăng khoảng 30% ở chế độ lọc (một lần đo, chưa lặp nhiều lần).
+Chưa đo tổng thời gian job (có bước giữ tên DB cho mỗi mục copy).
+
+`EXPLAIN QUERY PLAN` cho truy vấn mới (nguyên văn từ `go test -v ./internal/state`):
+
+```
+name lookup (giữ tên N1):
+SEARCH items USING INDEX items_dest_name (dest_parent_id=? AND dest_name=?)
+prune (thư mục rỗng sau lọc S5):
+SEARCH items USING INDEX items_collection_kind_state (collection_id=? AND kind=? AND state=?)
+CORRELATED SCALAR SUBQUERY 1
+SEARCH c USING INDEX items_parent (collection_id=? AND parent_source_id=?)
+```

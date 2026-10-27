@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/itsgiahung/502Drive/internal/filter"
 	"net/http"
 	"strings"
 	"time"
@@ -83,15 +84,23 @@ func scope(p Principal, all bool) string {
 // ---- plans and jobs ----
 
 type PlanRequest struct {
-	Source        string `json:"source"`
-	DestinationID string `json:"destination_id"`
-	RootName      string `json:"root_name"`
+	Source        string      `json:"source"`
+	DestinationID string      `json:"destination_id"`
+	RootName      string      `json:"root_name"`
+	Shortcuts     string      `json:"shortcuts,omitempty"`
+	OnConflict    string      `json:"on_conflict,omitempty"`
+	Filter        filter.Spec `json:"filter,omitempty"`
 }
 
 type Preview struct {
 	ObservedFiles   int
 	ObservedFolders int
 	ScanComplete    bool
+	// Filter outcome for the entries listed above (top level only, one page).
+	FilterIncluded  int
+	FilterExcluded  int
+	IncludedSamples []string
+	ExcludedSamples []string
 }
 
 type PlanView struct {
@@ -119,6 +128,23 @@ func (s *Service) Inspect(ctx context.Context, p Principal, key string, req Plan
 	}
 	if req.RootName != "" && !validName(req.RootName) {
 		return PlanView{}, false, Fail(http.StatusBadRequest, "invalid_request", "root_name must be 1-255 characters without control characters.")
+	}
+	shortcuts := req.Shortcuts
+	if shortcuts == "" {
+		shortcuts = "follow"
+	}
+	if shortcuts != "follow" && shortcuts != "skip" {
+		return PlanView{}, false, Fail(http.StatusBadRequest, "invalid_request", "shortcuts must be follow or skip.")
+	}
+	if err := req.Filter.Validate(); err != nil {
+		return PlanView{}, false, Fail(http.StatusBadRequest, "invalid_filter", err.Error())
+	}
+	onConflict := req.OnConflict
+	if onConflict == "" {
+		onConflict = "rename"
+	}
+	if onConflict != "skip" && onConflict != "rename" && onConflict != "update" {
+		return PlanView{}, false, Fail(http.StatusBadRequest, "invalid_request", "on_conflict must be skip, rename or update.")
 	}
 	ref, err := drive.Parse(req.Source)
 	if err != nil {
@@ -163,7 +189,7 @@ func (s *Service) Inspect(ctx context.Context, p Principal, key string, req Plan
 	}
 	plan := state.Plan{ID: state.ID("plan"), Principal: p.ID, SourceID: src.ID, SourceName: src.Name, SourceKind: kind, SourceMime: src.MimeType, SourceSize: src.Size,
 		SourceVersion: src.Fingerprint(), ResourceKey: ref.Key, DestinationID: dst.ID, DestinationFolder: dst.FolderID, DestinationRevision: dst.Revision,
-		RootName: root, ExpiresAt: s.now().Add(planTTL).UTC(), Revision: 1}
+		RootName: root, Shortcuts: shortcuts, OnConflict: onConflict, Filter: req.Filter, ExpiresAt: s.now().Add(planTTL).UTC(), Revision: 1}
 	view := PlanView{Plan: plan, Warnings: []string{}}
 	if kind == state.KindFile {
 		view.Preview = Preview{ObservedFiles: 1, ScanComplete: true}
@@ -172,11 +198,18 @@ func (s *Service) Inspect(ctx context.Context, p Principal, key string, req Plan
 		if e != nil {
 			return PlanView{}, false, e
 		}
+		var match *filter.Matcher
+		if req.Filter.Active() {
+			match, _ = req.Filter.Compile() // validated above
+		}
 		for _, k := range kids {
 			if k.IsFolder() {
 				view.Preview.ObservedFolders++
 			} else {
 				view.Preview.ObservedFiles++
+			}
+			if match != nil {
+				view.Preview.addFilterSample(match, k)
 			}
 		}
 		view.Preview.ScanComplete = next == ""

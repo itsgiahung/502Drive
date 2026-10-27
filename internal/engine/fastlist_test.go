@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/filter"
 	"github.com/itsgiahung/502Drive/internal/state"
 )
 
@@ -180,10 +181,13 @@ func TestUnchangedSyncDoesNotOverScan(t *testing.T) {
 //
 //	FASTLIST_MODE=before go test -run TestFastListTenThousand -timeout 15m ./internal/engine
 //	FASTLIST_MODE=after  go test -run TestFastListTenThousand -timeout 15m ./internal/engine
+//
+// FASTLIST_MODE=filter runs the same tree with a selective-sync rule (S5) that
+// drops two of every ten files; it must list no more than the unfiltered run.
 func TestFastListTenThousand(t *testing.T) {
 	mode := os.Getenv("FASTLIST_MODE")
-	if mode != "before" && mode != "after" {
-		t.Skip("measurement probe: set FASTLIST_MODE=before|after")
+	if mode != "before" && mode != "after" && mode != "filter" {
+		t.Skip("measurement probe: set FASTLIST_MODE=before|after|filter")
 	}
 	if testing.Short() {
 		t.Skip("load test")
@@ -198,7 +202,12 @@ func TestFastListTenThousand(t *testing.T) {
 			e.fake.File(fmt.Sprintf("f%02d.bin", i), dir.ID, int64(i+1))
 		}
 	}
-	job := e.submit(src)
+	var job state.Job
+	if mode == "filter" {
+		job = e.submitFiltered(src, filter.Spec{Exclude: []string{"f0[05].bin"}})
+	} else {
+		job = e.submit(src)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	eng := e.engine()
@@ -248,9 +257,9 @@ func TestFastListTenThousand(t *testing.T) {
 	runtime.GC()
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
-	t.Logf("mode=%s folders=%d files=%d list_calls=%d discovery=%s heap=%d MiB peak_rss=%s",
+	t.Logf("mode=%s folders=%d files=%d list_calls=%d discovery=%s heap=%d MiB peak_rss=%s counts=%+v",
 		mode, folders, folders*perFolder, calls, discovery.Round(time.Millisecond),
-		ms.HeapAlloc/(1<<20), peakRSS())
+		ms.HeapAlloc/(1<<20), peakRSS(), j.Counts.SkippedByCode)
 }
 
 // peakRSS reads VmHWM on Linux; elsewhere it reports "n/a".

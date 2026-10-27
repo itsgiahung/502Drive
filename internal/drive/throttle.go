@@ -243,6 +243,15 @@ func (p pacedProvider) FindByIntent(ctx context.Context, parent, intent string) 
 	return f, err
 }
 
+func (p pacedProvider) FindChildrenByName(ctx context.Context, parent, name string) ([]File, error) {
+	if err := p.read(ctx); err != nil {
+		return nil, err
+	}
+	f, err := p.Provider.FindChildrenByName(ctx, parent, name)
+	p.t.Observe(err)
+	return f, err
+}
+
 func (p pacedProvider) StartPageToken(ctx context.Context) (string, error) {
 	if err := p.read(ctx); err != nil {
 		return "", err

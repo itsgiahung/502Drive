@@ -180,9 +180,8 @@ func TestLifecycleResumeProbesWithBackoffThenOpensTheGate(t *testing.T) {
 	if len(delays) < 2 || delays[0] <= 0 || delays[1] <= delays[0] {
 		t.Fatalf("delays = %v", delays)
 	}
-	if r.wakes.Load() == 0 {
-		t.Fatal("the engine was not woken after the probe")
-	}
+	// The gate can read as open a moment before the wake callback runs.
+	waitFor(t, "the engine to be woken after the probe", func() bool { return r.wakes.Load() > 0 })
 	v := r.l.view()
 	if v.State != stateRunning || !v.Online {
 		t.Fatalf("view = %+v", v)

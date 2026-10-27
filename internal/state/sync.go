@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/itsgiahung/502Drive/internal/schedule"
 )
@@ -399,7 +400,7 @@ func admitRun(ctx context.Context, tx *sql.Tx, c Collection, trigger, occurrence
 	}
 	now := time.Now().UTC()
 	j := Job{ID: ID("job"), Principal: principal, CollectionID: c.ID, Trigger: trigger, SourceName: c.SourceName, DestinationID: c.DestinationID, RootName: c.RootName,
-		State: JobQueued, DesiredState: "run", Revision: 1, CreatedAt: now, UpdatedAt: now}
+		State: JobQueued, DesiredState: "run", Shortcuts: c.Shortcuts, OnConflict: c.OnConflict, Filter: c.Filter, Revision: 1, CreatedAt: now, UpdatedAt: now}
 	jb, _ := json.Marshal(j)
 	if _, err := tx.ExecContext(ctx, "INSERT INTO jobs VALUES(?,?,?,?,?)", j.ID, principal, c.ID, j.State, jb); err != nil {
 		return Job{}, false, err
@@ -746,19 +747,31 @@ type DeltaStats struct{ New, Changed, Moved int }
 func (s *Store) CommitDeltaPage(ctx context.Context, run string, folder Item, children []Item, nextToken string) (DeltaStats, error) {
 	var st DeltaStats
 	err := s.tx(ctx, func(tx *sql.Tx) error {
+		// The folder may have been renamed or moved earlier in this run, and
+		// the copy of its row that the scanner holds can be older than that:
+		// read its stored path inside this transaction.
+		folderRel := folder.RelPath
+		if e := tx.QueryRowContext(ctx, "SELECT rel_path FROM items WHERE collection_id=? AND source_id=?", folder.CollectionID, folder.SourceID).Scan(&folderRel); e != nil && !errors.Is(e, sql.ErrNoRows) {
+			return e
+		}
 		for _, c := range children {
+			c.RelPath = joinRel(folderRel, c.Name)
 			ex, e := scanItem(tx.QueryRowContext(ctx, "SELECT "+itemCols+" FROM items WHERE collection_id=? AND source_id=?", folder.CollectionID, c.SourceID))
 			size := sql.NullInt64{}
 			if c.Size != nil {
 				size = sql.NullInt64{Int64: *c.Size, Valid: true}
 			}
 			if errors.Is(e, sql.ErrNoRows) {
+				stState := ItemPending
+				if c.State != "" {
+					stState = c.State
+				}
 				ls := "done"
-				if c.Kind == KindFolder {
+				if c.Kind == KindFolder && stState == ItemPending {
 					ls = "none"
 				}
-				_, e = tx.ExecContext(ctx, `INSERT INTO items(collection_id,source_id,job_id,parent_source_id,kind,name,mime_type,resource_key,size,shortcut_target,shortcut_target_mime,fingerprint,state,list_state,seen_job)
-					VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)`, folder.CollectionID, c.SourceID, run, folder.SourceID, c.Kind, c.Name, c.MimeType, c.ResourceKey, size, c.ShortcutTarget, c.ShortcutTargetMim, c.Fingerprint, ls, run)
+				_, e = tx.ExecContext(ctx, `INSERT INTO items(collection_id,source_id,job_id,parent_source_id,kind,name,mime_type,resource_key,size,shortcut_target,shortcut_target_mime,fingerprint,state,error_code,list_state,seen_job,rel_path)
+					VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, folder.CollectionID, c.SourceID, run, folder.SourceID, c.Kind, c.Name, c.MimeType, c.ResourceKey, size, c.ShortcutTarget, c.ShortcutTargetMim, c.Fingerprint, stState, c.ErrorCode, ls, run, c.RelPath)
 				if e != nil {
 					return e
 				}
@@ -767,6 +780,30 @@ func (s *Store) CommitDeltaPage(ctx context.Context, run string, folder Item, ch
 			}
 			if e != nil {
 				return e
+			}
+			switch {
+			case c.ErrorCode == SkipFiltered:
+				if e = applyFilterDecision(ctx, tx, run, folder, c, ex); e != nil {
+					return e
+				}
+				continue
+			case ex.State == ItemSkipped && ex.ErrorCode == SkipFiltered:
+				if c.State == ItemSkipped { // excluded for another reason now: stays out
+					if _, e = tx.ExecContext(ctx, "UPDATE items SET seen_job=? WHERE collection_id=? AND source_id=?", run, ex.CollectionID, ex.SourceID); e != nil {
+						return e
+					}
+					continue
+				}
+				if e = applyFilterDecision(ctx, tx, run, folder, c, ex); e != nil {
+					return e
+				}
+				st.New++
+				continue
+			}
+			if c.RelPath != "" && ex.RelPath != c.RelPath {
+				if e = moveRelPath(ctx, tx, ex.CollectionID, ex.SourceID, ex.RelPath, c.RelPath); e != nil {
+					return e
+				}
 			}
 			moved := ex.ParentSourceID != folder.SourceID
 			if c.Kind == KindFolder {
@@ -807,6 +844,62 @@ func (s *Store) CommitDeltaPage(ctx context.Context, run string, folder Item, ch
 		return e
 	})
 	return st, err
+}
+
+// joinRel is the path of an entry named name below a folder at rel.
+func joinRel(rel, name string) string {
+	if rel == "" {
+		return name
+	}
+	return rel + "/" + name
+}
+
+// moveRelPath rewrites the stored path of an object and of everything below
+// it after a rename or move, so path rules keep matching the current source.
+// Descendants keep their suffix: "old/x" becomes "new/x".
+func moveRelPath(ctx context.Context, tx *sql.Tx, collectionID, sourceID, oldRel, newRel string) error {
+	if oldRel == "" {
+		_, err := tx.ExecContext(ctx, "UPDATE items SET rel_path=? WHERE collection_id=? AND source_id=?", newRel, collectionID, sourceID)
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `WITH RECURSIVE sub(source_id) AS (
+			SELECT ? UNION ALL SELECT i.source_id FROM items i JOIN sub ON i.collection_id=? AND i.parent_source_id=sub.source_id)
+		UPDATE items SET rel_path = ? || substr(rel_path, ?) WHERE collection_id=? AND source_id IN (SELECT source_id FROM sub)`,
+		sourceID, collectionID, newRel, utf8.RuneCountInString(oldRel)+1, collectionID)
+	return err
+}
+
+// applyFilterDecision reconciles an existing object with the filter as it is
+// now. A filter change never deletes or re-copies what was already copied:
+//   - still filtered and already copied, or already excluded: left as it is;
+//   - still filtered and not yet written (pending or failed): excluded now;
+//   - in flight (executing, reconciling): left alone until it settles;
+//   - was excluded and is now included: it becomes copyable (a folder is listed).
+func applyFilterDecision(ctx context.Context, tx *sql.Tx, run string, folder Item, c, ex Item) error {
+	if c.ErrorCode == SkipFiltered {
+		switch ex.State {
+		case ItemPending, ItemFailed, ItemBlocked:
+			if c.Kind == KindFolder {
+				break // a folder with children already listed is not pulled out from under them
+			}
+			_, e := tx.ExecContext(ctx, "UPDATE items SET state='skipped', error_code=?, seen_job=? WHERE collection_id=? AND source_id=?", SkipFiltered, run, ex.CollectionID, ex.SourceID)
+			return e
+		}
+		_, e := tx.ExecContext(ctx, "UPDATE items SET seen_job=? WHERE collection_id=? AND source_id=?", run, ex.CollectionID, ex.SourceID)
+		return e
+	}
+	// Included now, excluded before and never written: make it copyable.
+	ls := "done"
+	if c.Kind == KindFolder {
+		ls = "none"
+	}
+	size := sql.NullInt64{}
+	if c.Size != nil {
+		size = sql.NullInt64{Int64: *c.Size, Valid: true}
+	}
+	_, e := tx.ExecContext(ctx, `UPDATE items SET name=?, mime_type=?, size=?, fingerprint=?, parent_source_id=?, rel_path=?, state='pending', error_code='', list_state=?, op='create', job_id=?, seen_job=?, attempts=0, next_attempt_at=0
+		WHERE collection_id=? AND source_id=?`, c.Name, c.MimeType, size, c.Fingerprint, folder.SourceID, c.RelPath, ls, run, run, ex.CollectionID, ex.SourceID)
+	return e
 }
 
 // ApplySingleFile compares the one file of a file-source collection.

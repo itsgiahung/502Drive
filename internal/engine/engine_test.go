@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -105,7 +106,20 @@ func tree(f *drivetest.Fake, id, prefix string) []string {
 	return out
 }
 
+// foldConflictNames undoes the N1 suffix for the duplicate in sample(): the
+// second "dup" in one folder is copied as "dup (2)", and which of the two gets
+// the plain name depends on the order the workers claim them.
+func foldConflictNames(lines []string) []string {
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = strings.ReplaceAll(l, "dup (2)|", "dup|")
+	}
+	sort.Strings(out)
+	return out
+}
+
 func sample(f *drivetest.Fake) drive.File {
+	target := f.File("elsewhere", "root", 10)
 	root := f.Folder("Project Alpha", "root")
 	f.File("a.bin", root.ID, 10)
 	f.File("dup", root.ID, 1)
@@ -115,8 +129,7 @@ func sample(f *drivetest.Fake) drive.File {
 	f.Folder("empty", sub.ID)
 	deep := f.Folder("deep", sub.ID)
 	f.File("we/ird\nname", deep.ID, 5)
-	f.Put("link", drive.MimeShortcut, root.ID, -1)
-	f.Mutate(f.Children(root.ID)[len(f.Children(root.ID))-1].ID, func(x *drive.File) { x.ShortcutTargetID = "elsewhere12345" })
+	f.Shortcut("link", root.ID, target.ID)
 	return root
 }
 
@@ -132,7 +145,7 @@ func TestCopyPreservesTreeNamesAndEmptyFolders(t *testing.T) {
 	if len(copies) != 1 || copies[0].Name != "Project Alpha" || copies[0].ID == src.ID {
 		t.Fatalf("destination: %+v", copies)
 	}
-	want, got := tree(e.fake, src.ID, ""), tree(e.fake, copies[0].ID, "")
+	want, got := tree(e.fake, src.ID, ""), foldConflictNames(tree(e.fake, copies[0].ID, ""))
 	if fmt.Sprint(want) != fmt.Sprint(got) {
 		t.Fatalf("tree differs\nwant %q\ngot  %q", want, got)
 	}
@@ -190,7 +203,7 @@ func TestLostResponseIsReconciledNotDuplicated(t *testing.T) {
 		t.Fatalf("fault not exercised: %d", lost)
 	}
 	copies := e.fake.Children(e.dest.ID)
-	if len(copies) != 1 || fmt.Sprint(tree(e.fake, src.ID, "")) != fmt.Sprint(tree(e.fake, copies[0].ID, "")) {
+	if len(copies) != 1 || fmt.Sprint(tree(e.fake, src.ID, "")) != fmt.Sprint(foldConflictNames(tree(e.fake, copies[0].ID, ""))) {
 		t.Fatal("duplicates or missing output after lost responses")
 	}
 	if e.fake.Writes != 10 { // 10 objects, each written exactly once
@@ -224,7 +237,7 @@ func TestCrashBetweenWriteAndRecordAdoptsOutputOnRestart(t *testing.T) {
 		t.Fatalf("state %s %+v", j.State, j.LastError)
 	}
 	copies := e.fake.Children(e.dest.ID)
-	if fmt.Sprint(tree(e.fake, src.ID, "")) != fmt.Sprint(tree(e.fake, copies[0].ID, "")) {
+	if fmt.Sprint(tree(e.fake, src.ID, "")) != fmt.Sprint(foldConflictNames(tree(e.fake, copies[0].ID, ""))) {
 		t.Fatal("restart duplicated or lost output")
 	}
 }

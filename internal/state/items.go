@@ -15,12 +15,12 @@ func intentKey(collection, source, destParent, kind string, generation int) stri
 	return hex.EncodeToString(h[:16])
 }
 
-const itemCols = `collection_id,source_id,job_id,parent_source_id,kind,name,mime_type,resource_key,size,shortcut_target,shortcut_target_mime,fingerprint,generation,intent_key,state,dest_parent_id,dest_id,attempts,next_attempt_at,error_code,list_state,page_token,op,seen_job,scan_job,old_dest_id`
+const itemCols = `collection_id,source_id,job_id,parent_source_id,kind,name,mime_type,resource_key,size,shortcut_target,shortcut_target_mime,fingerprint,generation,intent_key,state,dest_parent_id,dest_id,attempts,next_attempt_at,error_code,list_state,page_token,op,seen_job,scan_job,old_dest_id,conflict_action,dest_name,rel_path`
 
 func scanItem(r interface{ Scan(...any) error }) (Item, error) {
 	var it Item
 	var size sql.NullInt64
-	err := r.Scan(&it.CollectionID, &it.SourceID, &it.JobID, &it.ParentSourceID, &it.Kind, &it.Name, &it.MimeType, &it.ResourceKey, &size, &it.ShortcutTarget, &it.ShortcutTargetMim, &it.Fingerprint, &it.Generation, &it.IntentKey, &it.State, &it.DestParentID, &it.DestID, &it.Attempts, &it.NextAttemptAt, &it.ErrorCode, &it.ListState, &it.PageToken, &it.Op, &it.SeenJob, &it.ScanJob, &it.OldDestID)
+	err := r.Scan(&it.CollectionID, &it.SourceID, &it.JobID, &it.ParentSourceID, &it.Kind, &it.Name, &it.MimeType, &it.ResourceKey, &size, &it.ShortcutTarget, &it.ShortcutTargetMim, &it.Fingerprint, &it.Generation, &it.IntentKey, &it.State, &it.DestParentID, &it.DestID, &it.Attempts, &it.NextAttemptAt, &it.ErrorCode, &it.ListState, &it.PageToken, &it.Op, &it.SeenJob, &it.ScanJob, &it.OldDestID, &it.ConflictAction, &it.DestName, &it.RelPath)
 	if size.Valid {
 		v := size.Int64
 		it.Size = &v
@@ -181,13 +181,19 @@ func (s *Store) CommitPage(ctx context.Context, folder Item, children []Item, ne
 			if c.Size != nil {
 				size = sql.NullInt64{Int64: *c.Size, Valid: true}
 			}
+			st := "pending"
+			if c.State != "" {
+				st = c.State
+			}
+			// A folder that is listed later must be pending; a folder the
+			// filter removed is never listed, so its children are never read.
 			ls := "done"
-			if c.Kind == KindFolder {
+			if c.Kind == KindFolder && st == ItemPending {
 				ls = "none"
 			}
-			_, e := tx.ExecContext(ctx, `INSERT OR IGNORE INTO items(collection_id,source_id,job_id,parent_source_id,kind,name,mime_type,resource_key,size,shortcut_target,shortcut_target_mime,fingerprint,state,list_state)
-				VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'pending',?)`,
-				folder.CollectionID, c.SourceID, folder.JobID, folder.SourceID, c.Kind, c.Name, c.MimeType, c.ResourceKey, size, c.ShortcutTarget, c.ShortcutTargetMim, c.Fingerprint, ls)
+			_, e := tx.ExecContext(ctx, `INSERT OR IGNORE INTO items(collection_id,source_id,job_id,parent_source_id,kind,name,mime_type,resource_key,size,shortcut_target,shortcut_target_mime,fingerprint,state,error_code,list_state,rel_path)
+				VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				folder.CollectionID, c.SourceID, folder.JobID, folder.SourceID, c.Kind, c.Name, c.MimeType, c.ResourceKey, size, c.ShortcutTarget, c.ShortcutTargetMim, c.Fingerprint, st, c.ErrorCode, ls, c.RelPath)
 			if e != nil {
 				return e
 			}
@@ -204,6 +210,12 @@ func (s *Store) CommitPage(ctx context.Context, folder Item, children []Item, ne
 // FailListing records a listing failure; the subtree stays "not scanned".
 func (s *Store) FailListing(ctx context.Context, folder Item, code string) error {
 	_, err := s.db.ExecContext(ctx, "UPDATE items SET list_state='failed', error_code=? WHERE collection_id=? AND source_id=?", code, folder.CollectionID, folder.SourceID)
+	return err
+}
+
+// SkipItem marks an item skipped with a stable error code.
+func (s *Store) SkipItem(ctx context.Context, it Item, code string) error {
+	_, err := s.db.ExecContext(ctx, "UPDATE items SET state='skipped', error_code=? WHERE collection_id=? AND source_id=?", code, it.CollectionID, it.SourceID)
 	return err
 }
 

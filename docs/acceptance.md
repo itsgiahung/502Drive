@@ -26,7 +26,7 @@ pass nếu thiếu test tương ứng. Test live/fake được ghi rõ.
 | C1 | Nested + empty folder | local | `TestCopyPreservesTreeNamesAndEmptyFolders` |
 | C2 | Trùng tên, Unicode/control char | local | như trên + [tui_test.go](../internal/tui/tui_test.go) `TestInjectionIsSanitized`, [telegram_test.go](../internal/telegram/telegram_test.go) escape |
 | C3 | Binary/native file, single-file wrapper | local | `TestSingleFileCollectionPicksUpNewVersion`, `TestCopyPreservesTreeNamesAndEmptyFolders` |
-| C4 | Shortcut ngoài cây/root shortcut | local (một phần) | `TestPlanRejectsDestinationInsideSourceAndBadInput` (root); shortcut trong cây chưa có test riêng |
+| C4 | Shortcut: theo đích 1 cấp, vòng lặp, chính sách skip | local | [skipped_test.go](../internal/engine/skipped_test.go) `TestSkippedClassificationCodes`, `TestShortcutSkipPolicy` |
 | C5 | Resource key/Shared Drive | local (một phần) | [reference_test.go](../internal/drive/reference_test.go); Shared Drive live: chưa |
 | C6 | Source = destination/descendant | local | `TestPlanRejectsDestinationInsideSourceAndBadInput` |
 | C7 | Pagination + crash checkpoint | local | `TestCopyPreservesTreeNamesAndEmptyFolders` (`PageSize=2`) |
@@ -198,6 +198,68 @@ power source trong test; mô phỏng không thay thế kiểm trên OS thật.
 | A2-Q1-7 | Migration 007→008 có dữ liệu, `foreign_key_check` sạch | local | `TestMigration008AddsTheCopyLedger` |
 | A2-Q1-8 | Job DTO có `resume_after` (null khi không) + conformance OpenAPI | local | [httpapi](../internal/httpapi/server_test.go) conformance chung |
 | A2-Q1-9 | Quota/reset thật của Google, storage thật | chưa chạy | cần live harness |
+
+## Phân loại skipped và Shortcut policy (K1)
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| C1-K1-1 | Shortcut trỏ mục không tồn tại / trashed → `shortcut_unresolved` | local | [engine/skipped_test.go](../internal/engine/skipped_test.go) `TestSkippedClassificationCodes` |
+| C1-K1-2 | Shortcut tự trỏ mình / vòng lặp A-B-A → `shortcut_loop` | local | `TestSkippedClassificationCodes` |
+| C1-K1-3 | Shortcut trỏ target là shortcut (1 cấp) trỏ file hợp lệ → tạo shortcut trỏ target cuối | local | `TestSkippedClassificationCodes` |
+| C1-K1-4 | File không quyền copy (`canCopy=false`) → `cannot_copy` | local | `TestSkippedClassificationCodes` |
+| C1-K1-5 | Google native chỉ export (`application/vnd.google-apps.map`) → `google_native_export_only` | local | `TestSkippedClassificationCodes` |
+| C1-K1-6 | File quá hạn mức dung lượng → `too_large_for_quota` (chỉ khi API trả lý do này; test dùng lý do giả, Google thật chưa xác nhận) | local (giả lập) | `TestSkippedClassificationCodes` |
+| C1-K1-7 | Chính sách `--shortcuts skip` → bỏ qua shortcut với `shortcut_unresolved` | local | `TestShortcutSkipPolicy` |
+| C1-K1-8 | Đếm theo mã `skipped_by_code` trong Job Counts + OpenAPI | local (state/engine); JSON HTTP chưa có test riêng | `TestSkippedClassificationCodes`; schema trong `docs/contracts/openapi.json` |
+| C1-K1-9 | Lỗi tạm (mất mạng, throttle, 5xx) khi tra cứu shortcut KHÔNG thành `shortcut_unresolved`; được thử lại | local | [engine/skipped_test.go](../internal/engine/skipped_test.go) `TestShortcutLookupOfflineIsRetriedNotSkipped` |
+| C1-K1-10 | Target bị từ chối quyền (403/404) → `shortcut_unresolved` | local | `TestShortcutForbiddenTargetIsUnresolved` |
+
+## Hỗ trợ Shared Drives (D1)
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| C1-D1-1 | Chế độ Shared Drive trong Fake provider (tạo SD, kế thừa `driveId`, phân quyền) | local | [drive/shared_drive_test.go](../internal/drive/shared_drive_test.go) `TestSharedDriveFakeMode` |
+| C1-D1-2 | Quyền xem trong Shared Drive (file bị cấm copy báo 403 `copy_not_permitted` khi inspect) | local | [app/shared_drive_test.go](../internal/app/shared_drive_test.go) `TestSharedDriveAppPermissions` |
+| C1-D1-3 | Quyền ghi trong Shared Drive (đích không có quyền ghi báo 409 `destination_not_writable` khi inspect) | local | [app/shared_drive_test.go](../internal/app/shared_drive_test.go) `TestSharedDriveAppPermissions` |
+| C1-D1-4 | Mọi lệnh Files/Changes của client Drive v3 gửi `supportsAllDrives` (list gửi thêm `includeItemsFromAllDrives`) | local | [drive/client_test.go](../internal/drive/client_test.go) `TestEveryFilesCallSendsSharedDriveFlags`, `TestRequestsCarryResourceKeysSharedDriveFlagsAndIntentTags` |
+| C1-D1-6 | Tệp trong Shared Drive mà tài khoản không được copy → `cannot_copy`, các tệp khác vẫn copy | local | [engine/skipped_test.go](../internal/engine/skipped_test.go) `TestSharedDriveRestrictedFileSkippedAsCannotCopy` |
+| C1-D1-5 | Kiểm tra OAuth scope cho Shared Drive: đủ quyền với scope `drive` hiện có | đọc code, không có test; Shared Drive thật chưa chạy | `auth.go` + [docs/design/d1-shared-drives.md](design/d1-shared-drives.md) |
+
+## Trùng tên ở đích (N1)
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| C1-N1-1 | Hai tệp khác nội dung cùng tên trong một thư mục, mặc định `rename`: giữ cả hai, tệp sau thành `name (2).ext`, quyết định lưu trong item | local | [engine/conflict_test.go](../internal/engine/conflict_test.go) `TestDuplicateNameRenamesByDefaultAndStoresDecision` |
+| C1-N1-2 | `skip`: tệp trùng tên không được ghi, đếm `conflict` | local | `TestSkipPolicyLeavesTheConflictingFileOut` |
+| C1-N1-3 | Trùng nội dung (cùng size và md5) → không ghi lại, dưới mọi chính sách | local | `TestIdenticalContentIsNotCopiedTwice` |
+| C1-N1-4 | `update`: thêm bản cùng tên, không xóa hay ghi đè bản khác (xóa bản cũ CHƯA làm) | local (một phần) | `TestUpdatePolicyAddsSameNameWithoutRemovingOthers` |
+| C1-N1-5 | Thư mục trùng tên luôn đổi tên, kể cả khi `skip` (không bỏ cả cây con) | local | `TestFolderNameClashIsRenamedUnderSkipPolicy` |
+| C1-N1-6 | Thư mục gốc trùng tên thư mục đích do người khác tạo: đổi tên, không chạm vào thư mục đó | local | `TestWrapperRenamesAroundForeignFolderAndLeavesItAlone` |
+| C1-N1-7 | Kiểm tra tên ở Drive bị offline giữa chừng: thử lại, không báo lỗi | local | `TestWrapperNameCheckOfflineIsRetried` |
+| C1-N1-8 | Quyết định lưu bền vững (không đổi sau mở lại DB), chỗ đã giữ tên không bị nhả khi bỏ qua | local | [state/conflict_test.go](../internal/state/conflict_test.go) `TestDecisionSurvivesReopen` |
+| C1-N1-9 | Migration 010 giữ dữ liệu, đánh dấu tên đã có (backfill), chỉ mục `items_dest_name` được dùng | local | `TestMigration010BackfillsReservedNamesAndIndexesThem` |
+| C1-N1-10 | Công thức hậu tố giữ phần mở rộng (`archive (2).tar.gz`, `README (2)`, `.bashrc (2)`) | local | `TestConflictNamesKeepExtensions` |
+| C1-N1-11 | Trùng tên khi kiểm tra hàng loạt trên Drive (không thêm lệnh list cho mỗi mục) | local (đo: xem verification) | `TestFastListTenThousand` (list_calls = 26) |
+| C1-N1-12 | Trùng tên thật trên Drive / quyền Shared Drive thật | chưa chạy | cần live harness |
+
+## Lọc khi đồng bộ (S5)
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| C1-S5-1 | Glob theo tên và theo đường dẫn (`**`, Unicode), exclude thắng include | local | [filter/filter_test.go](../internal/filter/filter_test.go) `TestGlobByNameAndPath`, `TestExcludeWinsOverInclude` |
+| C1-S5-2 | Đuôi (`ext:`), lớp MIME (`class:`), kích thước, thời điểm sửa | local | `TestExtensionAndClassRules`, `TestSizeAndModifiedBounds` |
+| C1-S5-3 | Quy tắc sai bị từ chối trước khi lưu (400 `invalid_filter`) | local | `TestInvalidSpecsAreRejected`, `TestPlanPreviewCountsAndSamplesTheFilter` |
+| C1-S5-4 | Tệp bị loại không bao giờ được ghi (đếm `filtered`) | local | [engine/filter_test.go](../internal/engine/filter_test.go) `TestFilterDropsExcludedFilesBeforeTheyAreCopied` |
+| C1-S5-5 | Thư mục không còn gì sau lọc không được tạo; `keep_empty_folders` giữ lại | local | `TestFilteredFoldersAreNotCreatedUnlessKept` |
+| C1-S5-6 | Glob loại thư mục loại cả cây con, không đọc các cây đó | local | `TestGlobExcludeOfAFolderSkipsTheWholeSubtree` |
+| C1-S5-7 | Quy tắc theo đường dẫn tương đối được lưu; đổi tên thư mục cập nhật đường dẫn bên dưới | local | `TestPathRulesApplyBelowTheRootAndAreStored`, `TestRenamedFolderUpdatesStoredPathsBelow` |
+| C1-S5-8 | Đổi filter không xóa gì ở đích; mục bị loại trước đó được copy khi cho phép | local | `TestFilterChangeKeepsCopiesAndAppliesToLaterRuns` |
+| C1-S5-9 | Kiểm tra revision khi đặt filter (409 khi cũ) | local | `TestSetCollectionFilterChecksRevision`, [httpapi/filter_test.go](../internal/httpapi/filter_test.go) `TestCollectionFilterRoutesConformAndRefuseStaleRevisions` |
+| C1-S5-10 | Xem trước: số tệp/thư mục đạt và bị loại (cấp cao nhất, một trang) + 10 mẫu mỗi loại | local | `TestPlanPreviewCountsAndSamplesTheFilter` |
+| C1-S5-11 | Lọc không thêm lệnh `files.list` trên cây 10k file / 1k thư mục | local | `FASTLIST_MODE=filter` (xem verification) |
+| C1-S5-12 | Cờ CLI `--include/--exclude/--ext/--min-size/--max-size/--filter-file`, `sync filter show|set` | local (phân tích cờ) | [cli/filter_test.go](../internal/cli/filter_test.go) |
+| C1-S5-13 | Quy tắc lọc đổi giữa các lần chạy trên cây thật của Drive | chưa chạy | cần live harness |
+| C1-S5-14 | Móc giao diện TUI/Telegram cho lọc (preset, hộp thoại) | chưa làm: xem "Móc UI cho Claude" trong PROGRESS | — |
 
 ## Vận hành, release, login
 

@@ -121,7 +121,7 @@ func (a *App) tuiMkdir(ctx context.Context, parentID, name string) (tui.DriveIte
 
 // tuiInspect is the read-only preview of a copy; each call is a fresh plan.
 func (a *App) tuiInspect(ctx context.Context, source, destinationID, rootName string) (tui.Plan, error) {
-	plan, _, err := a.makePlan(ctx, source, destinationID, rootName, NewKey())
+	plan, _, err := a.makePlan(ctx, source, destinationID, rootName, NewKey(), planOpts{})
 	if err != nil {
 		return tui.Plan{}, err
 	}
