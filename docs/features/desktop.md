@@ -68,7 +68,7 @@ hợp đồng).
   chạy tay `502drive tray` vẫn được — thư viện tự đăng ký lại khi watcher xuất hiện
   (shell restart). Daemon + CLI vẫn chạy (chế độ không tray).
 
-- Icon vẽ bằng `image` stdlib, 5 trạng thái (idle/busy/needs/error/offline), PNG
+- Icon vẽ bằng `image` stdlib, 7 trạng thái (offline, error, warning/needs, reconnecting, paused, running/busy, idle), PNG
   cho Linux, ICO (PNG bên trong) cho Windows; busy tối đa 4fps, `--no-motion` tắt.
 - Poll: 3s khi có job chạy, 10s khi idle, backoff 5→30s khi daemon tắt.
 - Headless: thiếu `DBUS_SESSION_BUS_ADDRESS` (Linux) hoặc platform không hỗ trợ
@@ -108,8 +108,9 @@ Bubble Tea kể cả khi panic ([run.go](../../internal/tui/run.go)).
 
 ## Chưa hỗ trợ
 
-- Notification desktop từ tray (chỉ tooltip/status).
-- Autostart mặc định (desktop file kèm hướng dẫn copy vào `~/.config/autostart`).
+- Notification desktop từ tray: chỉ có trên Linux (`notify-send`), Windows chưa có.
+- Autostart **không tự bật khi cài**: phải chạy `502drive autostart enable`
+  (XDG/Run key) hoặc `502drive autostart systemd install` (unit `--user` tự khởi động lại sau crash).
 - macOS tray (systray cần CGO; CLI/daemon vẫn chạy).
 - Ký code, auto-update, packaging AppImage/flatpak/snap.
 - Acceptance thật trên KDE/GNOME/Windows 10/11 chưa chạy trong phiên này.

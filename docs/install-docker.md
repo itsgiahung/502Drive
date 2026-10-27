@@ -85,10 +85,14 @@ docker compose up -d
 ## Cập nhật image
 
 ```bash
+# backup trước khi migration mới (migration chỉ tiến, không lùi được)
+docker compose stop
+docker compose run --rm 502drive backup /data/backups/$(date +%F)
 git pull
 docker compose build --pull
 docker compose up -d                    # recreate; migration tự chạy, chỉ tiến
 docker compose exec -it 502drive 502drive healthcheck
+docker compose exec -it 502drive 502drive doctor
 ```
 
 Rollback: `docker tag 502drive:latest 502drive:previous` trước khi build, hoặc

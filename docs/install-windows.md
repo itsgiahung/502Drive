@@ -17,6 +17,8 @@ kiểm SHA256 trước khi chạy. Chưa acceptance trên Windows 10/11 trong ph
   chạy ISCC thật nên phần này chưa được kiểm chứng.
 - **Zip:** giải nén, chạy `502drive.exe setup` trong terminal (config/token file
   private), sau đó `502drive.exe serve` hoặc `502drive-tray.exe`.
+- Autostart có thể bật sau khi cài: `502drive autostart enable|disable|status`
+  (khóa Run `HKCU\...\Run`, chạy `502drive up --quiet`).
 
 Xác minh: `Get-FileHash .\502drive-setup.exe -Algorithm SHA256` so với file
 `.sha256` trong release.
@@ -42,11 +44,13 @@ Xác minh: `Get-FileHash .\502drive-setup.exe -Algorithm SHA256` so với file
 
 ## Tray
 
-- Icon 5 trạng thái; menu: Open TUI (mở `wt.exe`/`cmd` chạy `502drive menu`),
+- Icon 7 trạng thái; menu: Open TUI (mở `wt.exe`/`cmd` chạy `502drive menu`),
   Copy link trong clipboard (`Get-Clipboard`), Jobs & thư viện, mở folder kết quả
-  gần nhất, Start/Stop daemon, Quit.
-- `Stop daemon` dùng `taskkill /IM 502drive.exe /F` (chỉ daemon console, không
-  phải tray).
+  gần nhất, Tạm dừng/Tiếp tục hàng đợi, Start/Stop daemon, Quit.
+- `Stop daemon` **luôn** qua HTTP `POST /v1/shutdown` (graceful), không dùng
+  `taskkill`; job đang chạy tiếp tục ở lần mở sau. Đóng tray không dừng daemon
+  trừ khi bật `tray_quit_stops_daemon: true`.
+- Kiểm tra: `502drive doctor` (thêm `--fix` để sửa quyền/thư mục cục bộ).
 
 ## Gỡ
 

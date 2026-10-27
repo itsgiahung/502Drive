@@ -54,8 +54,11 @@ của home (`ProtectHome=read-only`). Data dir khác cần drop-in thêm
 - Menu ứng dụng: **502Drive** → chạy `502drive tray` (icon khay).
 - Cần phiên desktop có StatusNotifier/D-Bus; GNOME cần extension AppIndicator.
   Không có `DBUS_SESSION_BUS_ADDRESS` → tray báo lỗi và gợi ý `502drive menu`.
-- Autostart **không** bật mặc định: copy `502drive-tray.desktop` vào
-  `~/.config/autostart/` nếu muốn.
+- Autostart **không** bật mặc định. Chọn một cách:
+  `502drive autostart enable` (XDG `.desktop` chạy `502drive up --quiet` lúc đăng
+  nhập) hoặc `502drive autostart systemd install` (unit `--user` có
+  `Restart=on-failure`, chỉ daemon). Đừng bật cả hai; `502drive doctor` kiểm unit,
+  `502drive autostart systemd status` cho biết trạng thái.
 - TUI: `502drive menu` (fallback line menu với `--plain`/`TERM=dumb`/`NO_COLOR`).
 
 ## Kiểm tra
@@ -64,8 +67,13 @@ của home (`ProtectHome=read-only`). Data dir khác cần drop-in thêm
 502drive version
 systemctl --user status 502drive
 502drive status
-502drive doctor
+502drive doctor                 # --online để gọi Google, --fix sửa quyền/thư mục cục bộ
+journalctl --user -u 502drive -f
 ```
+
+Bảo trì khi daemon dừng: `502drive prune --older-than 90d` (dry-run trước) rồi
+`502drive vacuum`. Sao lưu trước khi nâng cấp: `502drive backup /backups/…` (xem
+[runbooks](runbooks.md)).
 
 Gỡ: `sudo rpm -e 502drive` / `sudo dpkg -r 502drive`. Config/token/data trong
 home **không** bị xóa. Chưa có gói cho armhf, AppImage, flatpak, snap.

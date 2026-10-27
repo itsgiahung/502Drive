@@ -1,4 +1,30 @@
-# Verification — phiên 2026-10-26
+# Verification — cập nhật 2026-10-27
+
+## Phiên 2026-10-27 (Đợt D — đồng bộ tài liệu với code)
+
+Môi trường: Linux x86_64 (Fedora), Go 1.27.3 (`go1.27.3/go/bin`), không có
+Google Drive/Telegram thật. Chỉ sửa tài liệu; **không** đổi code Go, migration
+hay `openapi.json`.
+
+| Lệnh | Kết quả |
+| --- | --- |
+| `gofmt -l cmd internal` | không in gì |
+| `go vet ./...` | exit 0 |
+| `staticcheck ./...` | exit 0 (không cảnh báo) |
+| `go test -race -count=1 -timeout 900s ./...` | 21 package `ok`; tổng ≈104 s (engine 101 s, telegram 60 s, cli 43 s, state 36 s, httpapi 34 s, daemon 32 s) |
+| `python3 scripts/check-docs-links.py .` | 483 link tương đối, **0 hỏng** |
+| `python3 -c "import json;json.load(open('docs/contracts/openapi.json'))"` | OK |
+| `git diff --check` | sạch (không khoảng trắng thừa) |
+
+Package đã chạy: app, autostart, cli, config, daemon, drive, engine, filter,
+httpapi, i18n, live, maintenance, mascot, power, present, schedule, state,
+telegram, tray, tui, update.
+
+**Chưa chạy trong phiên này:** Google Drive/Telegram thật, tray trên desktop
+thật, Windows 10/11 và installer, Docker image, cross-build (thay đổi chỉ ở tài
+liệu). Các số đo hiệu năng bên dưới là của các phiên trước, giữ nguyên làm mốc.
+
+## Phiên 2026-10-26
 
 Môi trường: Linux x86_64 (Fedora), Go 1.27.3 tại
 `<thư mục toolchain>/go1.27.3/go/bin`, SQLite thuần Go

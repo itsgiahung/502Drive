@@ -11,8 +11,13 @@ Source: [state/principals.go](../../internal/state/principals.go),
 
 | Principal | Nguồn | Quyền |
 | --- | --- | --- |
-| `owner` (ID `owner`) | bearer token trong `token_file` | Toàn bộ: destinations, operators, doctor, mọi job/collection (`all=true`) |
-| operator | `principals` kind=telegram, role=operator, enabled | Job/collection/sync của chính mình; xem đích hiện có; không admin |
+| `owner` (ID `owner`) | bearer token trong `token_file` | Toàn bộ: destinations, drive browse/search/mkdir, operators, doctor/`doctor/fix`, queue pause/resume, mọi job/collection/audit (`all=true`) |
+| operator | `principals` kind=telegram, role=operator, enabled | Job/collection/sync/audit của chính mình; xem đích hiện có; không admin |
+
+Các thao tác admin chỉ owner: `POST/PUT /v1/destinations*`, `/v1/drive/*`,
+`/v1/operators*`, `/v1/doctor*`, `/v1/queue/pause|resume`, `all=true` trên
+`/v1/jobs`, `/v1/history`, `/v1/collections`. Retire/resume/forget/cleanup kiểm
+chủ sở hữu ở tầng store (owner thấy mọi thứ; operator khác chủ → `404`).
 
 Adapter tự suy principal từ transport (token hash/update đã xác thực); **không**
 đọc actor từ body/query. Token so sánh constant-time

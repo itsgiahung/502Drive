@@ -28,6 +28,11 @@ implementation was removed on 2026-10-26). Start at the [map](docs/README.md), r
 - Admission (job + idempotency + first event) commits before "accepted". Job IDs
   are durable; accepted ≠ succeeded; retry and restart keep operation identity.
 - A write with an unknown outcome is reconciled, never blindly resent.
+- Cleanup and repair default to a dry run and only move objects carrying 502Drive's
+  intent to the Drive trash; there is no permanent Drive delete.
+- A global queue pause is durable (`settings.queue_paused`); resuming only restarts
+  jobs the queue paused, keeping user pauses. Shared Drives use the same copy rules
+  and scopes.
 - Telegram checks allowlist, private chat, owner/operator scope and one-shot,
   expiring callbacks tied to a revision. Never shell-execute chat content.
 - CLI stdout/stderr/exit code/JSON are a contract ([CLI](docs/features/cli.md)):

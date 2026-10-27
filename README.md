@@ -24,13 +24,20 @@ starts.
 - **Server-side copy.** Google copies the files inside Drive (`files.copy`). Your
   machine never downloads or re-uploads a byte, so a 200 GB folder costs no
   bandwidth and no waiting for a local upload.
-- **Faithful tree.** Names, folder structure, empty folders, duplicate names,
-  shortcuts and Google-native files are preserved. The result link comes back
-  when the copy is done.
+- **Faithful tree.** Names, folder structure, empty folders, duplicate names and
+  shortcuts are preserved; Google-native files are copied when Drive allows and
+  export-only types are `skipped` with a stable code. Duplicate names get ` (2)`,
+  `skip` or `update` (`--on-conflict`); uncopyable items never fail the whole job.
 - **Stays in sync.** Every copy becomes a *collection* with an optional schedule
   (interval, daily, weekly, with a timezone) or realtime sync from the Drive change
   feed. Run now, pause, stop and resume without losing the destination or the
-  mapping. Deleting at the source never deletes your copy.
+  mapping. Deleting at the source never deletes your copy. A selective filter
+  (path/name/size/mime) limits what a later run copies.
+- **Batch and queue.** Paste several links at once: one job each, one batch, a
+  fair queue with priorities (`move`), and a global pause (`502d pause`).
+- **Check and repair.** `502drive audit COLLECTION` compares source and
+  destination; `--repair` plans by default (`--apply` writes), and only objects
+  502Drive created are ever moved to the Drive trash.
 - **Safe after crashes.** Each remote write is recorded first. After a crash or a
   lost response the job *reconciles* instead of writing twice, and reports
   `blocked` when it cannot be sure, never a false "succeeded".
@@ -72,6 +79,7 @@ Approve once and you are connected. Add a destination folder and paste a link:
 
 ```bash
 502drive destinations add 'https://drive.google.com/drive/folders/FOLDER_ID'
+502d 'https://drive.google.com/drive/folders/SOURCE_ID' --wait   # bare link = copy
 502drive copy 'https://drive.google.com/drive/folders/SOURCE_ID' --wait
 ```
 
@@ -107,11 +115,19 @@ installs anything).
 | I want to… | Command |
 | --- | --- |
 | Open everything | `502drive` |
-| Copy a link and wait | `502drive copy LINK --wait` |
-| Preview without writing | `502drive inspect LINK` |
-| See jobs / pause / resume / cancel | `502drive jobs list`, `jobs pause ID`, … |
+| Copy a link (bare form) and wait | `502d LINK --wait` |
+| Copy several links as one batch | `502d copy LINK1 LINK2 ...` |
+| Preview without writing | `502drive inspect LINK` (add `--deep` for a background full scan) |
+| Follow a job | `502drive wait JOB_ID` · `502drive watch JOB_ID` |
+| See jobs / pause / resume / cancel / retry | `502drive jobs list`, `jobs pause ID`, … |
+| Move a queued job | `502drive jobs move ID --before ID` / `--after ID` / `--priority N` |
+| Report failed/blocked/skipped items | `502drive jobs report JOB_ID --format csv` |
+| Export job history | `502drive history export --since 30d --format csv` |
+| Pause or resume the whole queue | `502drive pause` · `502drive resume` |
 | Keep a copy in sync | `502drive sync enable COLLECTION --daily 22:00` · `sync run` · `sync pause` · `sync stop` |
-| Check health | `502drive doctor` |
+| Audit a copy; repair after review | `502drive audit COLLECTION` · `502drive audit COLLECTION --repair --apply` |
+| Retire / resume / forget / trash a copy | `502drive collections retire COLLECTION` · `resume` · `forget --yes` · `cleanup --dry-run=false --yes --confirm-name NAME` |
+| Check health (and fix local issues) | `502drive doctor [--online] [--fix]` |
 | Read the daemon log | `502drive logs -f` |
 | Start/stop in the background | `502drive up` · `502drive stop` |
 | Script it | add `--json`, use the documented [exit codes](docs/features/cli.md) |
@@ -177,6 +193,22 @@ make release-local    # full local release build and verification, publishes not
 ```
 
 See [CONTRIBUTING](CONTRIBUTING.md). CI is optional: every check runs locally.
+
+## What is tested
+
+| Area | Local tests (fake Drive/Telegram) | Real Google/Telegram |
+| --- | --- | --- |
+| Copy, admission, retry, reconcile, K1/N1/S5/D1 | yes (`go test -race ./...`) | no |
+| Batch, fair queue, pause, job move, deep preflight | yes | no |
+| Sync schedule, realtime replay, full reconcile, S8, quota ledger | yes | no |
+| Audit/repair, lifecycle retire/forget/cleanup (trash only) | yes | no |
+| CLI/TUI/report/history JSON and exit codes | yes | — |
+| HTTP contract (all routes) and OpenAPI conformance | yes | — |
+| Tray, autostart, systemd unit, sleep/resume | logic/tests only | desktop and OS not exercised |
+| rpm/deb/zip/installer, Docker image | build + local smoke | install on a real desktop not exercised |
+
+Full command list and results: [verification](docs/verification.md). Fake-provider
+tests do not prove live Drive behaviour.
 
 ## Limits worth knowing
 

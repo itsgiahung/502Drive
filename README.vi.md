@@ -23,12 +23,20 @@ tự lên.
 
 - **Copy phía server.** Google tự copy ngay trong Drive (`files.copy`). Máy bạn không
   tải xuống hay tải lên byte nào, nên thư mục 200 GB không tốn băng thông.
-- **Giữ nguyên cây thư mục.** Tên, cấu trúc, thư mục rỗng, tên trùng, shortcut và
-  file Google-native đều được giữ. Xong thì trả link kết quả.
+- **Giữ nguyên cây thư mục.** Tên, cấu trúc, thư mục rỗng, tên trùng và shortcut
+  được giữ; file Google-native copy được khi Drive cho phép, loại chỉ xuất được
+  đánh dấu `skipped` kèm mã ổn định. Tên trùng thành ` (2)`, `skip` hoặc `update`
+  (`--on-conflict`); mục không copy được không làm hỏng cả job.
 - **Luôn đồng bộ.** Mỗi lần copy thành một *bộ sưu tập*, có thể bật lịch (theo
   khoảng, hằng ngày, hằng tuần, có múi giờ) hoặc đồng bộ realtime theo luồng thay
   đổi của Drive. Chạy ngay, tạm dừng, dừng, tiếp tục mà không mất thư mục đích hay
-  ánh xạ. Xóa ở nguồn không bao giờ xóa bản copy của bạn.
+  ánh xạ. Xóa ở nguồn không bao giờ xóa bản copy của bạn. Bộ lọc chọn lọc
+  (đường dẫn/tên/size/mime) giới hạn những gì lần chạy sau copy.
+- **Lô và hàng đợi.** Dán nhiều link một lúc: mỗi link một job, chung một lô, hàng
+  đợi công bằng có ưu tiên (`move`), và tạm dừng toàn bộ (`502d pause`).
+- **Kiểm tra và sửa.** `502drive audit COLLECTION` đối chiếu nguồn với đích;
+  `--repair` chỉ lập kế hoạch (`--apply` mới ghi), và chỉ object do 502Drive tạo mới
+  bị đưa vào thùng rác Drive.
 - **An toàn khi sự cố.** Mỗi thao tác ghi lên Drive được ghi nhận trước. Sau khi
   crash hoặc mất phản hồi, công việc *đối soát* thay vì ghi hai lần, và báo `blocked`
   khi không chắc chắn, không bao giờ báo "xong" giả.
@@ -71,6 +79,7 @@ kết nối xong. Thêm thư mục đích rồi dán link:
 
 ```bash
 502drive destinations add 'https://drive.google.com/drive/folders/FOLDER_ID'
+502d 'https://drive.google.com/drive/folders/SOURCE_ID' --wait   # link trần = copy
 502drive copy 'https://drive.google.com/drive/folders/SOURCE_ID' --wait
 ```
 
@@ -104,11 +113,19 @@ Chạy cùng hệ thống: `502drive autostart enable`. Kiểm tra bản mới b
 | Tôi muốn… | Lệnh |
 | --- | --- |
 | Mở tất cả | `502drive` |
-| Copy một link và chờ | `502drive copy LINK --wait` |
-| Xem trước, không ghi gì | `502drive inspect LINK` |
-| Xem / tạm dừng / tiếp tục / huỷ công việc | `502drive jobs list`, `jobs pause ID`, … |
+| Copy một link (dạng trần) và chờ | `502d LINK --wait` |
+| Copy nhiều link thành một lô | `502d copy LINK1 LINK2 ...` |
+| Xem trước, không ghi gì | `502drive inspect LINK` (thêm `--deep` để quét nền toàn bộ) |
+| Theo dõi một job | `502drive wait JOB_ID` · `502drive watch JOB_ID` |
+| Xem / tạm dừng / tiếp tục / huỷ / thử lại job | `502drive jobs list`, `jobs pause ID`, … |
+| Di chuyển job đang chờ | `502drive jobs move ID --before ID` / `--after ID` / `--priority N` |
+| Báo cáo mục lỗi/bị chặn/bỏ qua | `502drive jobs report JOB_ID --format csv` |
+| Xuất lịch sử job | `502drive history export --since 30d --format csv` |
+| Tạm dừng/tiếp tục cả hàng đợi | `502drive pause` · `502drive resume` |
 | Giữ bản copy đồng bộ | `502drive sync enable COLLECTION --daily 22:00` · `sync run` · `sync pause` · `sync stop` |
-| Kiểm tra sức khỏe | `502drive doctor` |
+| Kiểm tra toàn vẹn; sửa sau khi xem | `502drive audit COLLECTION` · `502drive audit COLLECTION --repair --apply` |
+| Retire / resume / forget / trash bản copy | `502drive collections retire COLLECTION` · `resume` · `forget --yes` · `cleanup --dry-run=false --yes --confirm-name NAME` |
+| Kiểm tra sức khỏe (và sửa lỗi cục bộ) | `502drive doctor [--online] [--fix]` |
 | Xem log daemon | `502drive logs -f` |
 | Bật/tắt chạy nền | `502drive up` · `502drive stop` |
 | Viết script | thêm `--json`, dùng [mã thoát](docs/features/cli.md) đã tài liệu hóa |
@@ -173,6 +190,22 @@ make release-local    # build và kiểm chứng bản phát hành tại máy, k
 ```
 
 Xem [CONTRIBUTING](CONTRIBUTING.md). CI là tùy chọn: mọi kiểm tra đều chạy được ở máy.
+
+## Đã test gì
+
+| Phần | Test local (Drive/Telegram giả) | Google/Telegram thật |
+| --- | --- | --- |
+| Copy, admission, retry, reconcile, K1/N1/S5/D1 | có (`go test -race ./...`) | chưa |
+| Batch, hàng đợi fair, tạm dừng, move job, deep preflight | có | chưa |
+| Lịch sync, realtime replay, full reconcile, S8, quota ledger | có | chưa |
+| Audit/repair, vòng đời retire/forget/cleanup (chỉ trash) | có | chưa |
+| CLI/TUI/report/history JSON và mã thoát | có | — |
+| HTTP contract (mọi route) và conformance OpenAPI | có | — |
+| Tray, autostart, systemd unit, ngủ/thức | chỉ logic/test | chưa thử desktop và OS thật |
+| rpm/deb/zip/installer, image Docker | build + smoke local | chưa cài trên desktop thật |
+
+Danh sách lệnh và kết quả đầy đủ: [verification](docs/verification.md). Test với
+provider giả **không** chứng minh hành vi Drive thật.
 
 ## Giới hạn cần biết
 

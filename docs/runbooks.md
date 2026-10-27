@@ -8,7 +8,8 @@ Quy trình cho daemon Go. Không chạy `backup/restore/cleanup` trên data th�
 ```bash
 gofmt -l cmd internal
 go vet ./...
-go test -race ./...
+staticcheck ./...
+go test -race -count=1 ./...
 go build ./cmd/502drive
 ```
 
@@ -55,8 +56,17 @@ systemctl --user stop 502drive        # hoặc dừng container
 502drive restore /backups/... --to /srv/502drive-new   # dir mới/trống
 502drive cleanup                # dry-run mặc định
 502drive cleanup --apply        # chỉ file *.tmp cũ, không symlink
+502drive prune --older-than 90d --dry-run   # xem trước; bỏ --dry-run để xóa
+502drive vacuum                 # compact DB offline (WAL truncate + VACUUM + ANALYZE)
+502drive doctor --fix           # owner: tạo thư mục thiếu, chmod 0600 secret (không đụng Drive)
 ```
 
+- `prune`: xóa job đã xong + event + intent cũ + inbox/outbox Telegram cũ + plan
+  hết hạn; **giữ** collection, mapping đang dùng và job còn được tham chiếu
+  (items/plans/sync_occurrences/outbox). Mặc định dry-run; chạy khi daemon đã dừng.
+- `vacuum`: chỉ chạy khi không có writer; báo `pre_bytes`/`post_bytes`/`reclaimed_bytes`.
+- `doctor --fix`: chỉ sửa lỗi cục bộ an toàn (thư mục data/config thiếu, quyền
+  secret). Lỗi Drive/token vẫn cần `account login`/sửa tay; không tự xóa dữ liệu.
 - `backup`: từ chối nếu daemon giữ `instance.lock`; `VACUUM INTO` DB + `secrets/master.key`
   + `secrets/google-token.enc` (nếu có) + `config.json`; thư mục 0700, file 0600,
   `MANIFEST.json` (schema_version, sha256 từng file, thời điểm, version binary).
@@ -66,6 +76,37 @@ systemctl --user stop 502drive        # hoặc dừng container
 - `cleanup`: chỉ xóa `*.tmp` do chương trình tạo, cũ hơn ngưỡng, không theo symlink, không
   ra ngoài data dir, từ chối khi có writer. Không bao giờ xóa DB/WAL/`master.key`/backup/
   idempotency/mapping.
+
+## Hàng đợi và thông báo
+
+- `502drive pause` / `502drive resume` (hoặc tray *Tạm dừng tất cả*) đặt cờ bền
+  `settings.queue_paused`. Job đang chạy chuyển `pausing → paused` ở điểm an toàn;
+  resume chỉ đánh thức job do hàng đợi tạm dừng, job người dùng tự pause vẫn pause.
+  `502drive status` hiện `queue.paused`; `GET /v1/status` có cùng trường.
+- Ưu tiên/fair share: `POST /v1/jobs/{id}/move` (`--before`, `--after`,
+  `--priority -5..5`). Không sửa DB để "nhảy hàng".
+- Giờ yên tĩnh Telegram (`quiet_hours_start`/`quiet_hours_end`, HH:MM, theo
+  timezone preference): thông báo không ai yêu cầu được hoãn tới hết cửa sổ;
+  trả lời thao tác của chính người dùng vẫn gửi ngay. Đặt trong chat bằng nút
+  *Giờ yên tĩnh* hoặc `PATCH /v1/preferences`.
+- `502drive doctor --fix` chỉ dùng khi `doctor` báo lỗi quyền/thư mục; nó không
+  sửa token, không xóa job.
+
+## systemd --user (Linux)
+
+```bash
+502drive autostart systemd install     # ~/.config/systemd/user/502drive.service, enable + daemon-reload
+systemctl --user start 502drive
+systemctl --user status 502drive
+502drive autostart systemd status
+502drive autostart systemd remove
+```
+
+Unit dùng `Restart=on-failure` (5 lần/5 phút thì dừng); nó là thứ giữ daemon sống
+sau crash, còn XDG autostart chỉ chạy `502drive up --quiet` lúc đăng nhập. Chọn
+một trong hai, đừng bật cả hai nếu không muốn hai lần spawn (khóa instance vẫn
+chặn daemon thứ hai, nhưng log sẽ ồn). Log của unit nằm ở journal:
+`journalctl --user -u 502drive -f`.
 
 ## Tải và phản hồi chậm
 
@@ -84,9 +125,10 @@ systemctl --user stop 502drive        # hoặc dừng container
 - Migration forward-only trong [internal/state/migrations](../internal/state/migrations), áp
   trong transaction khi `state.Open`; **không sửa migration đã áp**, chỉ thêm file mới. Binary cũ
   gặp DB mới hơn sẽ từ chối mở (`unsupported database version`): nâng cấp một chiều.
-- Quy trình: dừng daemon → backup → thay binary → khởi động → `502drive status` / `doctor` →
-  quan sát job và sync. `serve --maintenance` đọc được status/doctor nhưng từ chối job mới,
-  cấu hình sync và run now (`503 maintenance`).
+- Quy trình: dừng daemon → **backup** → thay binary → khởi động → `502drive status` / `doctor` →
+  quan sát job và sync. Migration mới chạy ngay lần mở DB đầu tiên; backup là bản
+  duy nhất quay lại được (không có migration lùi). `serve --maintenance` đọc được status/doctor
+  nhưng từ chối job mới, cấu hình sync và run now (`503 maintenance`).
 - **Binary và DB phải khớp.** Schema không tương thích: restore **cả bộ** backup vào data dir
   mới rồi trỏ config sang; không chép DB cũ đè lên DB mới.
 - **Không rollback tác động trên Drive.** Restore DB cũ không xóa file đã tạo trên Drive kể từ
@@ -121,8 +163,11 @@ artifact nằm ở trang run, job Publish bị bỏ qua). Đăng bản thật ch
 
 ## Retention và dọn rác
 
-- Job/event/idempotency/mapping giữ mặc định; chưa có auto-prune.
+- Job/event/idempotency/mapping giữ mặc định; **không** có auto-prune theo lịch.
+  Chạy tay `502drive prune --older-than 90d` (dry-run trước) khi daemon dừng, hoặc
+  đặt lịch bằng cron/systemd timer của bạn.
 - `cleanup` chỉ dọn file tạm `*.tmp` cũ hơn ngưỡng trong data dir.
+- `vacuum` sau prune để trả dung lượng; cả hai từ chối khi `instance.lock` đang bị giữ.
 - Log: để systemd journal/container runtime xoay vòng; app không tự xóa log.
 - Backup: owner tự quản lý, giữ ít nhất bản đã restore-test.
 

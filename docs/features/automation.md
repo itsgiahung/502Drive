@@ -78,6 +78,18 @@ versioned_copy/replace_copy, `schedule_revision`, `revision`.
 - Notification lỗi lặp của một subscription chỉ gửi một lần (marker
   `notify_markers`), xóa khi có run thành công.
 
+## Bộ lọc và copy lại (S5, L2)
+
+- `filter` lưu trên plan → job → collection (`GET/PUT /v1/collections/{id}/filter`,
+  revision-guarded). Mỗi run delta dùng **cùng** bộ lọc đã lưu; đổi bộ lọc chỉ ảnh
+  hưởng lần chạy sau, không xóa gì ở đích.
+- Mục bị loại: `skipped/filtered`, không ghi; thư mục bị loại không được list nên
+  cây con không bị đọc; thư mục rỗng sau lọc không tạo trừ `keep_empty_folders`.
+  Chi tiết: [clone-jobs](clone-jobs.md#lọc-khi-đồng-bộ-s5), [design/s5](../design/s5-selective-sync.md).
+- `POST /v1/jobs` với `mode=update` chạy một delta run trên collection hiện có
+  (giữ mapping/root); `mode=new` tạo bản sao mới. Trùng nguồn+đích không có `mode`
+  → `409 already_copied`. Xem [clone-jobs](clone-jobs.md#copy-lại-cùng-nguồn-l2).
+
 ## Quota tài khoản
 
 - `copy_ledger(principal,hour,bytes)`: byte đã copy xong, ghi cùng transaction

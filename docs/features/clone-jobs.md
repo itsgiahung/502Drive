@@ -75,8 +75,8 @@ Trùng khóa là `(nguồn, đích)` của cùng tài khoản. `POST /v1/jobs` n
 CLI: `copy --update|--new`. Trong script (không có TTY) mặc định là `update`; trong terminal bị hỏi
 `[u]pdate / [n]ew / [c]ancel` khi trùng. Plan đã dùng (replay idempotent) không bị đối chiếu lại.
 Tra cứu dùng chỉ mục `collections_source_dest` (migration 020), có test `EXPLAIN QUERY PLAN`.
-TUI đã hỏi `u`pdate / `n`ew khi gặp `409 already_copied` (hộp copy, [cli](cli.md#library-jobs-hộp-copy-và-settings-đợt-t)); Telegram vẫn gọi `Submit` (= `new`), móc ở "Móc UI cho Claude".
-Telegram đã hỏi theo `already_copied` (nút Cập nhật bản cũ / Tạo bản mới, xem [telegram.md](telegram.md)); TUI vẫn gọi `Submit` (= `new`), móc hộp thoại ở "Móc UI cho Claude".
+TUI hỏi `u`pdate / `n`ew khi gặp `409 already_copied` (hộp copy), Telegram hỏi bằng nút Cập nhật bản cũ / Tạo bản mới
+(xem [telegram.md](telegram.md)).
 
 ## Vòng đời collection (L1)
 
@@ -186,10 +186,11 @@ Chi tiết: [design/s5-selective-sync.md](../design/s5-selective-sync.md).
 ## Giới hạn / chưa hỗ trợ
 
 - Không giữ owner/permission/revision/history của bản gốc; không tải/upload bytes.
-- Không copy "bản mới" như action riêng: copy cùng nguồn là collection mới (dán
-  lại link tạo job mới sau khi job cũ kết thúc).
-- Không chọn nhiều nguồn/batch trong một request; không watch/push.
-- Unknown outcome chỉ reconcile bằng query (không có tool repair thủ công).
+- Copy lại cùng nguồn dùng `mode=update|new` trên collection hiện có (L2); không có
+  action "xoá bản cũ rồi copy lại" ngoài cleanup/repair.
+- Nhiều link trong một lệnh tạo nhiều job cùng `batch_id` (xem dưới), nhưng **không**
+  gộp nhiều nguồn vào một job; không watch/push.
+- Unknown outcome chỉ reconcile bằng query; repair thủ công chỉ qua audit/repair (S1).
 
 ## Lô (batch), hàng đợi và tạm dừng (S6)
 
