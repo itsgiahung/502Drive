@@ -148,6 +148,11 @@ func (a *App) collectionCleanupCmd() *cobra.Command {
 					printKV(a.out(), a.style, []kv{{"next", "502drive collections cleanup " + args[0] + " --dry-run=false --yes --confirm-name '" + Sanitize(job.RootName) + "'"}})
 					return
 				}
+				if job.LastError != nil && job.LastError.Message != "" {
+					// The preview stopped, for example because a restore point
+					// still needs this copy: say why rather than only the job ID.
+					fmt.Fprintln(a.out(), Sanitize(job.LastError.Message))
+				}
 				printKV(a.out(), a.style, []kv{{"next", "502drive jobs get " + job.ID}})
 			})
 			return nil

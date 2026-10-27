@@ -197,3 +197,31 @@ func (l *loseTrashResponse) TrashFile(ctx context.Context, id string) error {
 	l.crash()
 	return &drive.Error{Kind: drive.KindUnavailable, Err: errors.New("response lost")}
 }
+
+// A dry run must not promise a trash move the real cleanup would refuse: when a
+// retained snapshot still needs the copy, the preview stops with the same reason.
+func TestCleanupDryRunReportsSnapshotProtection(t *testing.T) {
+	e := newEnv(t)
+	src := e.fake.Folder("Source", "root")
+	e.fake.File("file", src.ID, 1)
+	base, _ := e.baseline(src)
+	c, _ := e.store.GetCollection(t.Context(), "owner", base.CollectionID)
+	j, _, err := e.store.AdmitProtectionJob(t.Context(), "owner", "owner", "snap", c.ID, "", c.Revision, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.runUntil(j.ID, terminal)
+	c, _ = e.store.GetCollection(t.Context(), "owner", base.CollectionID)
+	retired, err := e.store.RetireCollection(t.Context(), "owner", "ret", c.ID, c.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dry, err := e.store.AdmitCleanup(t.Context(), "owner", "dry", c.ID, retired.Revision, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := e.runUntil(dry.ID, terminal)
+	if got.State != state.JobBlocked || got.LastError == nil || got.LastError.Code != "snapshot_protected" {
+		t.Fatalf("dry run = %s %+v, want blocked by snapshot_protected", got.State, got.LastError)
+	}
+}

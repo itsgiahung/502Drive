@@ -72,16 +72,18 @@ func (r *run) executeCleanup(ctx context.Context, job state.Job) {
 			return "plan", true
 		})
 	}
+	// A retained snapshot still needs this copy. The dry run says so too, so
+	// a preview never promises a trash move the real run would refuse.
+	if keep, err := r.e.Store.SnapshotReferences(r.db, *col.RootID); err != nil || keep {
+		r.block("snapshot_protected", "Retained snapshots protect this destination root; cleanup was not applied.")
+		return
+	}
 	if job.DryRun {
 		r.finishCleanup(state.JobSucceeded, "", "")
 		return
 	}
 
 	// Live cleanup: move destination root folder to Drive trash
-	if keep, err := r.e.Store.SnapshotReferences(r.db, *col.RootID); err != nil || keep {
-		r.block("snapshot_protected", "Retained snapshots protect this destination root; cleanup was not applied.")
-		return
-	}
 	r.setPhase("cleanup")
 	if err := r.e.acquire(ctx); err != nil {
 		r.settleCleanup(ctx)
