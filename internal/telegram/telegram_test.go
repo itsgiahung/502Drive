@@ -136,7 +136,17 @@ func (f *fakeAPI) fail(w http.ResponseWriter, code int, description string, retr
 }
 
 func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
-	method := strings.TrimPrefix(r.URL.Path, "/bot"+f.token+"/")
+	prefix := "/bot" + f.token + "/"
+	if !strings.HasPrefix(r.URL.Path, prefix) {
+		// The fake listens on a real localhost port, so another local tool can
+		// land here (opencode probes /api/mcp/install-info on listening ports).
+		// Until the path carries the bot token it is not a call from this bot,
+		// so it cannot fail the test that happens to own the port.
+		f.t.Logf("fake Bot API: ignoring foreign request %s %s", r.Method, r.URL.Path)
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	method := strings.TrimPrefix(r.URL.Path, prefix)
 	switch method {
 	case "getMe":
 		f.mu.Lock()

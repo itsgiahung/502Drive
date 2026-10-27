@@ -107,8 +107,13 @@ type agent struct {
 	stopArmed   bool
 	stopArmedAt time.Time
 	// sig is the signature of the last View shown. An unchanged view is not
-	// pushed to the desktop again, so an idle tray does no menu work.
+	// pushed to the desktop again, so an idle tray does no menu work. It is
+	// only read and written inside refresh, which refreshMu serializes.
 	sig uint64
+	// refreshMu serializes refresh: the poll loop and every menu action call
+	// it, and two overlapping refreshes would race on sig and could push an
+	// older snapshot over a newer one.
+	refreshMu sync.Mutex
 }
 
 // stopConfirmWindow is how long the armed confirmation stays valid. It is
@@ -163,6 +168,8 @@ func (a *agent) collect(ctx context.Context) (Snapshot, error) {
 // refresh polls once and renders the result. It returns the view and whether
 // the daemon answered.
 func (a *agent) refresh(ctx context.Context) (View, bool) {
+	a.refreshMu.Lock()
+	defer a.refreshMu.Unlock()
 	a.refreshLanguage(ctx)
 	snap, err := a.collect(ctx)
 	online := err == nil

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -51,15 +53,15 @@ func (c *pollClient) call(ctx context.Context, method string, params any, dest a
 	if err != nil {
 		return err
 	}
-	url := c.base + "/bot" + c.token + "/" + method
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	endpoint := c.base + "/bot" + c.token + "/" + method
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return redactToken(err, c.token)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	res, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return redactToken(err, c.token)
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 16<<20))
@@ -106,4 +108,20 @@ func retryAfterOf(err error) (time.Duration, bool) {
 		return ae.retryAfter, ae.code == http.StatusTooManyRequests
 	}
 	return 0, false
+}
+
+// redactToken keeps the bot token out of transport errors: net/http wraps the
+// request URL in a *url.Error, and that URL is ".../bot<token>/<method>". The
+// SDK redacts its own errors the same way; the polling seam needs its own copy
+// because it bypasses the SDK. Mutating in place keeps errors.Is working for
+// context cancellation and timeouts.
+func redactToken(err error, token string) error {
+	if token == "" {
+		return err
+	}
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		ue.URL = strings.ReplaceAll(ue.URL, token, "***")
+	}
+	return err
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -71,7 +70,9 @@ func (a *App) applyAction(ctx context.Context, id, action string) (jobView, *Res
 	if err != nil {
 		return nj, nil, err
 	}
-	r, err := a.call(ctx, "POST", "/v1/jobs/"+url.PathEscape(id)+"/"+action, nil, map[string]any{"expected_revision": j.Revision}, NewKey())
+	// Post to the resolved ID: the user may have passed an alias or a prefix.
+	r, err := a.call(ctx, "POST", "/v1/jobs/"+url.PathEscape(j.ID)+"/"+action, nil,
+		map[string]any{"expected_revision": j.Revision}, NewKey())
 	if err != nil {
 		return nj, nil, err
 	}
@@ -148,18 +149,31 @@ func (a *App) cancelMany(ctx context.Context, stateFilter string, yes bool) erro
 	return nil
 }
 
+// maxBulkPages bounds a bulk list. Exceeding it is an error, never a silently
+// truncated list: 1000 pages of 100 is far more active jobs than one click
+// should cancel.
+const maxBulkPages = 1000
+
 // activeJobs lists the caller's jobs in an active state, newest first. The
 // daemon scopes the list to the token's principal.
 func (a *App) activeJobs(ctx context.Context, stateFilter string) ([]jobView, error) {
 	var out []jobView
-	cursor := int64(0)
-	for pages := 0; pages < 20; pages++ {
+	// The cursor is opaque (base64, bound to the principal and filters), so it
+	// is sent back verbatim. Parsing it, or treating a page that did not parse
+	// as the last one, silently drops every job after page one.
+	cursor := ""
+	seen := map[string]bool{}
+	for pages := 0; ; pages++ {
+		if pages == maxBulkPages {
+			return nil, localErr(ExitInternal, "internal_error",
+				fmt.Sprintf("the job list did not end after %d pages; nothing was canceled", maxBulkPages))
+		}
 		q := url.Values{"limit": {"100"}, "all": {"true"}}
 		if stateFilter != "" {
 			q.Set("state", stateFilter)
 		}
-		if cursor > 0 {
-			q.Set("cursor", strconv.FormatInt(cursor, 10))
+		if cursor != "" {
+			q.Set("cursor", cursor)
 		}
 		r, err := a.call(ctx, "GET", "/v1/jobs", q, nil, "")
 		if err != nil {
@@ -181,13 +195,14 @@ func (a *App) activeJobs(ctx context.Context, stateFilter string) ([]jobView, er
 		if page.Next == nil || *page.Next == "" {
 			return out, nil
 		}
-		n, err := strconv.ParseInt(*page.Next, 10, 64)
-		if err != nil || n <= cursor {
-			return out, nil
+		next := *page.Next
+		if seen[next] {
+			return nil, localErr(ExitInternal, "internal_error",
+				"the daemon repeated a page cursor; nothing was canceled")
 		}
-		cursor = n
+		seen[next] = true
+		cursor = next
 	}
-	return out, nil
 }
 
 func (a *App) printBulk(res bulkResult) error {

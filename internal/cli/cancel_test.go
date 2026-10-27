@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -265,4 +266,128 @@ func TestJobsCancelSingleStillWorks(t *testing.T) {
 		t.Fatalf("no-arg cancel exit = %d", code)
 	}
 	_ = strconv.Itoa
+}
+
+// TestJobsCancelAllFollowsOpaqueCursors is finding #20: the router hands out
+// base64 cursors bound to the filters, so the CLI must send them back verbatim
+// instead of parsing them as numbers and mistaking them for the last page.
+func TestJobsCancelAllFollowsOpaqueCursors(t *testing.T) {
+	cursor := base64.RawURLEncoding.EncodeToString([]byte("jobs\x1fowner\x1f\x1f100"))
+	var mu sync.Mutex
+	var cursors []string
+	var posted []string
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/v1/jobs":
+			got := r.URL.Query().Get("cursor")
+			mu.Lock()
+			cursors = append(cursors, got)
+			mu.Unlock()
+			if got == "" {
+				next := cursor
+				reply(w, 200, map[string]any{"items": []any{jobRow("j1", "succeeded", 1)}, "next_cursor": &next})
+				return
+			}
+			reply(w, 200, map[string]any{"items": []any{jobRow("j2", "paused", 2)}, "next_cursor": nil})
+		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/v1/jobs/"):
+			id := strings.TrimPrefix(r.URL.Path, "/v1/jobs/")
+			reply(w, 200, jobRow(id, "paused", 2))
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/cancel"):
+			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/jobs/"), "/cancel")
+			mu.Lock()
+			posted = append(posted, id)
+			mu.Unlock()
+			reply(w, 200, jobRow(id, "cancelled", 3))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	})
+	code, out, errOut := driveCLI(t, h, "jobs", "cancel", "--all", "--yes")
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	if len(cursors) != 2 || cursors[1] != cursor {
+		t.Fatalf("cursors = %v, want the opaque %q sent back unchanged", cursors, cursor)
+	}
+	if len(posted) != 1 || posted[0] != "j2" {
+		t.Fatalf("posted = %v, want only the job on the second page", posted)
+	}
+	if !strings.Contains(out, "canceled 1, skipped 0, failed 0") {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+// TestJobActionsResolveAliasesAndPrefixes is finding #21: the action must be
+// posted to the ID the alias or prefix resolved to, not to the raw reference.
+func TestJobActionsResolveAliasesAndPrefixes(t *testing.T) {
+	full := "job_0123456789abcdef0123456789abcdef"
+	var mu sync.Mutex
+	var posted []string
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/v1/preferences":
+			reply(w, 200, map[string]any{})
+		case r.Method == "GET" && r.URL.Path == "/v1/jobs":
+			reply(w, 200, map[string]any{"items": []any{jobRow(full, "running", 3)}, "next_cursor": nil})
+		case r.Method == "GET" && r.URL.Path == "/v1/jobs/"+full:
+			reply(w, 200, jobRow(full, "running", 3))
+		case r.Method == "POST" && r.URL.Path == "/v1/jobs/"+full+"/pause":
+			mu.Lock()
+			posted = append(posted, r.URL.Path)
+			mu.Unlock()
+			reply(w, 200, jobRow(full, "paused", 4))
+		default:
+			mu.Lock()
+			posted = append(posted, r.Method+" "+r.URL.Path)
+			mu.Unlock()
+			replyError(w, 404, "not_found", "Not found.")
+		}
+	})
+	for _, ref := range []string{"@last", "job_0123", full} {
+		code, _, errOut := driveCLI(t, h, "jobs", "pause", ref)
+		if code != ExitOK {
+			t.Fatalf("%s: exit %d: %s", ref, code, errOut)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(posted) != 3 {
+		t.Fatalf("posts = %v", posted)
+	}
+	for _, path := range posted {
+		if path != "/v1/jobs/"+full+"/pause" {
+			t.Fatalf("an action was posted to the unresolved reference: %v", posted)
+		}
+	}
+}
+
+// TestJobsCancelAllRefusesAnEndlessList keeps the other half of finding #20:
+// a list that never ends must fail loudly instead of reporting a partial
+// "canceled 0, skipped 0, failed 0" success.
+func TestJobsCancelAllRefusesAnEndlessList(t *testing.T) {
+	pages := 0
+	mutations := 0
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/v1/jobs":
+			pages++
+			next := base64.RawURLEncoding.EncodeToString([]byte("jobs\x1fowner\x1f\x1f" + strconv.Itoa(pages)))
+			reply(w, 200, map[string]any{"items": []any{jobRow("j1", "queued", 1)}, "next_cursor": &next})
+		case strings.HasSuffix(r.URL.Path, "/cancel"):
+			mutations++
+			reply(w, 200, jobRow("j1", "cancelled", 2))
+		default:
+			reply(w, 200, jobRow("j1", "queued", 1))
+		}
+	})
+	code, _, errOut := driveCLI(t, h, "jobs", "cancel", "--all", "--yes")
+	if code == ExitOK {
+		t.Fatalf("an endless list was reported as success: %q", errOut)
+	}
+	if mutations != 0 {
+		t.Fatalf("%d job(s) were canceled from a partial list", mutations)
+	}
+	if !strings.Contains(errOut, "did not end") {
+		t.Fatalf("stderr = %q", errOut)
+	}
 }

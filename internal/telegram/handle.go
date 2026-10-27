@@ -456,17 +456,19 @@ func (t *Telegram) actSyncRun(ctx context.Context, p app.Principal, st state.Cal
 	return t.showError(ctx, p, st.ChatID, st.MessageID, lastErr)
 }
 
-// actSyncControl pauses, resumes or stops the subscription.
+// actSyncControl pauses, resumes or stops the subscription. The revision comes
+// from the button, not from a fresh read: the user acted on the card they saw,
+// so a configuration changed in between must be refused as stale.
 func (t *Telegram) actSyncControl(ctx context.Context, p app.Principal, st state.Callback) error {
 	action := strings.TrimPrefix(st.Action, "sync_")
-	view, configured, err := t.svc.SyncStatus(ctx, st.Object)
+	_, configured, err := t.svc.SyncStatus(ctx, st.Object)
 	if err != nil {
 		return t.showError(ctx, p, st.ChatID, st.MessageID, err)
 	}
 	if !configured {
 		return t.collectionCard(ctx, p, st.ChatID, st.MessageID, st.Object, "")
 	}
-	if _, _, err = t.svc.SyncAction(ctx, p, "tg-cb:"+st.ID, st.Object, action, view.Subscription.Revision); err != nil {
+	if _, _, err = t.svc.SyncAction(ctx, p, "tg-cb:"+st.ID, st.Object, action, st.Revision); err != nil {
 		return t.showError(ctx, p, st.ChatID, st.MessageID, err)
 	}
 	return t.collectionCard(ctx, p, st.ChatID, st.MessageID, st.Object, "")
