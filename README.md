@@ -182,7 +182,8 @@ client of the same service. Read the [architecture](docs/architecture.md), the
 
 Start at the [documentation map](docs/README.md). What is verified, and what is
 not, is written down in [verification](docs/verification.md) and
-[acceptance](docs/acceptance.md).
+[acceptance](docs/acceptance.md). Release notes and upgrade steps are in the
+[changelog](CHANGELOG.md).
 
 ## Develop
 

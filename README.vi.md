@@ -179,7 +179,8 @@ và [file OpenAPI](docs/contracts/openapi.json).
 
 Bắt đầu từ [bản đồ tài liệu](docs/README.md). Những gì đã kiểm chứng và chưa kiểm
 chứng được ghi rõ ở [verification](docs/verification.md) và
-[acceptance](docs/acceptance.md).
+[acceptance](docs/acceptance.md). Ghi chú phát hành và cách nâng cấp nằm ở
+[changelog](CHANGELOG.md).
 
 ## Phát triển
 
