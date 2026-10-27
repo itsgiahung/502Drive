@@ -53,6 +53,7 @@ type jobView struct {
 	RootName     string    `json:"root_name"`
 	State        string    `json:"state"`
 	Phase        *string   `json:"phase"`
+	DryRun       bool      `json:"dry_run"`
 	Desired      string    `json:"desired_state"`
 	Revision     int       `json:"revision"`
 	Counts       jobCounts `json:"counts"`
@@ -286,9 +287,12 @@ func readStdinRef(r io.Reader) (string, error) {
 
 func (a *App) copyCmd() *cobra.Command {
 	var to, name, key string
-	var wait, useStdin, dry, autoName bool
+	var wait, useStdin, dry, autoName, update, newCopy bool
 	var waitTimeout time.Duration
 	c := &cobra.Command{Use: "copy [SOURCE]", Short: "Plan and durably submit a server-side copy", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if update && newCopy {
+			return usage("give --update or --new, not both")
+		}
 		var source string
 		switch {
 		case useStdin && len(args) == 1:
@@ -321,7 +325,17 @@ func (a *App) copyCmd() *cobra.Command {
 			a.emit(r, plan.ID, func() { a.printPlan(plan) })
 			return nil
 		}
-		job, r, err := a.submitCopy(cmd.Context(), source, to, name, key)
+		mode := copyMode(update, newCopy, a.interactive())
+		job, r, err := a.submitCopyMode(cmd.Context(), source, to, name, key, mode)
+		var ae *APIError
+		if errors.As(err, &ae) && ae.Code == "already_copied" && mode == "" {
+			// A terminal can ask; a script never reaches here (it sends update).
+			mode, err = a.askExistingCopy()
+			if err != nil {
+				return err
+			}
+			job, r, err = a.submitCopyMode(cmd.Context(), source, to, name, key, mode)
+		}
 		if err != nil {
 			return err
 		}
@@ -344,6 +358,8 @@ func (a *App) copyCmd() *cobra.Command {
 	f.BoolVar(&wait, "wait", false, "follow the job; exit 0 only when it succeeds")
 	f.BoolVar(&useStdin, "stdin", false, "read exactly one reference from stdin")
 	f.BoolVar(&dry, "dry-run", false, "preview only (same as inspect)")
+	f.BoolVar(&update, "update", false, "if this source is already copied to this destination, refresh that copy (default in scripts)")
+	f.BoolVar(&newCopy, "new", false, "always create another copy, even when one exists")
 	f.StringVar(&key, "idempotency-key", "", "explicit key for the job submission")
 	f.DurationVar(&waitTimeout, "wait-timeout", 0, "stop waiting after this long (job keeps running)")
 	return c
@@ -351,6 +367,12 @@ func (a *App) copyCmd() *cobra.Command {
 
 // submitCopy plans and submits with keys that survive a lost response.
 func (a *App) submitCopy(ctx context.Context, source, to, name, explicitKey string) (jobView, *Response, error) {
+	return a.submitCopyMode(ctx, source, to, name, explicitKey, "")
+}
+
+// submitCopyMode is submitCopy with the L2 answer for an existing copy:
+// "update", "new" or "" (refuse with already_copied).
+func (a *App) submitCopyMode(ctx context.Context, source, to, name, explicitKey, mode string) (jobView, *Response, error) {
 	var job jobView
 	ps := a.pending()
 	id := requestID(source, to, name, explicitKey)
@@ -375,7 +397,11 @@ func (a *App) submitCopy(ctx context.Context, source, to, name, explicitKey stri
 		}
 		return job, nil, err
 	}
-	r, err := a.call(ctx, "POST", "/v1/jobs", nil, map[string]any{"plan_id": plan.ID, "expected_revision": plan.Revision}, jobKey)
+	body := map[string]any{"plan_id": plan.ID, "expected_revision": plan.Revision}
+	if mode != "" {
+		body["mode"] = mode
+	}
+	r, err := a.call(ctx, "POST", "/v1/jobs", nil, body, jobKey)
 	if err != nil {
 		if definitive(err) {
 			ps.release(id)
@@ -594,12 +620,14 @@ func (a *App) streamEvents(ctx context.Context, id string, after int64, follow b
 
 type collectionView struct {
 	ID         string    `json:"id"`
+	SourceID   string    `json:"source_id"`
 	SourceName string    `json:"source_name"`
 	State      string    `json:"state"`
 	ResultURL  *string   `json:"result_url"`
 	Revision   int       `json:"revision"`
 	Baseline   string    `json:"baseline_job_id"`
 	Sync       *syncView `json:"sync"`
+	RootName   string    `json:"root_name"`
 }
 
 func (a *App) collectionsCmd() *cobra.Command {
@@ -652,7 +680,8 @@ func (a *App) collectionsCmd() *cobra.Command {
 		})
 		return nil
 	}}
-	cc.AddCommand(list, get)
+	cc.AddCommand(list, get, a.syncRunCmd(), a.syncActionCmd("pause"), a.auditCmd())
+	cc.AddCommand(a.lifecycleCmds()...)
 	return cc
 }
 

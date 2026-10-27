@@ -172,7 +172,7 @@ func TestLifecycleResumeProbesWithBackoffThenOpensTheGate(t *testing.T) {
 	}
 	r.l.handle(ctx, power.Event{Kind: power.Suspend, Ack: func() {}})
 	r.l.handle(ctx, power.Event{Kind: power.Resume, Gap: 10 * time.Minute})
-	waitFor(t, "the gate to open", func() bool { return r.l.view().Online })
+	waitFor(t, "the gate to open and wake", func() bool { return r.l.view().Online && r.wakes.Load() > 0 })
 	if got := r.probes.Load(); got != 3 {
 		t.Fatalf("probes = %d, want 3", got)
 	}

@@ -8,14 +8,23 @@ import (
 )
 
 var (
-	ErrMismatch    = errors.New("idempotency_mismatch")
-	ErrNotFound    = errors.New("not_found")
-	ErrStale       = errors.New("stale_revision")
-	ErrExpired     = errors.New("plan_expired")
-	ErrTransition  = errors.New("invalid_transition")
-	ErrCapacity    = errors.New("capacity_exceeded")
-	ErrPlanChanged = errors.New("plan_changed")
+	ErrMismatch             = errors.New("idempotency_mismatch")
+	ErrNotFound             = errors.New("not_found")
+	ErrStale                = errors.New("stale_revision")
+	ErrExpired              = errors.New("plan_expired")
+	ErrTransition           = errors.New("invalid_transition")
+	ErrCapacity             = errors.New("capacity_exceeded")
+	ErrPlanChanged          = errors.New("plan_changed")
+	ErrCollectionNotRetired = errors.New("collection_not_retired")
 )
+
+type ErrCollectionBusy struct {
+	ActiveJobID string
+}
+
+func (e ErrCollectionBusy) Error() string {
+	return "collection_busy: " + e.ActiveJobID
+}
 
 // Job states, shared by every adapter.
 const (
@@ -131,21 +140,34 @@ type Job struct {
 	ResumeAfter *time.Time `json:"resume_after,omitempty"`
 }
 
+// Collection states.
+const (
+	CollectionCopying = "copying"
+	CollectionReady   = "ready"
+	CollectionRetired = "retired"
+)
+
+// Additional job kinds.
+const (
+	JobKindCleanup = "cleanup"
+)
+
 type Collection struct {
-	ID            string  `json:"id"`
-	SourceID      string  `json:"source_id"`
-	SourceName    string  `json:"source_name"`
-	SourceKind    string  `json:"source_kind"`
-	SourceMime    string  `json:"source_mime,omitempty"`
-	ResourceKey   string  `json:"resource_key,omitempty"`
-	DestinationID string  `json:"destination_id"`
-	RootName      string  `json:"root_name"`
-	RootID        *string `json:"destination_root_id"`
-	ResultURL     *string `json:"result_url"`
-	BaselineJobID string  `json:"baseline_job_id"`
-	State         string  `json:"state"`
-	Revision      int     `json:"revision"`
-	Sync          any     `json:"sync"`
+	ID            string     `json:"id"`
+	SourceID      string     `json:"source_id"`
+	SourceName    string     `json:"source_name"`
+	SourceKind    string     `json:"source_kind"`
+	SourceMime    string     `json:"source_mime,omitempty"`
+	ResourceKey   string     `json:"resource_key,omitempty"`
+	DestinationID string     `json:"destination_id"`
+	RootName      string     `json:"root_name"`
+	RootID        *string    `json:"destination_root_id"`
+	ResultURL     *string    `json:"result_url"`
+	BaselineJobID string     `json:"baseline_job_id"`
+	State         string     `json:"state"`
+	RetiredAt     *time.Time `json:"retired_at,omitempty"`
+	Revision      int        `json:"revision"`
+	Sync          any        `json:"sync"`
 }
 
 type Event struct {

@@ -39,7 +39,7 @@ func auditFixture(t *testing.T, s *Store) (col Collection, job Job) {
 		if _, e := tx.ExecContext(ctx, "INSERT INTO plans VALUES(?,?,?,NULL)", "plan_"+col.ID, "owner", []byte(`{}`)); e != nil {
 			return e
 		}
-		if _, e := tx.ExecContext(ctx, "INSERT INTO collections VALUES(?,?,?,?)", col.ID, "owner", "plan_"+col.ID, b); e != nil {
+		if _, e := tx.ExecContext(ctx, "INSERT INTO collections(id, principal, plan_id, body) VALUES(?,?,?,?)", col.ID, "owner", "plan_"+col.ID, b); e != nil {
 			return e
 		}
 		if _, e := tx.ExecContext(ctx, "INSERT INTO jobs VALUES(?,?,?,?,?)", j.ID, "owner", col.ID, j.State, jb); e != nil {
@@ -245,7 +245,7 @@ func TestMigration006UpgradesFromSchema005WithData(t *testing.T) {
 		if _, err = db.Exec("INSERT INTO plans VALUES(?,?,?,NULL)", "plan1", "owner", []byte(`{"id":"plan1"}`)); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = db.Exec("INSERT INTO collections VALUES(?,?,?,?)", "col1", "owner", "plan1", []byte(`{"id":"col1","source_id":"src","source_kind":"folder","state":"ready"}`)); err != nil {
+		if _, err = db.Exec("INSERT INTO collections(id, principal, plan_id, body) VALUES(?,?,?,?)", "col1", "owner", "plan1", []byte(`{"id":"col1","source_id":"src","source_kind":"folder","state":"ready"}`)); err != nil {
 			t.Fatal(err)
 		}
 		if _, err = db.Exec("INSERT INTO jobs VALUES(?,?,?,?,?)", "job1", "owner", "col1", "succeeded", []byte(`{}`)); err != nil {

@@ -157,6 +157,9 @@ power source trong test; mô phỏng không thay thế kiểm trên OS thật.
 | S10 | versioned vs replace_copy | local | [sync_test.go](../internal/engine/sync_test.go) `TestReplaceCopyRetiresOldVersionOnlyAfterNewOne` |
 | S11 | No-change/recurring failure | local | notifier no-change + one-failure tests |
 | S12 | Library scope/buttons | local (một phần) | HTTP pagination + telegram library |
+| L1 | Retire/resume/forget/cleanup (dry-run, intent gate, crash) | local | [lifecycle_test.go](../internal/state/lifecycle_test.go), [cleanup_test.go](../internal/engine/cleanup_test.go), [collection_lifecycle_test.go](../internal/httpapi/collection_lifecycle_test.go) |
+| L2 | Copy again: already_copied / update / new / retired | local | [copy_existing_test.go](../internal/httpapi/copy_existing_test.go), [copy_existing_test.go](../internal/state/copy_existing_test.go), [copy_mode_test.go](../internal/cli/copy_mode_test.go) |
+| L3 | Quick actions CLI (`collections run/pause/resume/audit/open`) | chưa có test riêng (lệnh có; TUI/Telegram chưa) | — |
 
 ## Replay và full reconcile (A2/S2)
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -227,8 +228,22 @@ func (s *Service) checkDestination(ctx context.Context, prov drive.Provider, dst
 
 // Submit durably admits a job from a plan. It returns only after commit.
 func (s *Service) Submit(ctx context.Context, p Principal, key, planID string, revision int) (state.Result, error) {
+	return s.SubmitMode(ctx, p, key, planID, revision, "new")
+}
+
+// SubmitMode admits a copy with an explicit answer for an existing copy of the
+// same source to the same destination (L2):
+//   - "new": always create another copy (the historical behaviour of Submit);
+//   - "update": refresh the existing copy with one delta run, or copy when none exists;
+//   - "": create only when no copy exists; otherwise 409 already_copied.
+func (s *Service) SubmitMode(ctx context.Context, p Principal, key, planID string, revision int, mode string) (state.Result, error) {
 	if err := state.ValidateKey(key); err != nil {
 		return state.Result{}, Fail(http.StatusBadRequest, "invalid_request", "Idempotency-Key is required (1-128 printable characters).")
+	}
+	switch mode {
+	case "", "update", "new":
+	default:
+		return state.Result{}, Fail(http.StatusBadRequest, "invalid_request", "mode must be update, new or omitted.")
 	}
 	guard := func(ctx context.Context, q state.Querier, plan state.Plan) error {
 		var rev int
@@ -239,9 +254,20 @@ func (s *Service) Submit(ctx context.Context, p Principal, key, planID string, r
 		if s.Auth != nil && !s.Auth.Connected() {
 			return drive.ErrReconnectRequired
 		}
+		if mode != "new" {
+			if c, found, err := state.ExistingCopy(ctx, q, p.ID, plan); err != nil {
+				return err
+			} else if found {
+				return state.ErrExistingCopy{Copy: c}
+			}
+		}
 		return nil
 	}
 	res, err := s.Store.AdmitGuarded(ctx, p.ID, key, planID, revision, guard)
+	var existing state.ErrExistingCopy
+	if errors.As(err, &existing) {
+		return s.answerExistingCopy(ctx, p, key, existing.Copy, mode)
+	}
 	if err != nil {
 		return state.Result{}, err
 	}
@@ -279,4 +305,22 @@ func (s *Service) JobAction(ctx context.Context, p Principal, key, id, action st
 	}
 	s.wake()
 	return res, nil
+}
+
+// answerExistingCopy applies the L2 choice to a copy that already exists.
+func (s *Service) answerExistingCopy(ctx context.Context, p Principal, key string, existing state.Collection, mode string) (state.Result, error) {
+	if mode == "" {
+		return state.Result{}, Fail(http.StatusConflict, "already_copied",
+			"This source is already copied to this destination (collection "+existing.ID+", "+existing.State+"). Use update to refresh it, or new for another copy.")
+	}
+	// update
+	if existing.State == state.CollectionRetired {
+		return state.Result{}, Fail(http.StatusConflict, "collection_retired",
+			"The existing copy ("+existing.ID+") is retired. Resume it first, or use new for another copy.")
+	}
+	out, replayed, err := s.RunNow(ctx, p, key, existing.ID, existing.Revision)
+	if err != nil {
+		return state.Result{}, err
+	}
+	return state.Result{Job: out.Job, Replayed: replayed}, nil
 }

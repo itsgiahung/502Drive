@@ -48,6 +48,12 @@ func Classify(err error) *Error {
 		return Fail(http.StatusConflict, "invalid_transition", "That action is not available in the current state.")
 	case errors.Is(err, state.ErrNeedsAction):
 		return Fail(http.StatusConflict, "needs_action", "The copied source needs attention before it can sync.")
+	case errors.Is(err, state.ErrCollectionNotRetired):
+		return Fail(http.StatusConflict, "collection_not_retired", "The collection must be retired before this action.")
+	case errors.As(err, &state.ErrCollectionBusy{}):
+		var busy state.ErrCollectionBusy
+		errors.As(err, &busy)
+		return Fail(http.StatusConflict, "collection_busy", "Collection is busy running job "+busy.ActiveJobID+"; cancel or wait for it first.")
 	case errors.Is(err, state.ErrCapacity):
 		e := Fail(http.StatusTooManyRequests, "capacity_exceeded", "Too many jobs are running. Try again later.")
 		e.Retryable, e.RetryAfter = true, 30*time.Second

@@ -63,6 +63,31 @@ commit rồi mới trả `202` + `Location`.
 - Counts đọc từ item; `total_items` null khi còn folder chưa list xong.
 - `result_url` chỉ có khi root đã tạo.
 
+## Copy lại cùng nguồn (L2)
+
+Trùng khóa là `(nguồn, đích)` của cùng tài khoản. `POST /v1/jobs` nhận `mode`:
+
+- không có `mode`: nếu đã có bản sao → `409 already_copied` (thông báo nêu id và trạng thái); không có bản sao thì copy bình thường;
+- `update`: bản sao gần nhất được làm mới bằng một lần delta run (`POST …/runs`, cùng collection); chưa có thì copy;
+  bản sao đã retired → `409 collection_retired` (resume trước hoặc dùng `new`);
+- `new`: luôn tạo bản sao mới (hành vi cũ của `Submit`).
+
+CLI: `copy --update|--new`. Trong script (không có TTY) mặc định là `update`; trong terminal bị hỏi
+`[u]pdate / [n]ew / [c]ancel` khi trùng. Plan đã dùng (replay idempotent) không bị đối chiếu lại.
+Tra cứu dùng chỉ mục `collections_source_dest` (migration 020), có test `EXPLAIN QUERY PLAN`.
+Telegram và TUI hiện vẫn gọi `Submit` (= `new`); móc hộp thoại cho hai nơi này nằm ở "Móc UI cho Claude".
+
+## Vòng đời collection (L1)
+
+- `retire`: tắt lịch và realtime, hủy job xếp hàng/tạm dừng của collection, state `retired`, `retired_at`.
+  Không đụng Drive. Từ chối (`409 collection_busy`, nêu id job) khi đang có job chạy.
+- `resume`: đưa lại `ready`. `forget`: chỉ khi đã retired; xóa bản ghi cục bộ (collection, mapping, lịch sử job,
+  audit, sync). Không đụng Drive. `cleanup`: job `kind=cleanup`, chỉ đưa thư mục đích có `502drive_intent` vào
+  **thùng rác Drive** (`TrashFile`, không `DeleteFile`); mặc định dry-run; bản thật cần đúng `confirm_name`.
+  Gọi lại khi đã vào thùng rác là thành công. Crash giữa chừng: job còn `running`, lần khởi động sau đối chiếu bằng
+  `GetFile`, không gọi trash lần nữa.
+- Retired không được `ClaimDueSchedules`/`AdvancePoll` nhận, và thông báo sync bỏ qua collection retired.
+
 ## Kiểm tra toàn vẹn (audit) và sửa (repair)
 
 `502drive audit COLLECTION` đối chiếu cây nguồn với cây đích của một collection

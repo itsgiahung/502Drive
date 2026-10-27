@@ -214,7 +214,7 @@ func (s *Service) PatchPreferences(ctx context.Context, p Principal, key string,
 }
 
 func (s *Service) Collections(ctx context.Context, p Principal, all bool) ([]state.Collection, error) {
-	return s.Store.Collections(ctx, scope(p, all))
+	return s.Store.Collections(ctx, scope(p, all), all)
 }
 
 func (s *Service) Collection(ctx context.Context, p Principal, id string) (state.Collection, error) {
@@ -224,7 +224,7 @@ func (s *Service) Collection(ctx context.Context, p Principal, id string) (state
 // CollectionPage pages the library. The cursor is bound to the principal and
 // the active filters by the HTTP layer.
 func (s *Service) CollectionPage(ctx context.Context, p Principal, all bool, query, mode string, limit int, cursor int64) ([]state.Collection, int64, error) {
-	return s.Store.CollectionPage(ctx, scope(p, all), query, mode, limit, cursor)
+	return s.Store.CollectionPage(ctx, scope(p, all), query, mode, all, limit, cursor)
 }
 
 func (s *Service) Operators(ctx context.Context, p Principal) ([]state.Operator, error) {

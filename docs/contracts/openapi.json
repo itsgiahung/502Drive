@@ -1843,6 +1843,225 @@
      "$ref": "#/components/parameters/Cursor"
     }
    ]
+  },
+  "/v1/collections/{collection_id}/retire": {
+   "post": {
+    "summary": "Stop following a collection; keep the copy and mappings",
+    "description": "Own collection or owner. Turns off scheduled and realtime sync; no Drive change. 409 collection_busy names the active job. Idempotent; expected revision required.",
+    "responses": {
+     "200": {
+      "description": "Own collection or owner. Turns off scheduled and realtime sync; no Drive change. 409 collection_busy names the active job. Idempotent; expected revision required.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CollectionResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "$ref": "#/components/responses/Error409"
+     },
+     "429": {
+      "$ref": "#/components/responses/Error429"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    },
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ActionInput"
+       }
+      }
+     }
+    }
+   },
+   "parameters": [
+    {
+     "name": "collection_id",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+     }
+    }
+   ]
+  },
+  "/v1/collections/{collection_id}/resume": {
+   "post": {
+    "summary": "Resume a retired collection",
+    "description": "Own collection or owner. Returns the collection to ready. 409 collection_not_retired when it is not retired. Idempotent; expected revision required.",
+    "responses": {
+     "200": {
+      "description": "Own collection or owner. Returns the collection to ready. 409 collection_not_retired when it is not retired. Idempotent; expected revision required.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CollectionResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "$ref": "#/components/responses/Error409"
+     },
+     "429": {
+      "$ref": "#/components/responses/Error429"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    },
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ActionInput"
+       }
+      }
+     }
+    }
+   },
+   "parameters": [
+    {
+     "name": "collection_id",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+     }
+    }
+   ]
+  },
+  "/v1/collections/{collection_id}/forget": {
+   "post": {
+    "summary": "Forget a retired collection in the local database",
+    "description": "Own collection or owner. Deletes local records only (collection, mappings, job history, sync settings, audits); never touches Drive. Requires retired state. Idempotent; expected revision required.",
+    "responses": {
+     "200": {
+      "description": "Own collection or owner. Deletes local records only (collection, mappings, job history, sync settings, audits); never touches Drive. Requires retired state. Idempotent; expected revision required.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ForgetResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "$ref": "#/components/responses/Error409"
+     },
+     "429": {
+      "$ref": "#/components/responses/Error429"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    },
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ActionInput"
+       }
+      }
+     }
+    }
+   },
+   "parameters": [
+    {
+     "name": "collection_id",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+     }
+    }
+   ]
+  },
+  "/v1/collections/{collection_id}/cleanup": {
+   "post": {
+    "summary": "Admit a cleanup job for a retired collection",
+    "description": "Own collection or owner. Moves the 502Drive-created destination root to the Drive trash only (never permanent delete), only when it carries the 502Drive intent marker. dry_run defaults to true. Real runs need confirm_name equal to the root name. 202 is the admitted durable job, not completion.",
+    "responses": {
+     "202": {
+      "description": "Own collection or owner. Moves the 502Drive-created destination root to the Drive trash only (never permanent delete), only when it carries the 502Drive intent marker. dry_run defaults to true. Real runs need confirm_name equal to the root name. 202 is the admitted durable job, not completion.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "$ref": "#/components/responses/Error409"
+     },
+     "429": {
+      "$ref": "#/components/responses/Error429"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     },
+     "503": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    },
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CleanupInput"
+       }
+      }
+     }
+    }
+   },
+   "parameters": [
+    {
+     "name": "collection_id",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+     }
+    }
+   ]
   }
  },
  "components": {
@@ -2203,6 +2422,14 @@
      "expected_revision": {
       "type": "integer",
       "minimum": 0
+     },
+     "mode": {
+      "type": "string",
+      "enum": [
+       "update",
+       "new"
+      ],
+      "description": "Omit to refuse a second copy of the same source to the same destination (409 already_copied). update refreshes the existing copy with one delta run (or copies when none exists); new always creates another copy."
      }
     },
     "required": [
@@ -2393,7 +2620,8 @@
       "type": "string",
       "enum": [
        "audit",
-       "repair"
+       "repair",
+       "cleanup"
       ]
      },
      "audit_id": {
@@ -3531,7 +3759,8 @@
        "ready",
        "partial",
        "needs_action",
-       "legacy_read_only"
+       "legacy_read_only",
+       "retired"
       ]
      },
      "revision": {
@@ -3547,6 +3776,20 @@
         "type": "null"
        }
       ]
+     },
+     "retired_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "root_name": {
+      "type": "string"
      }
     },
     "required": [
@@ -3560,7 +3803,9 @@
      "baseline_job_id",
      "state",
      "revision",
-     "sync"
+     "sync",
+     "retired_at",
+     "root_name"
     ]
    },
    "CollectionPage": {
@@ -4191,6 +4436,60 @@
       "type": "boolean"
      }
     }
+   },
+   "CleanupInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "expected_revision": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "dry_run": {
+      "type": "boolean",
+      "default": true
+     },
+     "confirm_name": {
+      "type": "string",
+      "maxLength": 512,
+      "description": "Required when dry_run is false; must equal the collection's destination root name."
+     }
+    },
+    "required": [
+     "expected_revision"
+    ]
+   },
+   "ForgetResponse": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "deleted": {
+        "type": "boolean",
+        "const": true
+       },
+       "id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+       }
+      },
+      "required": [
+       "deleted",
+       "id"
+      ]
+     },
+     "request_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "data",
+     "request_id"
+    ]
    }
   },
   "responses": {

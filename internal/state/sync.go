@@ -506,6 +506,9 @@ func (s *Store) ClaimDueSchedules(ctx context.Context, now time.Time) ([]Job, er
 				return e
 			}
 			c, _ := decodeCollection(cb)
+			if c.State == CollectionRetired {
+				return nil
+			}
 			run, coalesced, e := admitRun(ctx, tx, c, "scheduled", sub.NextKey)
 			switch {
 			case errors.Is(e, ErrCapacity):
@@ -595,6 +598,9 @@ func (s *Store) AdvancePoll(ctx context.Context, collectionID, oldCursor, newCur
 				return e
 			}
 			c, _ := decodeCollection(cb)
+			if c.State == CollectionRetired {
+				return nil
+			}
 			j, coalesced, e := admitRun(ctx, tx, c, "realtime", "")
 			if e != nil {
 				if errors.Is(e, ErrNeedsAction) {
