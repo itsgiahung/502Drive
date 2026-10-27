@@ -37,11 +37,11 @@ func readStdinRefs(r io.Reader) ([]string, error) {
 // batchKey is the idempotency root of a batch. An explicit key wins; otherwise
 // the key is derived from the request itself, so repeating the same command
 // replays the same plans and jobs instead of copying everything twice.
-func batchKey(explicit string, sources []string, to, name string, o planOpts) string {
+func batchKey(explicit string, sources []string, to, name string, o planOpts, afterCopySync string) string {
 	if explicit != "" {
 		return explicit
 	}
-	parts := append([]string{"batch", to, name, o.Shortcuts, o.OnConflict, fmt.Sprint(o.Filter)}, sources...)
+	parts := append([]string{"batch", to, name, o.Shortcuts, o.OnConflict, fmt.Sprint(o.Filter), afterCopySync}, sources...)
 	return "batch-" + requestID(parts...)
 }
 
@@ -59,8 +59,8 @@ type batchItemResult struct {
 // copyBatch admits one job per source under one batch id. Each source has its
 // own idempotency keys (batch key + ":" + index), so one refused link does not
 // stop the others, and a repeated command admits only what is still missing.
-func (a *App) copyBatch(ctx context.Context, sources []string, to, name, explicitKey string, o planOpts, mode string, autoName, dry, wait bool, waitTimeout time.Duration) error {
-	bkey := batchKey(explicitKey, sources, to, name, o)
+func (a *App) copyBatch(ctx context.Context, sources []string, to, name, explicitKey string, o planOpts, mode, afterCopySync string, autoName, dry, wait bool, waitTimeout time.Duration) error {
+	bkey := batchKey(explicitKey, sources, to, name, o, afterCopySync)
 	bid := "batch-" + requestID(bkey)
 	results := make([]batchItemResult, 0, len(sources))
 	var firstErr error
@@ -92,7 +92,7 @@ func (a *App) copyBatch(ctx context.Context, sources []string, to, name, explici
 			}
 			itemName = autoCopyName(plan.SourceName)
 		}
-		job, err := a.submitBatchItem(ctx, src, to, itemName, base, bid, o, mode)
+		job, err := a.submitBatchItem(ctx, src, to, itemName, base, bid, o, mode, afterCopySync)
 		if err != nil {
 			res.err = err
 			if firstErr == nil {
@@ -141,7 +141,7 @@ func (a *App) copyBatch(ctx context.Context, sources []string, to, name, explici
 	return firstErr
 }
 
-func (a *App) submitBatchItem(ctx context.Context, source, to, name, base, bid string, o planOpts, mode string) (jobView, error) {
+func (a *App) submitBatchItem(ctx context.Context, source, to, name, base, bid string, o planOpts, mode, afterCopySync string) (jobView, error) {
 	var job jobView
 	plan, _, err := a.makePlan(ctx, source, to, name, base+"-plan", o)
 	if err != nil {
@@ -150,6 +150,9 @@ func (a *App) submitBatchItem(ctx context.Context, source, to, name, base, bid s
 	body := map[string]any{"plan_id": plan.ID, "expected_revision": plan.Revision, "batch_id": bid}
 	if mode != "" {
 		body["mode"] = mode
+	}
+	if afterCopySync != "" {
+		body["after_copy_sync_mode"] = afterCopySync
 	}
 	r, err := a.call(ctx, "POST", "/v1/jobs", nil, body, base)
 	if err != nil {
@@ -237,6 +240,17 @@ func (a *App) jobsMoveCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		id := cur.ID
+		if before != "" {
+			if before, err = a.resolveJobID(ctx, before); err != nil {
+				return err
+			}
+		}
+		if after != "" {
+			if after, err = a.resolveJobID(ctx, after); err != nil {
+				return err
+			}
+		}
 		body := map[string]any{"expected_revision": cur.Revision}
 		if before != "" {
 			body["before"] = before
@@ -247,7 +261,7 @@ func (a *App) jobsMoveCmd() *cobra.Command {
 		if cmd.Flags().Changed("priority") {
 			body["priority"] = priority
 		}
-		r, err := a.call(ctx, "POST", "/v1/jobs/"+url.PathEscape(args[0])+"/move", nil, body, "")
+		r, err := a.call(ctx, "POST", "/v1/jobs/"+url.PathEscape(id)+"/move", nil, body, "")
 		if err != nil {
 			return err
 		}
@@ -264,5 +278,6 @@ func (a *App) jobsMoveCmd() *cobra.Command {
 	f.StringVar(&before, "before", "", "place this job before the given queued job")
 	f.StringVar(&after, "after", "", "place this job after the given queued job")
 	f.IntVar(&priority, "priority", 0, "queue priority from -5 to 5 (higher runs first)")
+	c.ValidArgsFunction = a.completeJobIDs
 	return c
 }

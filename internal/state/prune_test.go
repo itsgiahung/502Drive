@@ -244,3 +244,65 @@ func TestPruneEnforcesRetentionAndProtectsReferences(t *testing.T) {
 		t.Fatalf("Prune with olderThan=0 should prune nothing, got %+v", reportZero)
 	}
 }
+
+func TestPruneKeepsJobsReferencedByAuditOrPendingOutbox(t *testing.T) {
+	s := newAPITestStore(t)
+	ctx := context.Background()
+	old := time.Now().Add(-100 * 24 * time.Hour).UTC()
+	insertJob := func(id string) {
+		j := Job{ID: id, Principal: "owner", CollectionID: "col_ref", State: "succeeded", CreatedAt: old, UpdatedAt: old}
+		b, _ := json.Marshal(j)
+		if _, err := s.db.ExecContext(ctx, "INSERT INTO jobs(id, principal, collection_id, state, body) VALUES(?,?,?,?,?)",
+			j.ID, j.Principal, j.CollectionID, j.State, b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.db.ExecContext(ctx, "INSERT INTO plans(id, principal, body) VALUES('plan_ref','owner','{}')"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, "INSERT INTO collections(id, principal, plan_id, body) VALUES('col_ref','owner','plan_ref', '{}')"); err != nil {
+		t.Fatal(err)
+	}
+	audited, outboxed, bare := "job_audited", "job_outboxed", "job_bare"
+	for _, id := range []string{audited, outboxed, bare} {
+		insertJob(id)
+	}
+	if _, err := s.db.ExecContext(ctx, "INSERT INTO audits(id,collection_id,job_id,state,counts,started_at) VALUES('audit_ref','col_ref',?, 'succeeded','{}',?)", audited, old.UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO notification_outbox(id,kind,principal,job_id,chat_id,state,created_at,updated_at)
+		VALUES('out_ref','final','owner',?,1,'pending',?,?)`, outboxed, old.UnixMilli(), old.UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := s.Prune(ctx, PruneOptions{OlderThan: 90 * 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.JobsPruned != 1 {
+		t.Fatalf("jobs pruned = %d, want only the unreferenced one", rep.JobsPruned)
+	}
+	for _, id := range []string{audited, outboxed} {
+		var exists bool
+		if err := s.db.QueryRowContext(ctx, "SELECT count(*)>0 FROM jobs WHERE id=?", id).Scan(&exists); err != nil {
+			t.Fatal(err)
+		}
+		if !exists {
+			t.Fatalf("job %s referenced by audit/outbox was pruned", id)
+		}
+	}
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, "SELECT count(*)>0 FROM jobs WHERE id=?", bare).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("unreferenced old job survived prune")
+	}
+	rows, err := s.db.QueryContext(ctx, "PRAGMA foreign_key_check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	if rows.Next() {
+		t.Fatal("foreign key violation after prune")
+	}
+}

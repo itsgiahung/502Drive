@@ -22,7 +22,7 @@ func (t *Telegram) openJobs(ctx context.Context, p app.Principal) ([]state.Job, 
 	var out []state.Job
 	cursor := int64(0)
 	for page := 0; page < 5; page++ {
-		jobs, next, err := t.svc.Jobs(ctx, p, false, "", 100, cursor)
+		jobs, next, err := t.svc.Jobs(ctx, p, false, "", "", 100, cursor)
 		if err != nil {
 			return nil, err
 		}

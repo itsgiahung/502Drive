@@ -92,6 +92,8 @@ func (s *Server) Handler() http.Handler {
 	route("POST /v1/jobs", s.createJob)
 	route("GET /v1/jobs/{id}", s.getJob)
 	route("GET /v1/jobs/{id}/events", s.jobEvents)
+	route("GET /v1/history", s.history)
+	route("GET /v1/jobs/{id}/items", s.jobItems)
 	for _, a := range []string{"pause", "resume", "cancel", "retry"} {
 		route("POST /v1/jobs/{id}/"+a, s.jobAction(a))
 	}
@@ -101,6 +103,7 @@ func (s *Server) Handler() http.Handler {
 	route("POST /v1/queue/resume", s.queuePause(false))
 	route("GET /v1/drive/folders/{id}", s.browseFolder)
 	route("GET /v1/drive/files/{id}", s.driveFile)
+	route("GET /v1/drive/search", s.searchDrive)
 	route("POST /v1/drive/folders", s.mkdir)
 	route("GET /v1/destinations", s.listDestinations)
 	route("POST /v1/destinations", s.addDestination)
@@ -115,11 +118,13 @@ func (s *Server) Handler() http.Handler {
 	route("POST /v1/operators", s.addOperator)
 	route("DELETE /v1/operators/{id}", s.removeOperator)
 	route("GET /v1/doctor", s.doctor)
+	route("POST /v1/doctor/fix", s.doctorFix)
 	route("GET /v1/collections", s.listCollections)
 	route("GET /v1/collections/{id}", s.getCollection)
 	route("GET /v1/collections/{id}/filter", s.getCollectionFilter)
 	route("PUT /v1/collections/{id}/filter", s.setCollectionFilter)
 	route("POST /v1/collections/{id}/audits", s.startAudit)
+	route("GET /v1/collections/{id}/audits/latest", s.latestAudit)
 	route("GET /v1/audits/{id}", s.getAudit)
 	route("GET /v1/audits/{id}/findings", s.auditFindings)
 	route("POST /v1/audits/{id}/repair", s.repairAudit)
@@ -340,6 +345,9 @@ type jobInput struct {
 	Mode string `json:"mode,omitempty"`
 	// BatchID groups this job with the other links of one "copy many" request.
 	BatchID string `json:"batch_id,omitempty"`
+	// AfterCopySyncMode configures sync on the new collection after a
+	// successful initial copy (S8). Empty uses the principal's preference.
+	AfterCopySyncMode string `json:"after_copy_sync_mode,omitempty"`
 }
 
 func (s *Server) createJob(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
@@ -356,7 +364,7 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request, p app.Princip
 	if in.PlanID == "" || in.ExpectedRevision == nil {
 		return 0, nil, app.Fail(400, "invalid_request", "plan_id and expected_revision are required.")
 	}
-	res, err := s.Svc.SubmitModeInBatch(r.Context(), p, idemKey(r), in.PlanID, *in.ExpectedRevision, in.Mode, in.BatchID)
+	res, err := s.Svc.SubmitModeInBatchWithSync(r.Context(), p, idemKey(r), in.PlanID, *in.ExpectedRevision, in.Mode, in.BatchID, in.AfterCopySyncMode)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -376,15 +384,19 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request, p app.Principa
 	if st != "" && !validJobState(st) {
 		return 0, nil, app.Fail(400, "invalid_request", "Unknown job state.")
 	}
+	collectionID := strings.TrimSpace(q.Get("collection_id"))
+	if len(collectionID) > 64 {
+		return 0, nil, app.Fail(400, "invalid_request", "collection_id is too long.")
+	}
 	scopeKey := p.ID
 	if all {
 		scopeKey = "*"
 	}
-	cur, err := decodeCursor(q.Get("cursor"), "jobs", scopeKey, st)
+	cur, err := decodeCursor(q.Get("cursor"), "jobs", scopeKey, st+"\x1e"+collectionID)
 	if err != nil {
 		return 0, nil, err
 	}
-	jobs, next, err := s.Svc.Jobs(r.Context(), p, all, st, limit, cur)
+	jobs, next, err := s.Svc.Jobs(r.Context(), p, all, st, collectionID, limit, cur)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -392,7 +404,7 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request, p app.Principa
 	for _, j := range jobs {
 		items = append(items, jobDTO(j))
 	}
-	return 200, map[string]any{"items": items, "next_cursor": encodeCursor("jobs", scopeKey, st, next)}, nil
+	return 200, map[string]any{"items": items, "next_cursor": encodeCursor("jobs", scopeKey, st+"\x1e"+collectionID, next)}, nil
 }
 
 func validJobState(s string) bool {
@@ -409,6 +421,47 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request, p app.Principal)
 		return 0, nil, err
 	}
 	return 200, jobDTO(j), nil
+}
+
+// jobItems pages a job's items. problems=true is the report view: failed,
+// blocked and skipped items with their stable reason code.
+func (s *Server) jobItems(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
+	limit, err := pageParams(r)
+	if err != nil {
+		return 0, nil, err
+	}
+	q := r.URL.Query()
+	problems := q.Get("problems") == "true"
+	cur, err := decodeCursor(q.Get("cursor"), "items", p.ID+"/"+r.PathValue("id"), strconv.FormatBool(problems))
+	if err != nil {
+		return 0, nil, err
+	}
+	items, next, err := s.Svc.JobItems(r.Context(), p, r.PathValue("id"), problems, limit, cur)
+	if err != nil {
+		return 0, nil, err
+	}
+	out := make([]any, 0, len(items))
+	for _, it := range items {
+		out = append(out, itemDTO(it))
+	}
+	return 200, map[string]any{"items": out, "next_cursor": encodeCursor("items", p.ID+"/"+r.PathValue("id"), strconv.FormatBool(problems), next)}, nil
+}
+
+// itemDTO is one source item and its write outcome.
+func itemDTO(it state.Item) map[string]any {
+	var size any
+	if it.Size != nil {
+		size = *it.Size
+	}
+	path := it.RelPath
+	if path == "" {
+		path = it.Name
+	}
+	return map[string]any{
+		"source_id": it.SourceID, "name": it.Name, "path": path, "kind": it.Kind, "mime_type": it.MimeType,
+		"state": it.State, "code": it.ErrorCode, "attempts": it.Attempts, "size_bytes": size,
+		"destination_id": it.DestID,
+	}
 }
 
 func (s *Server) jobEvents(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
@@ -608,6 +661,19 @@ func (s *Server) doctor(w http.ResponseWriter, r *http.Request, p app.Principal)
 	return 200, map[string]any{"online": online, "checks": checks}, nil
 }
 
+// doctorFix repairs local, safe doctor failures (secret permissions, missing
+// directories) and returns the checks after the repair.
+func (s *Server) doctorFix(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
+	fixed, checks, err := s.Svc.DoctorFix(r.Context(), p)
+	if err != nil {
+		return 0, nil, err
+	}
+	if fixed == nil {
+		fixed = []string{}
+	}
+	return 200, map[string]any{"fixed": fixed, "checks": checks}, nil
+}
+
 // ---- collections ----
 
 func (s *Server) listCollections(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
@@ -624,17 +690,18 @@ func (s *Server) listCollections(w http.ResponseWriter, r *http.Request, p app.P
 		return 0, nil, app.Fail(400, "invalid_request", "sync_mode must be off, scheduled or realtime.")
 	}
 	all := q.Get("all") == "true"
+	includeRetired := all || q.Get("include_retired") == "true"
 	scopeKey := p.ID
 	if all {
 		scopeKey = "*"
 	}
 	// The cursor is bound to the principal and both filters, as for /v1/jobs.
-	filter := query + "\x1e" + mode
+	filter := query + "\x1e" + mode + "\x1e" + strconv.FormatBool(includeRetired)
 	cursor, err := decodeCursor(q.Get("cursor"), "collections", scopeKey, filter)
 	if err != nil {
 		return 0, nil, err
 	}
-	cs, next, err := s.Svc.CollectionPage(r.Context(), p, all, query, mode, limit, cursor)
+	cs, next, err := s.Svc.CollectionPage(r.Context(), p, all, includeRetired, query, mode, limit, cursor)
 	if err != nil {
 		return 0, nil, err
 	}

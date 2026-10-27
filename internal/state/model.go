@@ -197,6 +197,10 @@ type Job struct {
 	// QueuePaused marks a job that the global queue pause moved to pausing or
 	// paused; only the queue resume (not a user action) may resume it.
 	QueuePaused bool `json:"queue_paused,omitempty"`
+	// AfterCopySync asks for a sync subscription on the collection this job
+	// creates, once the initial copy succeeds (S8). Empty means "use the
+	// principal's preference"; "off" means never.
+	AfterCopySync string `json:"after_copy_sync_mode,omitempty"`
 }
 
 // Collection states.

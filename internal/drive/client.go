@@ -326,6 +326,27 @@ func (c *Client) TrashFile(ctx context.Context, id string) error {
 	return wrap(err)
 }
 
+// Search lists non-trashed items whose name contains query. Corpora allDrives
+// keeps shared-drive items visible; Google itself enforces view permission.
+func (c *Client) Search(ctx context.Context, query string, limit int) ([]File, error) {
+	if limit < 1 || limit > 20 {
+		limit = 20
+	}
+	call := c.svc.Files.List().
+		Q(fmt.Sprintf("name contains '%s' and trashed=false", QueryEscape(query))).
+		Corpora("allDrives").SupportsAllDrives(true).IncludeItemsFromAllDrives(true).
+		PageSize(int64(limit)).OrderBy("modifiedTime desc").Fields("files(" + listFields + ")").Context(ctx)
+	r, err := call.Do()
+	if err != nil {
+		return nil, wrap(err)
+	}
+	out := make([]File, 0, len(r.Files))
+	for _, f := range r.Files {
+		out = append(out, convert(f))
+	}
+	return out, nil
+}
+
 func (c *Client) StartPageToken(ctx context.Context) (string, error) {
 	r, err := c.svc.Changes.GetStartPageToken().SupportsAllDrives(true).Context(ctx).Do()
 	if err != nil {

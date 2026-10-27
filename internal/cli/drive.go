@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/itsgiahung/502Drive/internal/drive"
+	"github.com/itsgiahung/502Drive/internal/present"
 )
 
 // todayFunc lets tests pin the date used by --auto-name.
@@ -64,7 +65,7 @@ func (a *App) lsCmd() *cobra.Command {
 				return err
 			}
 			if !all {
-				a.emit(r, "", func() { a.printFolder(page) })
+				a.emit(r, "", func() { a.printFolder(cmd.Context(), page) })
 				return nil
 			}
 			merged := page
@@ -80,7 +81,7 @@ func (a *App) lsCmd() *cobra.Command {
 				merged.Next = next.Next
 				r = nextResp
 			}
-			a.emitMergedFolder(r, merged)
+			a.emitMergedFolder(cmd.Context(), r, merged)
 			return nil
 		}}
 	c.Flags().BoolVar(&all, "all", false, "read every page (follows next_page_token)")
@@ -110,7 +111,7 @@ func (a *App) browseFolder(ctx context.Context, id, key, pageToken string) (driv
 
 // emitMergedFolder prints the merged result of --all: one JSON envelope with
 // every page's items, or the human table.
-func (a *App) emitMergedFolder(r *Response, page driveFolderPage) {
+func (a *App) emitMergedFolder(ctx context.Context, r *Response, page driveFolderPage) {
 	if a.g.json {
 		b, err := json.Marshal(map[string]any{
 			"data": map[string]any{
@@ -128,12 +129,12 @@ func (a *App) emitMergedFolder(r *Response, page driveFolderPage) {
 		fmt.Fprintln(a.out(), string(b))
 		return
 	}
-	a.printFolder(page)
+	a.printFolder(ctx, page)
 }
 
 // printFolder renders the breadcrumb and one row per item. Every Drive name
 // goes through Sanitize; width padding is measured on plain text.
-func (a *App) printFolder(page driveFolderPage) {
+func (a *App) printFolder(ctx context.Context, page driveFolderPage) {
 	if len(page.Path) > 0 {
 		names := make([]string, 0, len(page.Path))
 		for _, p := range page.Path {
@@ -157,7 +158,7 @@ func (a *App) printFolder(page driveFolderPage) {
 			size = "-"
 		}
 		sizeCell := fmt.Sprintf("%8s", size)
-		dateCell := fmt.Sprintf("%-10s", formatDriveDate(it.ModifiedAt))
+		dateCell := fmt.Sprintf("%-10s", a.formatDate(context.Background(), it.ModifiedAt))
 		shown := name
 		if it.Kind == "folder" {
 			shown = a.style.bold(name)
@@ -166,31 +167,12 @@ func (a *App) printFolder(page driveFolderPage) {
 	}
 }
 
-// formatBytes renders a Drive size as B/KB/MB; unknown sizes are "-".
+// formatBytes renders a Drive size through the shared presenter.
 func formatBytes(size *int64) string {
 	if size == nil || *size < 0 {
 		return "-"
 	}
-	n := *size
-	switch {
-	case n < 1024:
-		return fmt.Sprintf("%d B", n)
-	case n < 1024*1024:
-		return fmt.Sprintf("%.1f KB", float64(n)/1024)
-	}
-	return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
-}
-
-// formatDriveDate renders an RFC3339 timestamp as YYYY-MM-DD.
-func formatDriveDate(raw *string) string {
-	if raw == nil || *raw == "" {
-		return "-"
-	}
-	t, err := time.Parse(time.RFC3339Nano, *raw)
-	if err != nil {
-		return "-"
-	}
-	return t.Format("2006-01-02")
+	return present.HumanBytes(*size)
 }
 
 // info prints the display metadata of one Drive item.
@@ -214,12 +196,12 @@ func (a *App) infoCmd() *cobra.Command {
 			if err = r.Decode(&f); err != nil {
 				return err
 			}
-			a.emit(r, Sanitize(f.ID), func() { a.printDriveInfo(f) })
+			a.emit(r, Sanitize(f.ID), func() { a.printDriveInfo(cmd.Context(), f) })
 			return nil
 		}}
 }
 
-func (a *App) printDriveInfo(f driveFileView) {
+func (a *App) printDriveInfo(ctx context.Context, f driveFileView) {
 	owner := "-"
 	if f.Owner != nil {
 		owner = strings.TrimSpace(f.Owner.Name)
@@ -238,8 +220,8 @@ func (a *App) printDriveInfo(f driveFileView) {
 	printKV(a.out(), a.style, []kv{
 		{"kind", Sanitize(kind)},
 		{"size", formatBytes(f.Size)},
-		{"modified", formatDriveDate(f.ModifiedAt)},
-		{"created", formatDriveDate(f.CreatedAt)},
+		{"modified", a.formatDate(ctx, f.ModifiedAt)},
+		{"created", a.formatDate(ctx, f.CreatedAt)},
 		{"owner", Sanitize(owner)},
 		{"can copy", yesNo(f.CanCopy)},
 		{"can add children", yesNo(f.CanWrite)},

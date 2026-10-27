@@ -107,11 +107,11 @@ func TestBatchButtonsAreOneShot(t *testing.T) {
 	label := fmt.Sprintf(g.batchPause, 2)
 	h.tap(card, label)
 	// Someone resumes one job meanwhile; the stale batch button must not pause it again.
-	for _, j := range h.jobs() {
+	if js := h.jobs(); len(js) > 0 {
+		j := js[0]
 		if _, err := h.svc.JobAction(context.Background(), app.Owner, "resume-"+j.ID, j.ID, "resume", j.Revision); err != nil {
 			t.Fatal(err)
 		}
-		break
 	}
 	h.api.push(h.click(card, label))
 	h.pull()

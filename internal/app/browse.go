@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/itsgiahung/502Drive/internal/drive"
 	"github.com/itsgiahung/502Drive/internal/state"
@@ -24,6 +25,26 @@ const (
 	// RootFolder is Drive's alias for "My Drive".
 	RootFolder = "root"
 )
+
+// Search finds Drive items by name (up to 20). Owner only, like the browser:
+// it exposes the owner's Drive names. Google enforces what the account may see.
+func (s *Service) Search(ctx context.Context, p Principal, query string) ([]drive.File, error) {
+	if err := requireOwner(p); err != nil {
+		return nil, err
+	}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, Fail(http.StatusBadRequest, "invalid_request", "q is required.")
+	}
+	if n := len([]rune(query)); n > 100 {
+		query = string([]rune(query)[:100])
+	}
+	prov, err := s.provider(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return prov.Search(ctx, query, 20)
+}
 
 // FolderView is one folder of the Drive browser: where it is, what is in it.
 type FolderView struct {

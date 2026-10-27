@@ -83,6 +83,10 @@ type Provider interface {
 	FindByIntent(ctx context.Context, parentID, intent string) ([]File, error)
 	// FindChildrenByName returns non-trashed children of parentID with the exact given name.
 	FindChildrenByName(ctx context.Context, parentID, name string) ([]File, error)
+	// Search finds non-trashed files and folders whose name contains query.
+	// Drive returns only items the authenticated account can view; limit is
+	// bounded to 20.
+	Search(ctx context.Context, query string, limit int) ([]File, error)
 	// RenameFile, MoveFile and TrashFile change objects we created; they are
 	// idempotent, so an unknown outcome may simply be repeated.
 	RenameFile(ctx context.Context, id, name string) error

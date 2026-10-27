@@ -434,6 +434,37 @@ Chạy: `go test -race ./internal/telegram`.
 | G-17 | Lỗi có hướng xử lý (vi/en), job lỗi kèm gợi ý theo mã; mọi chuỗi đợt G có đủ vi + en | local | `TestErrorCardsExplainWhatToDoInBothLanguages`, `TestFailedJobNoticeSaysWhatToDoNext`, `TestBatchGStringsExistInBothLanguages` |
 | G-18 | Toàn bộ trên bot Telegram thật, Drive thật, múi giờ/DST thật của máy, quota thật | chưa chạy | cần bot + tài khoản thật |
 
+## Batch H — API và CLI còn thiếu
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| H1-1 | `include_retired` mở rộng đúng thư viện nhưng không mở principal; cursor gắn bộ lọc | local | [state/h_api_test.go](../internal/state/h_api_test.go) `TestCollectionPageIncludeRetiredKeepsPrincipalScope`, [httpapi/h_api_test.go](../internal/httpapi/h_api_test.go) `TestCollectionListIncludeRetired` |
+| H1-2 | `GET /v1/collections/{id}/audits/latest` trả audit mới nhất; `repairable_findings` bỏ finding đã sửa; 404 khi chưa audit | local | `TestLastAuditCountsUnrepairedRepairableFindings`, `TestLatestAuditWithRepairableCount` |
+| H1-3 | `GET /v1/drive/search` tối đa 20, bỏ thùng rác, q rỗng 400, không phân biệt hoa thường | local | `TestDriveSearchIsBoundedAndExcludesTrash` |
+| H1-4 | Lọc job theo `collection_id`/`state` + cursor; kế hoạch truy vấn dùng chỉ mục, không sort cả bảng | local | `TestJobListFiltersAndCursorBinding`, `TestJobListFiltersByCollectionAndPagesNewestFirst` |
+| H1-5 | Preferences có `daily_report`/`daily_report_at`, giờ sai bị từ chối; Telegram dùng cùng trường | local | [app/sync_test.go](../internal/app/sync_test.go) `TestDailyReportPreferencesRoundTrip`, telegram `g2_settings_test.go` |
+| H1-6 | `max_active_jobs` mặc định 2, cấu hình 1..32, nối vào `engine.Jobs` | local | [config/config_test.go](../internal/config/config_test.go) `TestActiveJobsDefaultsToTwoAndValidatesRange` |
+| H1-7 | Tìm Drive thật (Drive API), quyền chia sẻ thật | chưa chạy | cần tài khoản thật |
+| H2-1 | Preference/cờ `--sync` tự tạo subscription cho collection mới sau job initial thành công; sống qua restart | local | [app/aftercopy_test.go](../internal/app/aftercopy_test.go) `TestAfterCopySyncAppliesPreferenceAndSurvivesRestart` |
+| H2-2 | Job partial hoặc run không phải initial không tạo sync | local | `TestAfterCopySyncSkipsPartialAndNonInitialJobs` |
+| H2-3 | Idempotent theo collection: hai lần ghi kết quả chỉ một subscription | local | `TestAfterCopySyncTwiceOnOneCollectionCreatesOneSubscription` |
+| H2-4 | Lỗi tạo subscription không đổi job copy; retry rồi áp dụng | local | `TestAfterCopySyncJobFlagOverridesPreferenceAndFailureKeepsJob` |
+| H2-5 | `copy --sync` hợp lệ vào job, giá trị sai exit 2 | local | [cli/cli_test.go](../internal/cli/cli_test.go) `TestCopySyncFlagIsValidatedAndCarriedOnTheJob` |
+| H2-6 | `POST /v1/jobs` nhận `after_copy_sync_mode`, enum sai 400, DTO conform | local | [httpapi/h_api_test.go](../internal/httpapi/h_api_test.go) `TestJobAcceptsAfterCopySyncMode` |
+| H3-1 | `502drive LINK` = copy; `@last`, tiền tố duy nhất, tiền tố mơ hồ exit 2 | local | [cli/cli_test.go](../internal/cli/cli_test.go) `TestBareLinkMeansCopyAndShortJobReferences` |
+| H3-2 | `502drive wait ID` và `watch [ID] --json --interval` | local | `TestBareLinkMeansCopyAndShortJobReferences`, `TestWatchPrintsOneJSONLinePerTick` |
+| H3-3 | Completion job/collection trả ID thật + alias, không mở file | local | `TestShellCompletionListsJobAndCollectionIDs` |
+| H3-4 | `doctor --fix` chmod 0600, tạo thư mục, check chuyển passed | local | `TestDoctorFixRestrictsSecretPermissions`, [app/doctor_test.go](../internal/app/doctor_test.go) `TestDoctorFixCreatesDirectoriesAndRestrictsSecrets` |
+| H4-1 | `jobs report` liệt kê mục lỗi/bỏ qua kèm mã K1, lý do, đường dẫn, số lần thử; table/JSON/CSV | local | [cli/report_test.go](../internal/cli/report_test.go) `TestJobsReportListsK1CodesAndFormats` |
+| H4-2 | CSV escape đúng ô có phẩy/nháy/xuống dòng và chặn công thức `=+-@`/TAB/CR | local | cùng file `TestCSVFormulaGuardAndQuoting` |
+| H4-3 | `history export --since` lọc theo `updated_at`, phân trang không lặp/mất, cursor gắn cửa sổ; dùng chỉ mục `jobs_history`, không `TEMP B-TREE` | local | [state/history_test.go](../internal/state/history_test.go) `TestHistoryOrdersByUpdatedAtAndFiltersSince`, `TestHistoryQueryPlanUsesIndex`; [httpapi/h_api_test.go](../internal/httpapi/h_api_test.go) `TestHistoryPagesAndBindsCursorToWindow` |
+| H4-4 | `--since` tương đối/RFC3339/ngày; sai thì exit 2 | local | [cli/report_test.go](../internal/cli/report_test.go) `TestParseSince` |
+| H5-1 | Ngày giờ CLI theo `Preferences.Language`/timezone, JSON giữ UTC; snapshot bảng báo cáo | local | [cli/locale_test.go](../internal/cli/locale_test.go) `TestHumanDatesUsePreferenceLocaleAndTimezone`, `TestReportHumanSnapshot` |
+| H5-2 | Unit systemd `--user` sinh đúng (hardening, `%h`, `[Install]`), install idempotent 0600, status enabled/disabled | local | [autostart/systemd_test.go](../internal/autostart/systemd_test.go) |
+| H5-3 | `doctor` failed khi unit cài nhưng chưa enable; passed khi không có/enabled | local | [app/doctor_test.go](../internal/app/doctor_test.go) `TestDoctorSystemdUserUnitIsActionable` |
+| H5-4 | Prune giữ job còn audit/outbox pending tham chiếu, xóa job không tham chiếu, FK sạch | local | [state/prune_test.go](../internal/state/prune_test.go) `TestPruneKeepsJobsReferencedByAuditOrPendingOutbox` |
+| H6-1 | `staticcheck ./...` không còn cảnh báo (kể cả U1000/SA4023/ST1005/S1039 và SA4006 trong test) | local | `staticcheck ./...` (xem `BATCH-H-REPORT.md`) |
+
 ## Cách chạy
 
 `gofmt -l cmd internal && go vet ./... && go test -race ./...` cho toàn bộ; load

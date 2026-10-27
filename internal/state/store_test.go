@@ -144,7 +144,7 @@ func TestExclusiveLockAndExpiredPlan(t *testing.T) {
 	if _, err = s.Admit(context.Background(), "owner", "k", p.ID, 1); !errors.Is(err, ErrExpired) {
 		t.Fatal("expiry", err)
 	}
-	jobs, _, err := s.ListJobs(context.Background(), "owner", "", 100, 0)
+	jobs, _, err := s.ListJobs(context.Background(), "owner", "", "", 100, 0)
 	if err != nil || len(jobs) != 0 {
 		t.Fatal("rejected admission left a job", jobs, err)
 	}

@@ -130,7 +130,7 @@ func TestBulkActionsReachTheDaemonOnceEachAndFailuresDoNotStopTheRest(t *testing
 	m, _ = update(t, m, key("2"))
 	m, _ = update(t, m, key("a"))
 	m, cmd := update(t, m, key("p"))
-	m = run(t, m, cmd)
+	_ = run(t, m, cmd)
 	got := fake.recorded()
 	if len(got) != 2 || got[0] != "job:pause:a:1" || got[1] != "job:pause:b:2" {
 		t.Fatalf("calls = %v", got)

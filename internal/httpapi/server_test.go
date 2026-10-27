@@ -33,7 +33,6 @@ type harness struct {
 	spec  *spec
 	svc   *app.Service
 	eng   *engine.Engine
-	auth  *drive.Auth
 	srv   *Server
 }
 
@@ -451,7 +450,7 @@ func TestLoginThroughAPIDoesNotReportConnectedBeforeValidation(t *testing.T) {
 		t.Fatalf("account after failed login %+v", st)
 	}
 	reject = false
-	cb, s = login()
+	cb, _ = login()
 	resp, _ = http.Get(cb)
 	resp.Body.Close()
 	if resp.StatusCode != 200 {

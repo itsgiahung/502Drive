@@ -3,14 +3,12 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-	"golang.org/x/term"
 )
 
 // Style decides how human output looks; JSON never uses it.
@@ -88,13 +86,6 @@ func darkBackground(v string) bool {
 		return false
 	}
 	return true
-}
-
-func terminalWidth(f *os.File) int {
-	if w, _, err := term.GetSize(int(f.Fd())); err == nil && w > 0 {
-		return w
-	}
-	return 80
 }
 
 func (s Style) accent(t string) string {

@@ -10,6 +10,8 @@ dung đã kiểm bằng `rpm -qlp` + `rpm -Kv` + `rpm -i --test` (local, Fedora)
 /usr/bin/502drive
 /usr/bin/502d                                 # symlink: gõ `502d` cho nhanh
 /usr/lib/systemd/user/502drive.service      # user unit, KHÔNG tự enable
+# hoặc cài unit cho riêng người dùng (không cần root):
+502drive autostart systemd install          # ~/.config/systemd/user, enable + daemon-reload
 /usr/share/applications/502drive-tray.desktop
 /usr/share/icons/hicolor/256x256/apps/502drive.png
 /usr/share/bash-completion/completions/502drive

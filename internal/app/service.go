@@ -61,6 +61,17 @@ type Service struct {
 	// Hooks for doctor checks (nil uses system defaults)
 	DiskSpaceFn func(path string) (freeBytes uint64, totalBytes uint64, err error)
 	FDLimitFn   func() (cur uint64, max uint64, err error)
+	// Systemd reports the user unit; nil means the host has no user systemd
+	// (Windows/macOS/container) and the check is omitted.
+	Systemd func() SystemdState
+}
+
+// SystemdState is what doctor and the CLI show about the user unit.
+type SystemdState struct {
+	Installed bool   `json:"installed"`
+	Enabled   bool   `json:"enabled"`
+	Unit      string `json:"unit"`
+	Detail    string `json:"detail"`
 }
 
 func (s *Service) now() time.Time {
@@ -307,6 +318,16 @@ var batchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{8,64}$`)
 // SubmitModeInBatch is SubmitMode for one link of a batch (S6). batchID may be
 // empty; when set it must look like a batch id.
 func (s *Service) SubmitModeInBatch(ctx context.Context, p Principal, key, planID string, revision int, mode, batchID string) (state.Result, error) {
+	return s.SubmitModeInBatchWithSync(ctx, p, key, planID, revision, mode, batchID, "")
+}
+
+// SubmitModeInBatchWithSync is SubmitModeInBatch plus the S8 after-copy sync
+// mode. The mode is stored on the job, so the initial run applies it even if
+// the daemon restarts first.
+func (s *Service) SubmitModeInBatchWithSync(ctx context.Context, p Principal, key, planID string, revision int, mode, batchID, afterCopySync string) (state.Result, error) {
+	if !state.ValidAfterCopySyncMode(afterCopySync) {
+		return state.Result{}, Fail(http.StatusBadRequest, "invalid_request", "after_copy_sync_mode must be off, realtime, hourly, six_hourly or daily.")
+	}
 	if batchID != "" && !batchIDPattern.MatchString(batchID) {
 		return state.Result{}, Fail(http.StatusBadRequest, "invalid_request", "batch_id must be 8-64 letters, digits, '-' or '_'.")
 	}
@@ -336,7 +357,7 @@ func (s *Service) SubmitModeInBatch(ctx context.Context, p Principal, key, planI
 		}
 		return nil
 	}
-	res, err := s.Store.AdmitInBatch(ctx, p.ID, key, planID, revision, batchID, guard)
+	res, err := s.Store.AdmitInBatchWith(ctx, p.ID, key, planID, revision, batchID, afterCopySync, guard)
 	var existing state.ErrExistingCopy
 	if errors.As(err, &existing) {
 		return s.answerExistingCopy(ctx, p, key, existing.Copy, mode)
@@ -352,12 +373,21 @@ func (s *Service) Job(ctx context.Context, p Principal, id string) (state.Job, e
 	return s.Store.GetJob(ctx, scope(p, true), id)
 }
 
-func (s *Service) Jobs(ctx context.Context, p Principal, all bool, st string, limit int, cursor int64) ([]state.Job, int64, error) {
-	return s.Store.ListJobs(ctx, scope(p, all), st, limit, cursor)
+func (s *Service) Jobs(ctx context.Context, p Principal, all bool, st, collectionID string, limit int, cursor int64) ([]state.Job, int64, error) {
+	return s.Store.ListJobs(ctx, scope(p, all), st, collectionID, limit, cursor)
 }
 
 func (s *Service) Events(ctx context.Context, p Principal, id string, after int64, limit int) ([]state.Event, error) {
 	return s.Store.Events(ctx, scope(p, true), id, after, limit)
+}
+
+// JobItems pages the items of a job within the caller's scope. problems=true
+// keeps failed, blocked and skipped items for the report.
+func (s *Service) JobItems(ctx context.Context, p Principal, id string, problems bool, limit int, cursor int64) ([]state.Item, int64, error) {
+	if _, err := s.Store.GetJob(ctx, scope(p, true), id); err != nil {
+		return nil, 0, err
+	}
+	return s.Store.JobItems(ctx, id, problems, limit, cursor)
 }
 
 func (s *Service) JobAction(ctx context.Context, p Principal, key, id, action string, revision int) (state.Result, error) {
@@ -396,4 +426,10 @@ func (s *Service) answerExistingCopy(ctx context.Context, p Principal, key strin
 		return state.Result{}, err
 	}
 	return state.Result{Job: out.Job, Replayed: replayed}, nil
+}
+
+// History lists jobs by last update for the export/report surfaces. Owners may
+// ask for every principal; everyone else sees only their own jobs.
+func (s *Service) History(ctx context.Context, p Principal, all bool, since time.Time, limit int, cursor state.HistoryCursor) ([]state.Job, state.HistoryCursor, error) {
+	return s.Store.History(ctx, scope(p, all), since, limit, cursor)
 }

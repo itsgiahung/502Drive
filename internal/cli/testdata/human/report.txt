@@ -1,0 +1,4 @@
+job job_fixed  PARTIAL  2 problem item(s)
+state    code        reason                                           path         tries
+FAILED   unreadable  Permission denied or the source cannot be read.  Docs/a.pdf   3
+SKIPPED  filtered    Excluded by the collection filter.               Media/b.mp4  0

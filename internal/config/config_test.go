@@ -104,3 +104,23 @@ func TestTrayQuitStopsDaemonOptionRoundTrips(t *testing.T) {
 		t.Fatalf("default = %v / %v", err, cfg.TrayQuitStopsDaemon)
 	}
 }
+
+func TestActiveJobsDefaultsToTwoAndValidatesRange(t *testing.T) {
+	var c Config
+	if got := c.ActiveJobs(); got != 2 {
+		t.Fatalf("default active jobs = %d", got)
+	}
+	c.MaxActiveJobs = 5
+	if got := c.ActiveJobs(); got != 5 {
+		t.Fatalf("configured active jobs = %d", got)
+	}
+	c.Listen = "127.0.0.1:5020"
+	c.MaxActiveJobs = 33
+	if err := c.Validate(); err == nil {
+		t.Fatal("max_active_jobs above the limit accepted")
+	}
+	c.MaxActiveJobs = -1
+	if err := c.Validate(); err == nil {
+		t.Fatal("negative max_active_jobs accepted")
+	}
+}

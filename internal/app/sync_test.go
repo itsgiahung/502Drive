@@ -300,7 +300,7 @@ func TestRunNowCoalescesWithTheActiveRun(t *testing.T) {
 	if second.Job.ID != first.Job.ID || !second.Coalesced {
 		t.Fatalf("second run = %+v (first %s)", second, first.Job.ID)
 	}
-	jobs, _, err := e.store.ListJobs(ctx, "", "", 20, 0)
+	jobs, _, err := e.store.ListJobs(ctx, "", "", "", 20, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,5 +432,23 @@ func TestSyncWaitsForTheBaselineThenActivates(t *testing.T) {
 	}
 	if sub.State != state.SyncActive || sub.NextDue == nil {
 		t.Fatalf("after the baseline: %+v", sub)
+	}
+}
+
+func TestDailyReportPreferencesRoundTrip(t *testing.T) {
+	e := newSyncEnv(t, time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC))
+	ctx := context.Background()
+	on, at := true, "08:30"
+	prefs, err := e.svc.PatchPreferences(ctx, Owner, "report-1", PreferencePatch{DailyReport: &on, DailyReportAt: &at})
+	if err != nil || !prefs.DailyReport || prefs.DailyReportAt != at {
+		t.Fatalf("patch daily report: %+v %v", prefs, err)
+	}
+	stored, err := e.svc.Preferences(ctx, Owner)
+	if err != nil || !stored.DailyReport || stored.DailyReportAt != at {
+		t.Fatalf("stored daily report: %+v %v", stored, err)
+	}
+	bad := "8:30"
+	if _, err = e.svc.PatchPreferences(ctx, Owner, "report-2", PreferencePatch{DailyReportAt: &bad}); err == nil {
+		t.Fatal("an invalid report time was accepted")
 	}
 }

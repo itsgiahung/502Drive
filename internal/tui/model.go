@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"github.com/charmbracelet/bubbles/textinput"
 	"strings"
 	"time"
@@ -891,13 +890,6 @@ func (m Model) currentCollection() (Collection, bool) {
 }
 
 func stateWord(s string) string { return strings.ToUpper(s) }
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return fmt.Sprintf("%d %s", n, one)
-	}
-	return fmt.Sprintf("%d %s", n, many)
-}
 
 // spinCtl is shared by every copy of the model: it says whether a spinner tick
 // is already scheduled, so a burst of loads starts exactly one tick chain.

@@ -97,12 +97,6 @@ func (f *fakeAPI) answerTexts() []string {
 	return append([]string(nil), f.answers...)
 }
 
-func (f *fakeAPI) pollCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.polls
-}
-
 func (f *fakeAPI) setEditErr(fn func(int) (int, string, int)) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -343,7 +337,7 @@ func (h *harness) flush() {
 
 func (h *harness) jobs() []state.Job {
 	h.t.Helper()
-	jobs, _, err := h.svc.Jobs(context.Background(), app.Owner, true, "", 50, 0)
+	jobs, _, err := h.svc.Jobs(context.Background(), app.Owner, true, "", "", 50, 0)
 	if err != nil {
 		h.t.Fatal(err)
 	}

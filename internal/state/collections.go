@@ -14,7 +14,7 @@ const collectionChunk = 100
 // CollectionPage lists collections newest first with a rowid cursor. The
 // principal and sync-mode filters run in SQL; the text query is matched in Go
 // because SQLite's lower() is ASCII-only and Drive names may be Vietnamese.
-func (s *Store) CollectionPage(ctx context.Context, principal, query, mode string, all bool, limit int, cursor int64) ([]Collection, int64, error) {
+func (s *Store) CollectionPage(ctx context.Context, principal, query, mode string, all, includeRetired bool, limit int, cursor int64) ([]Collection, int64, error) {
 	if limit < 1 || limit > 100 {
 		return nil, 0, errors.New("invalid limit")
 	}
@@ -25,7 +25,7 @@ func (s *Store) CollectionPage(ctx context.Context, principal, query, mode strin
 	scan := cursor
 	out := make([]collectionRow, 0, limit)
 	for {
-		rows, err := s.collectionChunk(ctx, principal, mode, all, scan, collectionChunk)
+		rows, err := s.collectionChunk(ctx, principal, mode, all, includeRetired, scan, collectionChunk)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -57,9 +57,9 @@ type collectionRow struct {
 	c   Collection
 }
 
-func (s *Store) collectionChunk(ctx context.Context, principal, mode string, all bool, before int64, limit int) ([]collectionRow, error) {
+func (s *Store) collectionChunk(ctx context.Context, principal, mode string, all, includeRetired bool, before int64, limit int) ([]collectionRow, error) {
 	allInt := 0
-	if all {
+	if all || includeRetired {
 		allInt = 1
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT c.rowid, c.body

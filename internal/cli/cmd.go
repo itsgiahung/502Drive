@@ -20,6 +20,7 @@ import (
 
 	"github.com/itsgiahung/502Drive/internal/config"
 	"github.com/itsgiahung/502Drive/internal/daemon"
+	"github.com/itsgiahung/502Drive/internal/drive"
 )
 
 // Version is set at build time.
@@ -53,6 +54,10 @@ type App struct {
 	cfgSet bool
 	// uiLang is the resolved language for interactive menus (vi/en).
 	uiLang string
+	// locLang/locZone cache the human-output locale for this command.
+	locLang   string
+	locZone   *time.Location
+	localeSet bool
 	// slow caches the TUI's rarely changing sections.
 	slow slowCache
 	// showRetired makes the TUI's snapshots list retired collections too.
@@ -73,7 +78,7 @@ func (a *App) env(key string) string {
 func Execute(ctx context.Context, args []string, io IO) int {
 	a := &App{io: io}
 	root := a.rootCommand()
-	root.SetArgs(args)
+	root.SetArgs(bareCopyArgs(root, args))
 	root.SetOut(io.Out)
 	root.SetErr(io.Err)
 	err := root.ExecuteContext(ctx)
@@ -81,6 +86,63 @@ func Execute(ctx context.Context, args []string, io IO) int {
 		return ExitOK
 	}
 	return a.fail(err)
+}
+
+// bareCopyArgs lets `502drive LINK [LINK...] [flags]` mean `502drive copy ...`.
+// The first positional must be a Drive reference (link or ID) and must not be a
+// command name; global value flags before it are skipped.
+func bareCopyArgs(root *cobra.Command, args []string) []string {
+	known := map[string]bool{}
+	for _, c := range root.Commands() {
+		known[c.Name()] = true
+		for _, a := range c.Aliases {
+			known[a] = true
+		}
+	}
+	valueFlags := map[string]bool{"--config": true, "--endpoint": true, "--token-file": true, "--color": true, "--timeout": true}
+	skip := false
+	for _, arg := range args {
+		if skip {
+			skip = false
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			name := arg
+			if i := strings.IndexByte(name, '='); i >= 0 {
+				name = name[:i]
+			}
+			if valueFlags[name] {
+				skip = true
+			}
+			continue
+		}
+		if known[arg] {
+			return args
+		}
+		if looksLikeBareRef(arg) {
+			return append([]string{"copy"}, args...)
+		}
+		return args
+	}
+	return args
+}
+
+// looksLikeBareRef keeps a bare word like "frobnicate" a usage error while
+// accepting real Drive links and IDs (including short synthetic IDs that carry
+// a digit or an upper-case letter).
+func looksLikeBareRef(arg string) bool {
+	if _, err := drive.Parse(arg); err != nil {
+		return false
+	}
+	if strings.Contains(arg, "/") || strings.Contains(arg, ":") {
+		return true // a Drive URL
+	}
+	if len(arg) >= 20 {
+		return true
+	}
+	return strings.IndexFunc(arg, func(r rune) bool {
+		return r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r == '_' || r == '-'
+	}) >= 0
 }
 
 func (a *App) fail(err error) int {
@@ -171,13 +233,28 @@ func (a *App) rootCommand() *cobra.Command {
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error { return a.prepare(cmd) }
 	root.SetFlagErrorFunc(func(c *cobra.Command, err error) error { return usage("%s", err.Error()) })
 
-	root.AddCommand(a.versionCmd(), a.setupCmd(), a.serveCmd(), a.statusCmd(), a.inspectCmd(), a.copyCmd(), a.jobsCmd(),
-		a.collectionsCmd(), a.syncCmd(), a.destinationsCmd(), a.accountCmd(), a.doctorCmd(), a.menuCmd(), a.auditCmd(),
+	root.AddCommand(a.versionCmd(), a.setupCmd(), a.serveCmd(), a.statusCmd(), a.inspectCmd(), a.copyCmd(), a.jobsCmd(), a.waitCmd(), a.watchCmd(),
+		a.collectionsCmd(), a.historyCmd(), a.syncCmd(), a.destinationsCmd(), a.accountCmd(), a.doctorCmd(), a.menuCmd(), a.auditCmd(),
 		a.lsCmd(), a.infoCmd(), a.mkdirCmd(), a.healthcheckCmd(),
 		a.trayCmd(), a.upCmd(), a.stopCmd(), a.logsCmd(), a.autostartCmd(), a.updateCmd(), a.assetsCmd(),
 		a.queueCmd(true), a.queueCmd(false))
 	root.AddCommand(a.maintenanceCmd())
 	root.AddCommand(a.maintenanceCmds()...)
+	// Shell completion for every command whose argument is a job or a copied
+	// source. Cobra calls these for bash, zsh and fish alike.
+	var walk func(*cobra.Command)
+	walk = func(c *cobra.Command) {
+		switch {
+		case strings.Contains(c.Use, "JOB_ID"):
+			c.ValidArgsFunction = a.completeJobIDs
+		case strings.Contains(c.Use, "COLLECTION"):
+			c.ValidArgsFunction = a.completeCollectionIDs
+		}
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	walk(root)
 	return root
 }
 

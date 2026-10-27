@@ -395,7 +395,7 @@ func TestBlockedJobShowsWhenQuotaReturnsAndOffersNoRetry(t *testing.T) {
 	}
 	// Pausing and cancelling stay available.
 	m, cmd = update(t, m, key("p"))
-	m = run(t, m, cmd)
+	_ = run(t, m, cmd)
 	if !f.has("job:pause:job_w") {
 		t.Fatalf("pause must still work: %v", f.recorded())
 	}
@@ -411,7 +411,7 @@ func TestBlockedJobWithoutAFutureTimeCanStillBeRetried(t *testing.T) {
 	if strings.Contains(m.View(), "Waiting for quota") {
 		t.Fatal("a time in the past is not a wait")
 	}
-	m = sendKeys(t, m, "t")
+	_ = sendKeys(t, m, "t")
 	if !f.has("job:retry:job_w") {
 		t.Fatalf("an ordinary blocked job keeps its retry: %v", f.recorded())
 	}
@@ -616,7 +616,7 @@ func TestExistingCopyNewCopyAnswer(t *testing.T) {
 		t.Fatalf("Vietnamese question missing:\n%s", v)
 	}
 	fitsEverywhere(t, m, 34)
-	m = sendKeys(t, m, "n")
+	_ = sendKeys(t, m, "n")
 	if !f.has("submit:plan_1:new") {
 		t.Fatalf("new was not sent: %v", f.recorded())
 	}
@@ -849,7 +849,7 @@ func TestResumeBringsARetiredCopyBackAndResumesAPausedSync(t *testing.T) {
 	if !strings.Contains(m.View(), "RETIRED") || !strings.Contains(m.View(), "retired") {
 		t.Fatalf("a retired source says so:\n%s", m.View())
 	}
-	m = sendKeys(t, m, "u")
+	_ = sendKeys(t, m, "u")
 	if !f.has("life:resume:col_1:2") {
 		t.Fatalf("resume missing: %v", f.recorded())
 	}
@@ -859,7 +859,7 @@ func TestResumeBringsARetiredCopyBackAndResumesAPausedSync(t *testing.T) {
 	c2.Sync.State = "paused"
 	f2.snap.Collections = []Collection{c2}
 	m2 := openCollection(t, f2, "en", 100, 34)
-	m2 = sendKeys(t, m2, "u")
+	_ = sendKeys(t, m2, "u")
 	if !f2.has("sync:resume:col_1") {
 		t.Fatalf("u resumes a paused sync: %v", f2.recorded())
 	}

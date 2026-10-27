@@ -681,7 +681,10 @@ func (s *Store) RunFinished(ctx context.Context, jobID string) (*Job, error) {
 		}
 		sub, e := getSub(ctx, tx, j.CollectionID)
 		if errors.Is(e, ErrNotFound) {
-			return nil
+			// S8: the initial copy created this collection; a successful run
+			// records the job's explicit mode or the principal's preference
+			// in the same transaction, so a restart cannot lose it.
+			return enqueueAfterCopySync(ctx, tx, j, time.Now().UTC())
 		}
 		if e != nil {
 			return e

@@ -47,6 +47,10 @@ func folderPage(w http.ResponseWriter, items []any, next *string) {
 func TestLsListsFoldersFirstWithSizeAndDate(t *testing.T) {
 	var hits int
 	code, out, errOut := driveCLI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/preferences" {
+			reply(w, 200, map[string]any{"language": "en", "timezone": "UTC"})
+			return
+		}
 		hits++
 		if r.URL.Path != "/v1/drive/folders/root" {
 			t.Errorf("path = %q", r.URL.Path)
@@ -197,6 +201,10 @@ func TestLsEscapesTerminalSequencesInNames(t *testing.T) {
 func TestInfoPrintsMetadataAndUsesTheParsedID(t *testing.T) {
 	var gotKey string
 	code, out, errOut := driveCLI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/preferences" {
+			reply(w, 200, map[string]any{"language": "en", "timezone": "UTC"})
+			return
+		}
 		if r.URL.Path != "/v1/drive/files/1AbCdEfGhIjKlMnOp" {
 			t.Errorf("path = %q", r.URL.Path)
 		}

@@ -202,3 +202,26 @@ func OneLine(job JobSummary, lang string) string {
 	prog := Progress(job.Counts, job.Rate, job.ETA, lang)
 	return fmt.Sprintf("[%s] %s — %s", stateStr, name, prog)
 }
+
+// Reasons explains the stable K1 codes in human terms. Unknown codes are
+// returned unchanged: a new daemon code must stay visible, never guessed.
+var reasons = map[string]string{
+	"filtered":                  "Excluded by the collection filter.",
+	"shortcut_unresolved":       "The shortcut target is missing, trashed or unreadable.",
+	"shortcut_loop":             "The shortcut points back into itself.",
+	"cannot_copy":               "The owner does not allow copying this item.",
+	"google_native_export_only": "Google-native document; server-side copy is not supported.",
+	"too_large_for_quota":       "Larger than the destination's remaining quota.",
+	"unreadable":                "Permission denied or the source cannot be read.",
+	"trashed_source":            "The source item is in the Drive trash.",
+	"conflict":                  "A name conflict was skipped by policy.",
+	"unknown":                   "The daemon did not record a reason.",
+}
+
+// Reason maps a stable item code to a one-line explanation.
+func Reason(code string) string {
+	if text, ok := reasons[code]; ok {
+		return text
+	}
+	return code
+}

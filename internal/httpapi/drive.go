@@ -73,6 +73,20 @@ func (s *Server) driveFile(w http.ResponseWriter, r *http.Request, p app.Princip
 	return 200, driveFileDTO(f), nil
 }
 
+// searchDrive finds items by name in the connected account's Drive. It is
+// read-only and bounded to 20 results.
+func (s *Server) searchDrive(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
+	files, err := s.Svc.Search(r.Context(), p, r.URL.Query().Get("q"))
+	if err != nil {
+		return 0, nil, err
+	}
+	items := make([]any, 0, len(files))
+	for _, f := range files {
+		items = append(items, driveFileDTO(f))
+	}
+	return 200, map[string]any{"items": items, "limit": 20}, nil
+}
+
 type mkdirInput struct {
 	ParentID string `json:"parent_id"`
 	Name     string `json:"name"`

@@ -205,8 +205,8 @@ Thiết kế đầy đủ: [design/s6-batch-queue.md](../design/s6-batch-queue.m
 - Tạm dừng toàn hàng đợi: `POST /v1/queue/pause|resume` (owner). Cờ bền `settings.queue_paused`; job đang chạy
   chuyển `pausing` → `paused` ở điểm an toàn; resume chỉ đưa lại job **do hàng đợi** tạm dừng (job người dùng tự
   tạm dừng vẫn tạm dừng). Trạng thái ở `GET /v1/status` (`queue.paused`).
-- Số slot đồng thời là `Engine.Jobs` (mặc định 2). **Chưa có tùy chọn `max_active_jobs` trong cấu hình** — hiện là
-  hằng số của engine.
+- Số slot đồng thời do `max_active_jobs` trong config quyết định (mặc định 2, 1..32). Mỗi job vẫn chia sẻ trần
+  AIMD toàn tài khoản (`workers`/`max_workers`), nên đây là độ sâu hàng đợi, không phải số call song song.
 
 ## Kiểm tra sâu trước khi copy (S7)
 

@@ -185,13 +185,6 @@ func fillCounts(ctx context.Context, q queryer, j *Job) error {
 	return nil
 }
 
-func rootSource(p Plan) string {
-	if p.SourceKind == KindFile {
-		return "wrapper:" + p.SourceID
-	}
-	return p.SourceID
-}
-
 func seedRoot(ctx context.Context, tx *sql.Tx, c Collection, j Job, p Plan) error {
 	ins := `INSERT INTO items(collection_id,source_id,job_id,parent_source_id,kind,name,mime_type,resource_key,size,fingerprint,state,dest_parent_id,list_state)
 		VALUES(?,?,?,?,?,?,?,?,?,?, 'pending', ?, ?)`
@@ -230,6 +223,13 @@ func (s *Store) AdmitGuarded(ctx context.Context, principal, key, planID string,
 // empty. Replays of the same key return the job admitted the first time, with
 // its original batch.
 func (s *Store) AdmitInBatch(ctx context.Context, principal, key, planID string, revision int, batchID string, guard func(ctx context.Context, q Querier, p Plan) error) (Result, error) {
+	return s.AdmitInBatchWith(ctx, principal, key, planID, revision, batchID, "", guard)
+}
+
+// AdmitInBatchWith is AdmitInBatch plus the S8 after-copy sync mode carried on
+// the job body. The mode is admitted atomically with the job, so a restart
+// cannot lose it.
+func (s *Store) AdmitInBatchWith(ctx context.Context, principal, key, planID string, revision int, batchID, afterCopySync string, guard func(ctx context.Context, q Querier, p Plan) error) (Result, error) {
 	body, replayed, err := s.idempotent(ctx, principal, "POST /v1/jobs", key, []any{planID, revision}, func(tx *sql.Tx) (any, error) {
 		var raw []byte
 		var consumed sql.NullString
@@ -268,7 +268,7 @@ func (s *Store) AdmitInBatch(ctx context.Context, principal, key, planID string,
 		}
 		now := time.Now().UTC()
 		j := Job{ID: ID("job"), Principal: principal, CollectionID: ID("col"), Trigger: "initial", SourceName: p.SourceName, DestinationID: p.DestinationID, RootName: p.RootName, State: JobQueued, DesiredState: "run", Shortcuts: p.Shortcuts, OnConflict: p.OnConflict, Filter: p.Filter, Revision: 1, CreatedAt: now, UpdatedAt: now,
-			BatchID: batchID, QueueOrder: now.UnixNano()}
+			BatchID: batchID, QueueOrder: now.UnixNano(), AfterCopySync: afterCopySync}
 		c := Collection{ID: j.CollectionID, SourceID: p.SourceID, SourceName: p.SourceName, SourceKind: p.SourceKind, SourceMime: p.SourceMime, ResourceKey: p.ResourceKey, DestinationID: p.DestinationID, RootName: p.RootName, BaselineJobID: j.ID, State: "copying", Shortcuts: p.Shortcuts, OnConflict: p.OnConflict, Filter: p.Filter, Revision: 1}
 		cb, _ := json.Marshal(c)
 		if _, e = tx.ExecContext(ctx, "INSERT INTO collections(id, principal, plan_id, body) VALUES(?,?,?,?)", c.ID, principal, p.ID, cb); e != nil {
@@ -408,14 +408,30 @@ func (s *Store) GetJob(ctx context.Context, principal, id string) (Job, error) {
 // ListJobs returns newest first. cursor is the opaque value from a previous
 // call ("" for the first page). principal "" lists every principal's jobs
 // and is for owner-scoped callers only.
-func (s *Store) ListJobs(ctx context.Context, principal, state string, limit int, cursor int64) ([]Job, int64, error) {
+func (s *Store) ListJobs(ctx context.Context, principal, state, collectionID string, limit int, cursor int64) ([]Job, int64, error) {
 	if limit < 1 || limit > 100 {
 		return nil, 0, errors.New("invalid limit")
 	}
 	if cursor <= 0 {
 		cursor = 1 << 62
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT rowid,id FROM jobs WHERE (?='' OR principal=?) AND (?='' OR state=?) AND rowid<? ORDER BY rowid DESC LIMIT ?", principal, principal, state, state, cursor, limit+1)
+	query := "SELECT rowid,id FROM jobs WHERE rowid<?"
+	args := []any{cursor}
+	if principal != "" {
+		query += " AND principal=?"
+		args = append(args, principal)
+	}
+	if state != "" {
+		query += " AND state=?"
+		args = append(args, state)
+	}
+	if collectionID != "" {
+		query += " AND collection_id=?"
+		args = append(args, collectionID)
+	}
+	query += " ORDER BY rowid DESC LIMIT ?"
+	args = append(args, limit+1)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, 0, err
 	}

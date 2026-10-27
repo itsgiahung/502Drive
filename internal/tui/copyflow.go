@@ -364,10 +364,7 @@ func (m Model) copyOptionLines() []string {
 	text := m.t(i18n.FilterTitle) + ": " + m.presetLabel(c.opt.FilterPreset) +
 		" · " + m.t(i18n.ConflictTitle) + ": " + m.conflictLabel(clash) +
 		" · " + m.t(i18n.ShortcutsTitle) + ": " + short
-	out := []string{""}
-	for _, l := range wrapLines(text, max(20, m.width-2)) {
-		out = append(out, l)
-	}
+	out := append([]string{""}, wrapLines(text, max(20, m.width-2))...)
 	return append(out, m.dim(m.t(i18n.CopyOptsKeys)))
 }
 

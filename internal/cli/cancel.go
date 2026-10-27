@@ -58,7 +58,7 @@ func (a *App) jobActionByID(ctx context.Context, id, action string) error {
 	}
 	a.emit(r, nj.ID, func() {
 		fmt.Fprintf(a.out(), "%s requested.\n", action)
-		a.printJob(nj)
+		a.printJob(ctx, nj)
 	})
 	return nil
 }

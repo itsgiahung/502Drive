@@ -103,10 +103,19 @@ versioned_copy/replace_copy, `schedule_revision`, `revision`.
 - `POST .../runs`: chạy delta ngay cả khi sync off; nếu đang có run → trả run hiện
   có + `rerun_requested` (coalesce), follow-up admit khi run trước kết thúc.
 
+## Tự bật sau lần copy đầu (S8)
+
+- Preference `after_copy_sync_mode` (`off|realtime|hourly|six_hourly|daily`) và
+  cờ `copy --sync MODE` (hoặc `after_copy_sync_mode` trên `POST /v1/jobs`) áp cho
+  **collection mới** khi job initial `succeeded`. Mode ghi trên job nên sống qua
+  restart; dòng chờ `after_copy_sync` được ghi cùng transaction với kết quả job.
+- Subscription do người dùng đặt trước luôn thắng; job `partial`/`failed` không
+  tạo sync. Lỗi tạo subscription chỉ ghi vào dòng chờ (retry 5 lần), không đổi
+  kết quả copy. Xem [design/h2-after-copy-sync.md](../design/h2-after-copy-sync.md).
+
 ## Chưa hỗ trợ
 
 - Chưa có `corpus_key`/cursor theo account; mỗi subscription một cursor.
 - Digest/nội dung file và "pause cả run đang chạy" bằng một nút: chưa có.
 - Full reconcile định kỳ chỉ đọc lại metadata/cây, không so digest nội dung.
-- `after_copy_sync_mode` (preference) chưa tự áp cho collection mới.
 - Filter theo loại/thành viên nguồn (type/member policy) chưa có; chỉ lọc theo cây.

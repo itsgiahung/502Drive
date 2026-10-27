@@ -84,7 +84,7 @@ func (t *Telegram) manageJobs(ctx context.Context, p app.Principal, group string
 	var out []state.Job
 	cursor := int64(0)
 	for page := 0; page < manageScanPages; page++ {
-		jobs, next, err := t.svc.Jobs(ctx, p, false, "", 100, cursor)
+		jobs, next, err := t.svc.Jobs(ctx, p, false, "", "", 100, cursor)
 		if err != nil {
 			return nil, err
 		}

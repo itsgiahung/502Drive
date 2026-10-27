@@ -51,6 +51,18 @@ type Config struct {
 	// ThrottleSuccesses is how many consecutive successful calls grow the
 	// concurrency by one (default 8).
 	ThrottleSuccesses int `json:"throttle_successes,omitempty"`
+	// MaxActiveJobs bounds how many jobs run at once (default 2). Each job
+	// already fans out across the account-wide throttle; this is the queue
+	// depth above it.
+	MaxActiveJobs int `json:"max_active_jobs,omitempty"`
+}
+
+// ActiveJobs returns the number of jobs the engine may run at once.
+func (c Config) ActiveJobs() int {
+	if c.MaxActiveJobs <= 0 {
+		return 2
+	}
+	return c.MaxActiveJobs
 }
 
 // Concurrency returns the effective AIMD start/ceiling and success window.
@@ -269,6 +281,9 @@ func (c Config) Validate() error {
 	}
 	if r := c.ReadRequestsPerSecond; r < 0 || r > 1000 {
 		return errors.New("read_requests_per_second must be between 0 and 1000")
+	}
+	if c.MaxActiveJobs < 0 || c.MaxActiveJobs > 32 {
+		return errors.New("max_active_jobs must be between 1 and 32")
 	}
 	return validateListen(c.Listen, c.Container)
 }

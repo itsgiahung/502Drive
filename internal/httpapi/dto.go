@@ -58,6 +58,9 @@ func jobDTO(j state.Job) map[string]any {
 	if j.OnConflict != "" {
 		out["on_conflict"] = j.OnConflict
 	}
+	if j.AfterCopySync != "" {
+		out["after_copy_sync_mode"] = j.AfterCopySync
+	}
 	if j.Filter.Active() {
 		out["filter"] = j.Filter
 	}
@@ -163,6 +166,7 @@ func prefsDTO(p state.Preferences) map[string]any {
 	return map[string]any{"language": p.Language, "timezone": p.Timezone, "auto_copy": p.AutoCopy, "destination_id": dest, "destination_revision": rev,
 		"notify_completed": p.NotifyCompleted, "notify_failed": p.NotifyFailed, "notify_action_required": p.NotifyActionRequired,
 		"after_copy_sync_mode": p.AfterCopySyncMode, "after_copy_schedule": nil,
+		"daily_report": p.DailyReport, "daily_report_at": p.DailyReportAt,
 		"quiet_hours_start": qStart, "quiet_hours_end": qEnd,
 		"retention_days": p.RetentionDays}
 }

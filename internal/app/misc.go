@@ -152,6 +152,8 @@ type PreferencePatch struct {
 	NotifyFailed         *bool   `json:"notify_failed"`
 	NotifyActionRequired *bool   `json:"notify_action_required"`
 	AfterCopySyncMode    *string `json:"after_copy_sync_mode"`
+	DailyReport          *bool   `json:"daily_report"`
+	DailyReportAt        *string `json:"daily_report_at"`
 	QuietHoursStart      *string `json:"quiet_hours_start"`
 	QuietHoursEnd        *string `json:"quiet_hours_end"`
 	RetentionDays        *int    `json:"retention_days"`
@@ -190,10 +192,24 @@ func (s *Service) PatchPreferences(ctx context.Context, p Principal, key string,
 	}
 	if patch.AfterCopySyncMode != nil {
 		switch *patch.AfterCopySyncMode {
-		case "off", "scheduled", "realtime":
+		case state.AfterCopyOff, state.AfterCopyRealtime, state.AfterCopyHourly, state.AfterCopySixHourly, state.AfterCopyDaily:
 			cur.AfterCopySyncMode = *patch.AfterCopySyncMode
 		default:
-			return cur, Fail(http.StatusBadRequest, "invalid_request", "after_copy_sync_mode must be off, scheduled or realtime.")
+			return cur, Fail(http.StatusBadRequest, "invalid_request", "after_copy_sync_mode must be off, realtime, hourly, six_hourly or daily.")
+		}
+	}
+	if patch.DailyReport != nil {
+		cur.DailyReport = *patch.DailyReport
+	}
+	if patch.DailyReportAt != nil {
+		s := strings.TrimSpace(*patch.DailyReportAt)
+		if s != "" {
+			if _, err := time.Parse("15:04", s); err != nil || len(s) != 5 {
+				return cur, Fail(http.StatusBadRequest, "invalid_request", "daily_report_at must be HH:MM.")
+			}
+			cur.DailyReportAt = s
+		} else {
+			cur.DailyReportAt = ""
 		}
 	}
 	if patch.QuietHoursStart != nil {
@@ -265,8 +281,8 @@ func (s *Service) Collection(ctx context.Context, p Principal, id string) (state
 
 // CollectionPage pages the library. The cursor is bound to the principal and
 // the active filters by the HTTP layer.
-func (s *Service) CollectionPage(ctx context.Context, p Principal, all bool, query, mode string, limit int, cursor int64) ([]state.Collection, int64, error) {
-	return s.Store.CollectionPage(ctx, scope(p, all), query, mode, all, limit, cursor)
+func (s *Service) CollectionPage(ctx context.Context, p Principal, all, includeRetired bool, query, mode string, limit int, cursor int64) ([]state.Collection, int64, error) {
+	return s.Store.CollectionPage(ctx, scope(p, all), query, mode, all, includeRetired, limit, cursor)
 }
 
 func (s *Service) Operators(ctx context.Context, p Principal) ([]state.Operator, error) {
@@ -300,6 +316,57 @@ type Check struct {
 	Name    string `json:"name"`
 	Status  string `json:"status"`
 	Message string `json:"message"`
+}
+
+// DoctorFix repairs the local, safe failures doctor reports: secret file
+// permissions and missing directories. It never touches Drive or job state.
+// The returned names are what changed.
+func (s *Service) DoctorFix(ctx context.Context, p Principal) ([]string, []Check, error) {
+	if err := requireOwner(p); err != nil {
+		return nil, nil, err
+	}
+	var fixed []string
+	dirs := []string{s.Store.DataDir()}
+	if s.ConfigDir != "" {
+		dirs = append(dirs, s.ConfigDir)
+	}
+	for _, d := range dirs {
+		if d == "" {
+			continue
+		}
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+			continue
+		}
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			return fixed, nil, Fail(http.StatusInternalServerError, "doctor_fix_failed", "Cannot create "+d+": "+err.Error())
+		}
+		fixed = append(fixed, "created "+d)
+	}
+	checkDir := s.ConfigDir
+	if checkDir == "" {
+		checkDir = s.Store.DataDir()
+	}
+	for _, f := range secretCandidates(checkDir) {
+		fi, err := os.Stat(f)
+		if err != nil || runtime.GOOS == "windows" || fi.Mode().Perm()&0o077 == 0 {
+			continue
+		}
+		if err := os.Chmod(f, 0o600); err != nil {
+			return fixed, nil, Fail(http.StatusInternalServerError, "doctor_fix_failed", "Cannot restrict "+f+": "+err.Error())
+		}
+		fixed = append(fixed, "chmod 0600 "+f)
+	}
+	checks, err := s.Doctor(ctx, p, false)
+	return fixed, checks, err
+}
+
+func secretCandidates(dir string) []string {
+	return []string{
+		filepath.Join(dir, "token.json"),
+		filepath.Join(dir, "google-token.enc"),
+		filepath.Join(dir, "master.key"),
+		filepath.Join(dir, "config.json"),
+	}
 }
 
 // Doctor is offline by default; online=true calls Google.
@@ -378,19 +445,33 @@ func (s *Service) Doctor(ctx context.Context, p Principal, online bool) ([]Check
 		add("checkpoint_age", true, "SQLite checkpoint is up to date.", "")
 	}
 
+	// systemd user unit: installed-but-disabled means a crash will not be
+	// restarted even though the user asked for the unit.
+	if s.Systemd != nil {
+		st := s.Systemd()
+		switch {
+		case !st.Installed:
+			add("systemd_user", true, "No systemd user unit (the tray or XDG autostart starts the daemon).", "")
+		case st.Enabled:
+			add("systemd_user", true, "The systemd user unit is enabled: "+st.Unit+".", "")
+		default:
+			add("systemd_user", false, "", "The systemd user unit is installed but not enabled ("+st.Detail+"). Run `systemctl --user enable 502drive`.")
+		}
+	}
+
+	// Config directory presence: a missing one hides the OAuth secrets.
+	if s.ConfigDir != "" {
+		fi, err := os.Stat(s.ConfigDir)
+		add("config_dir", err == nil && fi.IsDir(), "The config directory exists.", "The config directory is missing: "+s.ConfigDir+".")
+	}
+
 	// Secret permissions check
 	checkDir := s.ConfigDir
 	if checkDir == "" {
 		checkDir = dataDir
 	}
 	var insecureFiles []string
-	candidates := []string{
-		filepath.Join(checkDir, "token.json"),
-		filepath.Join(checkDir, "google-token.enc"),
-		filepath.Join(checkDir, "master.key"),
-		filepath.Join(checkDir, "config.json"),
-	}
-	for _, f := range candidates {
+	for _, f := range secretCandidates(checkDir) {
 		if fi, err := os.Stat(f); err == nil {
 			if runtime.GOOS != "windows" && fi.Mode().Perm()&0o077 != 0 {
 				insecureFiles = append(insecureFiles, fmt.Sprintf("%s (%04o)", filepath.Base(f), fi.Mode().Perm()))

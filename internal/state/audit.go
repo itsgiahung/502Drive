@@ -43,9 +43,12 @@ type Audit struct {
 	Counts       map[string]int  `json:"counts"`
 	Plan         json.RawMessage `json:"plan,omitempty"`
 	Scanned      int             `json:"scanned_folders"`
-	Revision     int             `json:"revision"`
-	StartedAt    time.Time       `json:"started_at"`
-	FinishedAt   time.Time       `json:"finished_at"`
+	// Repairable counts the findings a repair run can fix. It is computed on
+	// read so a running scan reports the count so far.
+	Repairable int       `json:"repairable_findings"`
+	Revision   int       `json:"revision"`
+	StartedAt  time.Time `json:"started_at"`
+	FinishedAt time.Time `json:"finished_at"`
 }
 
 // Finding is one divergence between source and destination.
@@ -93,6 +96,13 @@ func scanAudit(row interface{ Scan(...any) error }) (Audit, error) {
 	return a, nil
 }
 
+func fillRepairable(ctx context.Context, q queryer, a *Audit) error {
+	if a.ID == "" {
+		return nil
+	}
+	return q.QueryRowContext(ctx, "SELECT count(*) FROM audit_findings WHERE audit_id=? AND repairable=1 AND repaired=0", a.ID).Scan(&a.Repairable)
+}
+
 func auditScope(ctx context.Context, q queryer, auditID, principal string) (Audit, error) {
 	a, err := scanAudit(q.QueryRowContext(ctx,
 		"SELECT "+auditCols+" FROM audits WHERE id=? AND (?='' OR collection_id IN (SELECT id FROM collections WHERE principal=?))",
@@ -100,7 +110,10 @@ func auditScope(ctx context.Context, q queryer, auditID, principal string) (Audi
 	if errors.Is(err, sql.ErrNoRows) {
 		return Audit{}, ErrNotFound
 	}
-	return a, err
+	if err != nil {
+		return Audit{}, err
+	}
+	return a, fillRepairable(ctx, q, &a)
 }
 
 // AdmitAudit creates the audit job and its audit row in one admission
@@ -182,7 +195,10 @@ func (s *Store) auditByJob(ctx context.Context, jobID string) (Audit, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return Audit{}, ErrNotFound
 	}
-	return a, err
+	if err != nil {
+		return Audit{}, err
+	}
+	return a, fillRepairable(ctx, s.db, &a)
 }
 
 // GetAudit reads one audit within the principal's scope.
@@ -203,7 +219,10 @@ func (s *Store) LastAudit(ctx context.Context, scopePrincipal, collectionID stri
 	if errors.Is(err, sql.ErrNoRows) {
 		return Audit{}, ErrNotFound
 	}
-	return a, err
+	if err != nil {
+		return Audit{}, err
+	}
+	return a, fillRepairable(ctx, s.db, &a)
 }
 
 // AuditScanProgress records the folders scanned and the per-kind finding counts.
@@ -231,7 +250,11 @@ func (s *Store) CompleteAudit(ctx context.Context, auditID, state string, counts
 	if n, _ := res.RowsAffected(); n == 0 {
 		return Audit{}, ErrNotFound
 	}
-	return scanAudit(s.db.QueryRowContext(ctx, "SELECT "+auditCols+" FROM audits WHERE id=?", auditID))
+	a, err := scanAudit(s.db.QueryRowContext(ctx, "SELECT "+auditCols+" FROM audits WHERE id=?", auditID))
+	if err != nil {
+		return Audit{}, err
+	}
+	return a, fillRepairable(ctx, s.db, &a)
 }
 
 // RecordFindings upserts findings; the primary key keeps a re-scan (restart)

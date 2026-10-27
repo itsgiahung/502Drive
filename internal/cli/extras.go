@@ -138,6 +138,67 @@ func (a *App) autostartCmd() *cobra.Command {
 			fmt.Fprintf(a.out(), "autostart  %s  (%s)\n", word, where)
 			return nil
 		}},
+		a.systemdAutostartCmd(),
+	)
+	return c
+}
+
+// systemdAutostartCmd manages the opt-in systemd --user unit. The XDG desktop
+// entry starts the tray+daemon at login; the unit makes systemd restart the
+// daemon after a crash and is the only thing doctor checks.
+func (a *App) systemdAutostartCmd() *cobra.Command {
+	c := &cobra.Command{Use: "systemd", Short: "Manage the systemd --user unit (Linux)", Args: cobra.NoArgs}
+	c.AddCommand(
+		&cobra.Command{Use: "status", Short: "Show the user unit path and whether it is enabled", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+			st := autostart.SystemdStateNow()
+			if a.g.json {
+				b, _ := json.Marshal(map[string]any{"data": st, "request_id": ""})
+				fmt.Fprintln(a.out(), string(b))
+				return nil
+			}
+			word := "not installed"
+			if st.Installed {
+				word = "installed, disabled"
+				if st.Enabled {
+					word = "enabled"
+				}
+			}
+			fmt.Fprintf(a.out(), "systemd user unit  %s\n", word)
+			if st.Unit != "" {
+				fmt.Fprintf(a.out(), "unit  %s\n", st.Unit)
+			}
+			if st.Detail != "" {
+				fmt.Fprintf(a.out(), "detail  %s\n", st.Detail)
+			}
+			return nil
+		}},
+		&cobra.Command{Use: "install", Short: "Write, enable and reload the user unit (restarts the daemon after a crash)", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+			cfg, err := a.loadConfig()
+			if err != nil {
+				return err
+			}
+			path, err := a.autostartManager().InstallSystemd(cfg.DataDir, filepath.Dir(cfg.TokenFile), true)
+			if err != nil {
+				return localErr(ExitInternal, "systemd_failed", err.Error())
+			}
+			if a.g.json {
+				b, _ := json.Marshal(map[string]any{"data": map[string]any{"unit": path, "enabled": true}, "request_id": ""})
+				fmt.Fprintln(a.out(), string(b))
+				return nil
+			}
+			fmt.Fprintf(a.out(), "systemd user unit enabled: %s\n", path)
+			fmt.Fprintln(a.out(), "Start it once with: systemctl --user start 502drive")
+			return nil
+		}},
+		&cobra.Command{Use: "remove", Short: "Disable and remove the user unit", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+			if err := a.autostartManager().DisableSystemd(); err != nil {
+				return localErr(ExitInternal, "systemd_failed", err.Error())
+			}
+			if !a.g.quiet {
+				fmt.Fprintln(a.out(), "systemd user unit removed.")
+			}
+			return nil
+		}},
 	)
 	return c
 }

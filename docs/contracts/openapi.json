@@ -89,8 +89,78 @@
     }
    }
   },
-  "/v1/plans/{plan_id}": {"get": {"summary": "Read a plan and its deep scan (S7)", "description": "Principal-scoped. A deep scan recorded as running with no worker behind it (after a restart) is reported as interrupted.", "parameters": [{"name": "plan_id", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 128}}], "responses": {"200": {"description": "Plan", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PlanResponse"}}}}, "404": {"$ref": "#/components/responses/Error404"}, "default": {"$ref": "#/components/responses/DefaultError"}}}},
-  "/v1/plans/{plan_id}/preflight/cancel": {"post": {"summary": "Cancel a running deep scan (S7)", "description": "The scan keeps its partial counts but is never reported complete. Cancelling a scan that is not running changes nothing.", "parameters": [{"name": "plan_id", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 128}}], "responses": {"200": {"description": "Plan", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PlanResponse"}}}}, "404": {"$ref": "#/components/responses/Error404"}, "default": {"$ref": "#/components/responses/DefaultError"}}}},
+  "/v1/plans/{plan_id}": {
+   "get": {
+    "summary": "Read a plan and its deep scan (S7)",
+    "description": "Principal-scoped. A deep scan recorded as running with no worker behind it (after a restart) is reported as interrupted.",
+    "parameters": [
+     {
+      "name": "plan_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 128
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Plan",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PlanResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error404"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
+  },
+  "/v1/plans/{plan_id}/preflight/cancel": {
+   "post": {
+    "summary": "Cancel a running deep scan (S7)",
+    "description": "The scan keeps its partial counts but is never reported complete. Cancelling a scan that is not running changes nothing.",
+    "parameters": [
+     {
+      "name": "plan_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 128
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Plan",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PlanResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error404"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
+  },
   "/v1/plans": {
    "post": {
     "summary": "Inspect source and create a ten-minute immutable plan",
@@ -184,6 +254,15 @@
         "cancelled"
        ]
       }
+     },
+     {
+      "name": "collection_id",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "maxLength": 64
+      },
+      "description": "Only jobs of this collection."
      }
     ]
    },
@@ -330,6 +409,147 @@
      }
     }
    ]
+  },
+  "/v1/jobs/{job_id}/items": {
+   "get": {
+    "summary": "Page a job's items, or only the problem items",
+    "description": "Principal-scoped. problems=true returns failed, blocked and skipped items with their stable reason code, for the report.",
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 128
+      }
+     },
+     {
+      "name": "problems",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      }
+     },
+     {
+      "$ref": "#/components/parameters/Limit"
+     },
+     {
+      "$ref": "#/components/parameters/Cursor"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Items page",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": false,
+         "required": [
+          "data",
+          "request_id"
+         ],
+         "properties": {
+          "data": {
+           "type": "object",
+           "additionalProperties": false,
+           "required": [
+            "items",
+            "next_cursor"
+           ],
+           "properties": {
+            "items": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+               "source_id",
+               "name",
+               "path",
+               "kind",
+               "mime_type",
+               "state",
+               "code",
+               "attempts",
+               "size_bytes",
+               "destination_id"
+              ],
+              "properties": {
+               "source_id": {
+                "type": "string"
+               },
+               "name": {
+                "type": "string"
+               },
+               "path": {
+                "type": "string"
+               },
+               "kind": {
+                "type": "string"
+               },
+               "mime_type": {
+                "type": "string"
+               },
+               "state": {
+                "type": "string",
+                "enum": [
+                 "pending",
+                 "executing",
+                 "reconciling",
+                 "done",
+                 "blocked",
+                 "failed",
+                 "skipped",
+                 "cancelled"
+                ]
+               },
+               "code": {
+                "type": "string"
+               },
+               "attempts": {
+                "type": "integer",
+                "minimum": 0
+               },
+               "size_bytes": {
+                "type": [
+                 "integer",
+                 "null"
+                ]
+               },
+               "destination_id": {
+                "type": "string"
+               }
+              }
+             }
+            },
+            "next_cursor": {
+             "type": [
+              "string",
+              "null"
+             ]
+            }
+           }
+          },
+          "request_id": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error404"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
   },
   "/v1/destinations": {
    "get": {
@@ -803,10 +1023,217 @@
     ]
    }
   },
-  "/v1/jobs/{job_id}/move": {"post": {"summary": "Move a queued job (S6)", "description": "Place a queued job before or after another queued job, and/or set its priority. Revision-guarded; a running or finished job returns 409 invalid_transition.", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/JobResponse"}}}}, "403": {"$ref": "#/components/responses/Error403"}, "409": {"$ref": "#/components/responses/Error409"}, "default": {"$ref": "#/components/responses/DefaultError"}}, "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MoveInput"}}}}, "parameters": [{"name": "job_id", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 128}}]}},
-  "/v1/batches/{batch_id}": {"get": {"summary": "Summarise one batch (S6)", "description": "Principal-scoped. Lists the jobs admitted with this batch_id and counts them by state.", "parameters": [{"name": "batch_id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$"}}], "responses": {"200": {"description": "Batch summary", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/BatchResponse"}}}}, "404": {"$ref": "#/components/responses/Error404"}, "default": {"$ref": "#/components/responses/DefaultError"}}}},
-  "/v1/queue/pause": {"post": {"summary": "Pause the whole queue (S6)", "description": "Owner only. Durable: a restart keeps the queue paused. Running jobs move to pausing and settle to paused with every item and cursor kept; queued jobs wait. Idempotent.", "responses": {"200": {"description": "Queue state", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/QueueResponse"}}}}, "403": {"$ref": "#/components/responses/Error403"}, "default": {"$ref": "#/components/responses/DefaultError"}}}},
-  "/v1/queue/resume": {"post": {"summary": "Resume the whole queue (S6)", "description": "Owner only. Returns the jobs the queue pause stopped to queued; jobs a user paused stay paused. Idempotent.", "responses": {"200": {"description": "Queue state", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/QueueResponse"}}}}, "403": {"$ref": "#/components/responses/Error403"}, "default": {"$ref": "#/components/responses/DefaultError"}}}},
+  "/v1/doctor/fix": {
+   "post": {
+    "summary": "Repair fixable local doctor failures",
+    "description": "Owner only. Restricts secret files to 0600 and creates missing config/data directories. Never touches Drive or jobs.",
+    "responses": {
+     "200": {
+      "description": "Repaired checks",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": false,
+         "required": [
+          "data",
+          "request_id"
+         ],
+         "properties": {
+          "data": {
+           "type": "object",
+           "additionalProperties": false,
+           "required": [
+            "fixed",
+            "checks"
+           ],
+           "properties": {
+            "fixed": {
+             "type": "array",
+             "items": {
+              "type": "string"
+             }
+            },
+            "checks": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+               "name",
+               "status",
+               "message"
+              ],
+              "properties": {
+               "name": {
+                "type": "string"
+               },
+               "status": {
+                "type": "string",
+                "enum": [
+                 "passed",
+                 "failed",
+                 "unknown",
+                 "skipped"
+                ]
+               },
+               "message": {
+                "type": "string"
+               }
+              }
+             }
+            }
+           }
+          },
+          "request_id": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     },
+     "403": {
+      "$ref": "#/components/responses/Error403"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
+  },
+  "/v1/jobs/{job_id}/move": {
+   "post": {
+    "summary": "Move a queued job (S6)",
+    "description": "Place a queued job before or after another queued job, and/or set its priority. Revision-guarded; a running or finished job returns 409 invalid_transition.",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "$ref": "#/components/responses/Error403"
+     },
+     "409": {
+      "$ref": "#/components/responses/Error409"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MoveInput"
+       }
+      }
+     }
+    },
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 128
+      }
+     }
+    ]
+   }
+  },
+  "/v1/batches/{batch_id}": {
+   "get": {
+    "summary": "Summarise one batch (S6)",
+    "description": "Principal-scoped. Lists the jobs admitted with this batch_id and counts them by state.",
+    "parameters": [
+     {
+      "name": "batch_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_-]{8,64}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Batch summary",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BatchResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error404"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
+  },
+  "/v1/queue/pause": {
+   "post": {
+    "summary": "Pause the whole queue (S6)",
+    "description": "Owner only. Durable: a restart keeps the queue paused. Running jobs move to pausing and settle to paused with every item and cursor kept; queued jobs wait. Idempotent.",
+    "responses": {
+     "200": {
+      "description": "Queue state",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "$ref": "#/components/responses/Error403"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
+  },
+  "/v1/queue/resume": {
+   "post": {
+    "summary": "Resume the whole queue (S6)",
+    "description": "Owner only. Returns the jobs the queue pause stopped to queued; jobs a user paused stay paused. Idempotent.",
+    "responses": {
+     "200": {
+      "description": "Queue state",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "$ref": "#/components/responses/Error403"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
+  },
   "/v1/jobs/{job_id}/pause": {
    "post": {
     "summary": "Guarded pause; preserve job identity",
@@ -1105,6 +1532,15 @@
         "realtime"
        ]
       }
+     },
+     {
+      "name": "include_retired",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "Include retired copies. Owner `all` already includes them."
      }
     ]
    }
@@ -1593,6 +2029,75 @@
     }
    }
   },
+  "/v1/drive/search": {
+   "get": {
+    "summary": "Search the owner's Drive by name",
+    "description": "Owner only. Read-only, at most 20 items. Google returns only files and folders this account may view.",
+    "parameters": [
+     {
+      "name": "q",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 100
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Matches",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": false,
+         "required": [
+          "data",
+          "request_id"
+         ],
+         "properties": {
+          "data": {
+           "type": "object",
+           "additionalProperties": false,
+           "required": [
+            "items",
+            "limit"
+           ],
+           "properties": {
+            "items": {
+             "type": "array",
+             "items": {
+              "$ref": "#/components/schemas/DriveFile"
+             }
+            },
+            "limit": {
+             "type": "integer",
+             "const": 20
+            }
+           }
+          },
+          "request_id": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error401"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error403"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
+  },
   "/v1/drive/folders": {
    "post": {
     "summary": "Create a folder in the owner's Drive",
@@ -1679,6 +2184,42 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ]
+   },
+   "parameters": [
+    {
+     "name": "collection_id",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+     }
+    }
+   ]
+  },
+  "/v1/collections/{collection_id}/audits/latest": {
+   "get": {
+    "summary": "Read the newest audit of a collection",
+    "description": "Principal-scoped. 404 when the collection has never been audited.",
+    "responses": {
+     "200": {
+      "description": "Snapshot",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuditResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error404"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
    },
    "parameters": [
     {
@@ -2157,6 +2698,61 @@
      }
     }
    ]
+  },
+  "/v1/history": {
+   "get": {
+    "summary": "Export job history newest-updated first",
+    "description": "Principal-scoped. Owners may pass all=true. Orders by updated_at, so an old job that ran again recently is included.",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/Limit"
+     },
+     {
+      "$ref": "#/components/parameters/Cursor"
+     },
+     {
+      "name": "since",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "RFC3339 timestamp or YYYY-MM-DD; only jobs updated at or after it."
+     },
+     {
+      "name": "all",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "Owner only: every principal."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "History page",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobPageResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/DefaultError"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error401"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error403"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
   }
  },
  "components": {
@@ -2609,7 +3205,22 @@
       ],
       "description": "Omit to refuse a second copy of the same source to the same destination (409 already_copied). update refreshes the existing copy with one delta run (or copies when none exists); new always creates another copy."
      },
-     "batch_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$", "description": "Groups the links of one batch. Derived from the batch key so a replay keeps it; the fair-share unit of the queue."}
+     "batch_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "description": "Groups the links of one batch. Derived from the batch key so a replay keeps it; the fair-share unit of the queue."
+     },
+     "after_copy_sync_mode": {
+      "type": "string",
+      "enum": [
+       "off",
+       "realtime",
+       "hourly",
+       "six_hourly",
+       "daily"
+      ],
+      "description": "Configure sync on the collection this job creates, after a successful initial copy. Omit to use the principal's preference; off disables it for this copy."
+     }
     },
     "required": [
      "plan_id",
@@ -2801,8 +3412,17 @@
       "minLength": 1,
       "maxLength": 128
      },
-     "priority": {"type": "integer", "minimum": -5, "maximum": 5, "description": "Queue priority; higher runs first. Default 0."},
-     "batch_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$", "description": "Set when this job is one link of a batch (S6)."},
+     "priority": {
+      "type": "integer",
+      "minimum": -5,
+      "maximum": 5,
+      "description": "Queue priority; higher runs first. Default 0."
+     },
+     "batch_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "description": "Set when this job is one link of a batch (S6)."
+     },
      "kind": {
       "type": "string",
       "enum": [
@@ -2844,6 +3464,16 @@
      },
      "filter": {
       "$ref": "#/components/schemas/FilterSpec"
+     },
+     "after_copy_sync_mode": {
+      "type": "string",
+      "enum": [
+       "off",
+       "realtime",
+       "hourly",
+       "six_hourly",
+       "daily"
+      ]
      }
     },
     "required": [
@@ -3115,8 +3745,10 @@
       "type": "string",
       "enum": [
        "off",
-       "scheduled",
-       "realtime"
+       "realtime",
+       "hourly",
+       "six_hourly",
+       "daily"
       ]
      },
      "after_copy_schedule": {
@@ -3128,6 +3760,15 @@
         "type": "null"
        }
       ]
+     },
+     "daily_report": {
+      "type": "boolean",
+      "description": "Send a short daily Telegram report at daily_report_at."
+     },
+     "daily_report_at": {
+      "type": "string",
+      "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+      "description": "Local time in the preferences timezone (HH:MM)."
      },
      "quiet_hours_start": {
       "anyOf": [
@@ -3169,6 +3810,8 @@
      "notify_action_required",
      "after_copy_sync_mode",
      "after_copy_schedule",
+     "daily_report",
+     "daily_report_at",
      "quiet_hours_start",
      "quiet_hours_end",
      "retention_days"
@@ -3216,8 +3859,10 @@
       "type": "string",
       "enum": [
        "off",
-       "scheduled",
-       "realtime"
+       "realtime",
+       "hourly",
+       "six_hourly",
+       "daily"
       ]
      },
      "after_copy_schedule": {
@@ -3229,6 +3874,13 @@
         "type": "null"
        }
       ]
+     },
+     "daily_report": {
+      "type": "boolean"
+     },
+     "daily_report_at": {
+      "type": "string",
+      "pattern": "^[0-2][0-9]:[0-5][0-9]$"
      },
      "quiet_hours_start": {
       "type": "string",
@@ -3399,7 +4051,19 @@
      "throttle": {
       "$ref": "#/components/schemas/Throttle"
      },
-     "queue": {"type": "object", "additionalProperties": false, "properties": {"paused": {"type": "boolean", "description": "Global queue pause (S6): queued jobs wait; running jobs settle to paused."}}, "required": ["paused"]}
+     "queue": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "paused": {
+        "type": "boolean",
+        "description": "Global queue pause (S6): queued jobs wait; running jobs settle to paused."
+       }
+      },
+      "required": [
+       "paused"
+      ]
+     }
     },
     "required": [
      "version",
@@ -3702,10 +4366,220 @@
      "request_id"
     ]
    },
-   "MoveInput": {"type": "object", "additionalProperties": false, "properties": {"expected_revision": {"type": "integer", "minimum": 0}, "before": {"type": "string", "minLength": 1, "maxLength": 128}, "after": {"type": "string", "minLength": 1, "maxLength": 128}, "priority": {"type": "integer", "minimum": -5, "maximum": 5}}, "required": ["expected_revision"]},
-   "BatchResponse": {"type": "object", "additionalProperties": false, "properties": {"data": {"type": "object", "additionalProperties": false, "properties": {"batch_id": {"type": "string"}, "total": {"type": "integer", "minimum": 0}, "completed_jobs": {"type": "integer", "minimum": 0}, "by_state": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}}, "items": {"type": "array", "items": {"$ref": "#/components/schemas/Job"}}}, "required": ["batch_id", "total", "completed_jobs", "by_state", "items"]}, "request_id": {"type": "string"}}, "required": ["data", "request_id"]},
-   "QueueResponse": {"type": "object", "additionalProperties": false, "properties": {"data": {"type": "object", "additionalProperties": false, "properties": {"paused": {"type": "boolean"}, "changed": {"type": "boolean"}, "affected_jobs": {"type": "integer", "minimum": 0}}, "required": ["paused", "changed", "affected_jobs"]}, "request_id": {"type": "string"}}, "required": ["data", "request_id"]},
-   "DeepPreflight": {"type": "object", "additionalProperties": false, "properties": {"state": {"type": "string", "enum": ["running", "complete", "cancelled", "expired", "failed", "interrupted"]}, "complete": {"type": "boolean"}, "folders": {"type": "integer", "minimum": 0}, "files": {"type": "integer", "minimum": 0}, "bytes": {"type": "integer", "minimum": 0}, "native_files": {"type": "integer", "minimum": 0}, "shortcuts": {"type": "integer", "minimum": 0}, "cannot_copy": {"type": "integer", "minimum": 0}, "unreadable_folders": {"type": "integer", "minimum": 0}, "scanned": {"type": "integer", "minimum": 0}, "estimate_seconds": {"type": "integer", "minimum": 0}, "estimate_basis": {"type": "string", "enum": ["measured", "unknown"]}, "storage_free_bytes": {"type": "integer"}, "daily_copy_left_bytes": {"type": "integer"}, "warnings": {"type": "array", "items": {"type": "string", "enum": ["estimate_unknown", "destination_storage_short", "may_hit_daily_limit"]}}, "error": {"type": "string"}, "updated_at": {"type": "string", "format": "date-time"}}, "required": ["state", "complete", "folders", "files", "bytes", "native_files", "shortcuts", "cannot_copy", "unreadable_folders", "scanned", "estimate_basis", "warnings", "updated_at"]},
+   "MoveInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "expected_revision": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "before": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+     },
+     "after": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+     },
+     "priority": {
+      "type": "integer",
+      "minimum": -5,
+      "maximum": 5
+     }
+    },
+    "required": [
+     "expected_revision"
+    ]
+   },
+   "BatchResponse": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "batch_id": {
+        "type": "string"
+       },
+       "total": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "completed_jobs": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "by_state": {
+        "type": "object",
+        "additionalProperties": {
+         "type": "integer",
+         "minimum": 0
+        }
+       },
+       "items": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/Job"
+        }
+       }
+      },
+      "required": [
+       "batch_id",
+       "total",
+       "completed_jobs",
+       "by_state",
+       "items"
+      ]
+     },
+     "request_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "data",
+     "request_id"
+    ]
+   },
+   "QueueResponse": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "paused": {
+        "type": "boolean"
+       },
+       "changed": {
+        "type": "boolean"
+       },
+       "affected_jobs": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "paused",
+       "changed",
+       "affected_jobs"
+      ]
+     },
+     "request_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "data",
+     "request_id"
+    ]
+   },
+   "DeepPreflight": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "state": {
+      "type": "string",
+      "enum": [
+       "running",
+       "complete",
+       "cancelled",
+       "expired",
+       "failed",
+       "interrupted"
+      ]
+     },
+     "complete": {
+      "type": "boolean"
+     },
+     "folders": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "files": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "bytes": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "native_files": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "shortcuts": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "cannot_copy": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "unreadable_folders": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "scanned": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "estimate_seconds": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "estimate_basis": {
+      "type": "string",
+      "enum": [
+       "measured",
+       "unknown"
+      ]
+     },
+     "storage_free_bytes": {
+      "type": "integer"
+     },
+     "daily_copy_left_bytes": {
+      "type": "integer"
+     },
+     "warnings": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "enum": [
+        "estimate_unknown",
+        "destination_storage_short",
+        "may_hit_daily_limit"
+       ]
+      }
+     },
+     "error": {
+      "type": "string"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "state",
+     "complete",
+     "folders",
+     "files",
+     "bytes",
+     "native_files",
+     "shortcuts",
+     "cannot_copy",
+     "unreadable_folders",
+     "scanned",
+     "estimate_basis",
+     "warnings",
+     "updated_at"
+    ]
+   },
    "ScheduleSpec": {
     "oneOf": [
      {
@@ -4525,6 +5399,7 @@
      "state",
      "counts",
      "scanned_folders",
+     "repairable_findings",
      "revision",
      "started_at"
     ],
@@ -4562,6 +5437,11 @@
      "scanned_folders": {
       "type": "integer",
       "minimum": 0
+     },
+     "repairable_findings": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Findings a repair run can fix and has not fixed yet."
      },
      "revision": {
       "type": "integer",

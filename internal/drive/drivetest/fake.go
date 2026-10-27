@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/itsgiahung/502Drive/internal/drive"
@@ -452,6 +453,38 @@ func (f *Fake) TrashFile(ctx context.Context, id string) error {
 	f.files[id] = x
 	f.record(x)
 	return nil
+}
+
+// Search returns non-trashed items whose name contains query, newest-name
+// order stable for tests. It mirrors Drive's case-insensitive containment.
+func (f *Fake) Search(ctx context.Context, query string, limit int) ([]drive.File, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.call("search", drive.File{Name: query}); err != nil {
+		return nil, err
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 20 {
+		limit = 20
+	}
+	needle := strings.ToLower(query)
+	var out []drive.File
+	for id, x := range f.files {
+		if x.Trashed || !strings.Contains(strings.ToLower(x.Name), needle) {
+			continue
+		}
+		if x.ID == "" {
+			x.ID = id
+		}
+		out = append(out, x)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (f *Fake) StartPageToken(ctx context.Context) (string, error) {

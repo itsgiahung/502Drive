@@ -455,3 +455,58 @@ func (s *Store) StrandedJobs(ctx context.Context) ([]string, error) {
 	}
 	return out, rows.Err()
 }
+
+// JobItems pages the items of one job, newest first. problemsOnly keeps the
+// states a report explains (failed, blocked, skipped).
+func (s *Store) JobItems(ctx context.Context, jobID string, problemsOnly bool, limit int, cursor int64) ([]Item, int64, error) {
+	if limit < 1 || limit > 500 {
+		return nil, 0, errors.New("limit must be between 1 and 500")
+	}
+	if cursor <= 0 {
+		cursor = 1 << 62
+	}
+	query := "SELECT rowid," + itemCols + " FROM items WHERE job_id=? AND rowid<?"
+	if problemsOnly {
+		query += " AND state IN ('failed','blocked','skipped')"
+	}
+	query += " ORDER BY rowid DESC LIMIT ?"
+	rows, err := s.db.QueryContext(ctx, query, jobID, cursor, limit+1)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	type ref struct {
+		row int64
+		it  Item
+	}
+	var refs []ref
+	for rows.Next() {
+		var r ref
+		var size sql.NullInt64
+		if err = rows.Scan(&r.row, &r.it.CollectionID, &r.it.SourceID, &r.it.JobID, &r.it.ParentSourceID, &r.it.Kind, &r.it.Name,
+			&r.it.MimeType, &r.it.ResourceKey, &size, &r.it.ShortcutTarget, &r.it.ShortcutTargetMim, &r.it.Fingerprint, &r.it.Generation,
+			&r.it.IntentKey, &r.it.State, &r.it.DestParentID, &r.it.DestID, &r.it.Attempts, &r.it.NextAttemptAt, &r.it.ErrorCode,
+			&r.it.ListState, &r.it.PageToken, &r.it.Op, &r.it.SeenJob, &r.it.ScanJob, &r.it.OldDestID, &r.it.ConflictAction,
+			&r.it.DestName, &r.it.RelPath); err != nil {
+			return nil, 0, err
+		}
+		if size.Valid {
+			v := size.Int64
+			r.it.Size = &v
+		}
+		refs = append(refs, r)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	var next int64
+	if len(refs) > limit {
+		refs = refs[:limit]
+		next = refs[limit-1].row
+	}
+	out := make([]Item, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, r.it)
+	}
+	return out, next, nil
+}

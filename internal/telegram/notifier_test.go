@@ -126,7 +126,7 @@ func TestNotifierStaysSilentForANoChangeSyncRun(t *testing.T) {
 	h := newHarness(t, 42)
 	n := NewNotifier(NotifierOptions{Service: h.svc, OwnerID: 42, Now: h.clock})
 	c := readyCollection(t, h.store, "owner", "Synced")
-	baseline, _, err := h.store.ListJobs(context.Background(), "", "", 10, 0)
+	baseline, _, err := h.store.ListJobs(context.Background(), "", "", "", 10, 0)
 	if err != nil || len(baseline) == 0 {
 		t.Fatalf("baseline jobs: %v %v", baseline, err)
 	}
@@ -149,7 +149,7 @@ func TestNotifierAnnouncesASyncRunThatChangedSomething(t *testing.T) {
 	h := newHarness(t, 42)
 	n := NewNotifier(NotifierOptions{Service: h.svc, OwnerID: 42, Now: h.clock})
 	c := readyCollection(t, h.store, "owner", "Changed")
-	baseline, _, err := h.store.ListJobs(context.Background(), "", "", 10, 0)
+	baseline, _, err := h.store.ListJobs(context.Background(), "", "", "", 10, 0)
 	if err != nil || len(baseline) == 0 {
 		t.Fatalf("baseline jobs: %v %v", baseline, err)
 	}
@@ -218,7 +218,7 @@ func TestNotifierClearsAFailureAfterASuccess(t *testing.T) {
 	h := newHarness(t, 42)
 	n := NewNotifier(NotifierOptions{Service: h.svc, OwnerID: 42, Now: h.clock})
 	c := readyCollection(t, h.store, "owner", "Recovers")
-	baseline, _, err := h.store.ListJobs(context.Background(), "", "", 10, 0)
+	baseline, _, err := h.store.ListJobs(context.Background(), "", "", "", 10, 0)
 	if err != nil || len(baseline) == 0 {
 		t.Fatalf("baseline: %v %v", baseline, err)
 	}

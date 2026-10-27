@@ -252,6 +252,15 @@ func (p pacedProvider) FindChildrenByName(ctx context.Context, parent, name stri
 	return f, err
 }
 
+func (p pacedProvider) Search(ctx context.Context, query string, limit int) ([]File, error) {
+	if err := p.read(ctx); err != nil {
+		return nil, err
+	}
+	f, err := p.Provider.Search(ctx, query, limit)
+	p.t.Observe(err)
+	return f, err
+}
+
 func (p pacedProvider) StartPageToken(ctx context.Context) (string, error) {
 	if err := p.read(ctx); err != nil {
 		return "", err

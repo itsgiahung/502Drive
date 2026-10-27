@@ -19,13 +19,18 @@ Test: [cli_test.go](../../internal/cli/cli_test.go), [drive_test.go](../../inter
 502drive serve [--maintenance]
 502drive status
 502drive inspect SOURCE [--to ID] [--name NAME] [--shortcuts follow|skip] [--on-conflict skip|rename|update] [FILTER] [--deep]
-502drive copy [SOURCE...|--stdin] [--to ID] [--name NAME|--auto-name] [--wait] [--idempotency-key K] [--shortcuts follow|skip] [--on-conflict skip|rename|update] [FILTER] [--update|--new]
+502drive LINK [LINK...] [flags]             # dạng trần: mỗi link = copy (một job/link)
+502drive copy [SOURCE...|--stdin] [--to ID] [--name NAME|--auto-name] [--wait] [--idempotency-key K] [--shortcuts follow|skip] [--on-conflict skip|rename|update] [FILTER] [--update|--new] [--sync off|realtime|hourly|six_hourly|daily]
 502drive pause|resume                        # S6: pause/resume the whole job queue (owner)
 502drive jobs move ID [--before ID|--after ID] [--priority N]   # S6: reorder a queued job (-5..5, higher first)
 502drive ls [FOLDER] [--all]                 # FOLDER = link/ID/root (mặc định root)
 502drive info LINK|ID
 502drive mkdir NAME [--in PARENT] [--idempotency-key K]
 502drive jobs list|get|wait|events|pause|resume|cancel|retry
+502drive jobs report ID [--format table|json|csv] [--max-rows N]   # X1: mục failed/blocked/skipped (mã K1, lý do, đường dẫn, số lần thử)
+502drive history export [--since 30d] [--format csv|json|table] [--all] [--max-rows N]   # X1: lịch sử job, mới cập nhật trước
+502drive wait ID                              # dạng ngắn của jobs wait
+502drive watch [ID] [--interval 1s]           # một dòng/giây; --json = một envelope/giây
 502drive collections list|get
 502drive collections run|pause|audit COLLECTION          # L3: quick actions (resume: retired → back; else sync resume)
 502drive collections retire|resume COLLECTION            # L1: stop following / bring back (no Drive change)
@@ -37,7 +42,7 @@ Test: [cli_test.go](../../internal/cli/cli_test.go), [drive_test.go](../../inter
 502drive sync filter set COLLECTION [FILTER] [--keep-empty-folders] | --clear
 502drive destinations list|add|default
 502drive account status|login|revoke
-502drive doctor [--online]
+502drive doctor [--online] [--fix]             # --fix: quyền file bí mật, thư mục thiếu
 502drive                       # trong TTY: tạo config lần đầu, bật daemon + tray (tách khỏi terminal), mở TUI
 502drive up                    # như trên nhưng không mở UI (dùng cho autostart)
 502drive stop [--yes]          # dừng daemon graceful qua HTTP; còn job thì hỏi (ngoài TTY cần --yes)
@@ -46,6 +51,7 @@ Test: [cli_test.go](../../internal/cli/cli_test.go), [drive_test.go](../../inter
 502drive menu                  # chỉ mở TUI, line menu khi plain/dumb/NO_COLOR
 502drive logs [-n N] [-f] [--tray]
 502drive autostart enable|disable|status
+502drive autostart systemd status|install|remove   # unit --user (daemon tự restart sau crash)
 502drive update [--enable-check|--disable-check]   # chỉ báo bản mới, không tự cài
 502drive tray [--write-icons DIR]
 502drive backup PATH | restore PATH [--to DIR] | cleanup [--dry-run|--apply] [--older-than D]
@@ -66,14 +72,37 @@ Precedence: flags > `DRIVE502_*` > config > default. CLI **không** mở DB (tr�
 | `--json` | một envelope `{"data","request_id"}` (hoặc NDJSON cho `jobs events`) | một JSON error envelope |
 | `--quiet` | chỉ ID/kết quả | lỗi |
 
+Tham chiếu job nhận ID đầy đủ, tiền tố duy nhất, `@last` (mới nhất) và
+`@running` (mới nhất chưa xong). Completion bash/zsh/fish gợi ý ID job/collection
+thật. `502drive LINK...` tương đương `copy`.
+
 Exit code: `0` ok, `1` lỗi nội bộ/provider, `2` input/config, `3` auth/reconnect,
 `4` not found, `5` conflict/stale, `6` daemon/network/wait timeout, `7` wait kết
 thúc partial/failed/blocked, `8` wait cancelled, `130` Ctrl-C. `copy --wait` chỉ
 exit 0 khi `succeeded`.
 
+### Báo cáo & export (X1)
+
+- `jobs report ID` đọc `GET /v1/jobs/{id}/items?problems=true` theo trang 100, ghép tối đa
+  `--max-rows` (mặc định 5000). Cột bảng: trạng thái, mã, lý do (`present.Reason`), đường
+  dẫn, số lần thử; CSV thêm `source_id`/`destination_id`. `--format json` và `--json` cùng
+  in một envelope `{"data":{"job","items","truncated"},"request_id"}`; `--json` + `--format csv`
+  là lỗi dùng (exit 2). Cắt dòng ghi chú ở stderr, exit vẫn 0.
+- `history export` đọc `GET /v1/history?since=…&limit=100&cursor=…` (sắp theo `updated_at`,
+  nên job cũ chạy lại vẫn nằm trong cửa sổ), mặc định `--format csv`, `--since 30d`
+  (nhận `30d`, `12h`, `2w`, RFC3339 hoặc `YYYY-MM-DD`). CSV: `job_id,state,kind,
+  collection_id,source_name,root_name,created_at,updated_at,total_items,completed_items,
+  failed_items,blocked_items,skipped_items`. Trần 5000 job, cắt thì ghi chú stderr.
+- CSV dùng `encoding/csv` (quote phẩy/nháy/xuống dòng); ô bắt đầu bằng `=`, `+`, `-`,
+  `@`, TAB hoặc CR được thêm `'` để spreadsheet không chạy công thức.
+
 `--json`, `--quiet`, `--plain`, `TERM=dumb` tắt màu/mascot/cursor; pipe mặc định
 plain. Tên Drive qua `Sanitize` (ESC/control/bidi). Lệnh nghiệp vụ in tiếng Anh
 (theo contract); **menu/TUI/tray** dùng vi/en từ `Preferences.Language`.
+Giá trị trong output người đọc theo locale/múi giờ của preferences: ngày giờ qua
+`i18n.FormatDate/FormatTime`, dung lượng qua `present.HumanBytes`, lý do mã K1 qua
+`present.Reason`. JSON luôn giữ RFC3339 gốc; lệnh chỉ đọc preferences khi thật sự
+in ngày giờ (không thêm request cho JSON/`status`).
 
 ## Sync CLI
 
@@ -238,6 +267,15 @@ Test: [batch_t_test.go](../../internal/tui/batch_t_test.go), [tui_ext_test.go](.
   bằng code, animation busy ≤4fps, tắt bằng `--no-motion`.
 - Linux không có `DBUS_SESSION_BUS_ADDRESS` → exit 1 kèm hướng dẫn dùng `menu`.
 - `--write-icons DIR` ghi `502drive.png`/`502drive.ico` (build helper).
+
+### systemd `--user`
+
+`502drive autostart systemd install` ghi `~/.config/systemd/user/502drive.service`
+(hoặc dưới `XDG_CONFIG_HOME`), `daemon-reload` + `enable` — không tự `start`; unit chạy
+`serve`, `Restart=on-failure`, giới hạn 5 lần/5 phút, hardening như unit đóng gói.
+`status` in đường dẫn và enabled/disabled; `remove` disable rồi xóa. `doctor` báo
+`systemd_user` failed nếu unit có nhưng chưa enable; không có unit thì passed
+(tray/XDG vẫn khởi động daemon).
 
 ## Chưa hỗ trợ
 

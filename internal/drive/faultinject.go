@@ -171,7 +171,7 @@ func (f *FaultInjector) RoundTrip(req *http.Request) (*http.Response, error) {
 				secs = 5
 			}
 			header.Set("Retry-After", strconv.Itoa(secs))
-			body := []byte(fmt.Sprintf(`{
+			body := []byte(`{
 				"error": {
 					"code": 429,
 					"message": "Rate limit exceeded",
@@ -181,7 +181,7 @@ func (f *FaultInjector) RoundTrip(req *http.Request) (*http.Response, error) {
 						"reason": "rateLimitExceeded"
 					}]
 				}
-			}`))
+			}`)
 			return &http.Response{
 				StatusCode: code,
 				Status:     fmt.Sprintf("%d %s", code, http.StatusText(code)),

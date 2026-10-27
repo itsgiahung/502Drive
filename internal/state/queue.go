@@ -23,9 +23,9 @@ const (
 //  3. FIFO by queue_order, then admission order.
 //
 // It uses jobs_queue (state, priority, order) and jobs_fair (state, group).
-const claimQueuedSQL = `SELECT j.id FROM jobs j WHERE j.state='queued'
+const claimQueuedSQL = `SELECT j.id FROM jobs j INDEXED BY jobs_queue WHERE j.state='queued'
 	ORDER BY j.queue_priority DESC,
-		(SELECT count(*) FROM jobs r WHERE r.state IN ('running','reconciling','pausing','cancelling') AND r.fair_group=j.fair_group) ASC,
+		(SELECT count(*) FROM jobs r INDEXED BY jobs_fair WHERE r.state IN ('running','reconciling','pausing','cancelling') AND r.fair_group=j.fair_group) ASC,
 		j.queue_order ASC, j.rowid ASC
 	LIMIT 1`
 

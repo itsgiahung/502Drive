@@ -358,7 +358,7 @@ func TestNoSyncByDefaultAndASyncFailureDoesNotHideTheCopy(t *testing.T) {
 	if called {
 		t.Fatal("sync must be off unless the user turned it on")
 	}
-	m, _ = update(t, m, key("1"))
+	_, _ = update(t, m, key("1"))
 	m = homeModelFromJobs(t, d)
 	_ = m
 }

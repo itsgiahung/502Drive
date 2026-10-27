@@ -127,7 +127,7 @@ func TestBackupRestoreRoundtripKeepsAnUnfinishedJob(t *testing.T) {
 		t.Fatalf("open restored directory: %v", err)
 	}
 	defer store.Close()
-	jobs, _, err := store.ListJobs(context.Background(), "", "", 10, 0)
+	jobs, _, err := store.ListJobs(context.Background(), "", "", "", 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestBackupRestoreRoundtripKeepsAnUnfinishedJob(t *testing.T) {
 	if err != nil || claimed.ID != jobs[0].ID {
 		t.Fatalf("claim after restore: %+v %v", claimed, err)
 	}
-	if jobs, _, err = store.ListJobs(context.Background(), "", "", 10, 0); err != nil {
+	if jobs, _, err = store.ListJobs(context.Background(), "", "", "", 10, 0); err != nil {
 		t.Fatal(err)
 	}
 	var resumed state.Job

@@ -35,6 +35,9 @@ type syncer struct {
 	// notifyError and notifyClear are optional (set when a bot is enabled).
 	notifyError func(ctx context.Context, collectionID, code string) error
 	notifyClear func(ctx context.Context, collectionID string) error
+	// applyAfterCopy applies S8 requests recorded when an initial copy
+	// succeeded. Optional (tests without a service leave it nil).
+	applyAfterCopy func(context.Context) (int, int, error)
 
 	mu      sync.Mutex
 	quiet   map[string]int
@@ -66,11 +69,23 @@ func (s *syncer) tick(ctx context.Context) {
 		return
 	}
 	now := s.now().UTC()
+	s.applyAfterCopyRequests(ctx)
 	s.claimSchedules(ctx, now)
 	s.claimFullReconciles(ctx, now)
 	s.replayPending(ctx, now)
 	s.pollFeeds(ctx, now)
 	s.reconcileFeeds(ctx)
+}
+
+// applyAfterCopyRequests creates the subscriptions S8 recorded when an initial
+// copy succeeded. A failure is retried by the store, never by the copy job.
+func (s *syncer) applyAfterCopyRequests(ctx context.Context) {
+	if s.applyAfterCopy == nil {
+		return
+	}
+	if _, _, err := s.applyAfterCopy(ctx); err != nil {
+		s.note(ctx, "after_copy_sync", err)
+	}
 }
 
 // claimFullReconciles admits the periodic full reconciliation a realtime

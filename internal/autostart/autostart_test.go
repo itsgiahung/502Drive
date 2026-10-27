@@ -34,7 +34,7 @@ func TestAutostartLinuxEnableDisableIdempotent(t *testing.T) {
 		t.Fatalf("Enable() failed: %v", err)
 	}
 
-	on, where = m.Status()
+	on, _ = m.Status()
 	if !on {
 		t.Fatalf("expected autostart to be enabled, got off")
 	}

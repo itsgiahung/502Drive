@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,7 +30,6 @@ type reportConfig struct {
 	At      string `json:"at"` // HH:MM in the preferences time zone
 }
 
-func reportKey(principal string) string     { return "tg_report:" + principal }
 func reportSentKey(principal string) string { return "tg_report_sent:" + principal }
 
 func validClock(s string) (hour, minute int, ok bool) {
@@ -43,26 +41,26 @@ func validClock(s string) (hour, minute int, ok bool) {
 }
 
 func (t *Telegram) loadReportConfig(ctx context.Context, principal string) reportConfig {
-	var cfg reportConfig
-	v, ok, err := t.store.Setting(ctx, reportKey(principal))
-	if err != nil || !ok || json.Unmarshal([]byte(v), &cfg) != nil {
+	p, err := t.store.Preferences(ctx, principal)
+	if err != nil {
 		return reportConfig{}
 	}
-	if _, _, valid := validClock(cfg.At); !valid {
+	if _, _, valid := validClock(p.DailyReportAt); !valid {
 		return reportConfig{}
 	}
-	return cfg
+	return reportConfig{Enabled: p.DailyReport, At: p.DailyReportAt}
 }
 
 func (t *Telegram) saveReportConfig(ctx context.Context, principal string, cfg reportConfig) error {
 	if _, _, ok := validClock(cfg.At); !ok {
 		return errors.New("the report time must be HH:MM")
 	}
-	b, err := json.Marshal(cfg)
+	p, err := t.store.Preferences(ctx, principal)
 	if err != nil {
 		return err
 	}
-	return t.store.SetSetting(ctx, reportKey(principal), string(b))
+	p.DailyReport, p.DailyReportAt = cfg.Enabled, cfg.At
+	return t.store.SavePreferences(ctx, principal, p)
 }
 
 // reportDue decides whether today's report should go out now. day is the local
@@ -191,7 +189,7 @@ func (t *Telegram) reportStats(ctx context.Context, p app.Principal, start, end 
 	var s reportStats
 	cursor := int64(0)
 	for page := 0; page < reportScanPages; page++ {
-		jobs, next, err := t.svc.Jobs(ctx, p, false, "", 100, cursor)
+		jobs, next, err := t.svc.Jobs(ctx, p, false, "", "", 100, cursor)
 		if err != nil {
 			return s, err
 		}

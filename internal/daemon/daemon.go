@@ -23,6 +23,7 @@ import (
 	"golang.org/x/oauth2/google"
 
 	"github.com/itsgiahung/502Drive/internal/app"
+	"github.com/itsgiahung/502Drive/internal/autostart"
 	"github.com/itsgiahung/502Drive/internal/config"
 	"github.com/itsgiahung/502Drive/internal/drive"
 	"github.com/itsgiahung/502Drive/internal/engine"
@@ -71,7 +72,11 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 	}
 	defer store.Close()
 
-	svc := &app.Service{Store: store, Version: o.Version, ConfigDir: filepath.Dir(cfg.TokenFile), BaseCtx: ctx}
+	svc := &app.Service{Store: store, Version: o.Version, ConfigDir: filepath.Dir(cfg.TokenFile), BaseCtx: ctx,
+		Systemd: func() app.SystemdState {
+			st := autostart.SystemdStateNow()
+			return app.SystemdState{Installed: st.Installed, Enabled: st.Enabled, Unit: st.Unit, Detail: st.Detail}
+		}}
 	if every, err := cfg.FullReconcileEveryDuration(); err != nil {
 		return err
 	} else if every > 0 {
@@ -99,7 +104,7 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 			}
 			acc, err := c.Account(ctx)
 			if err != nil {
-				return errors.New("Google Drive rejected the new credential")
+				return errors.New("the new credential was rejected by Google Drive")
 			}
 			return svc.RememberAccount(ctx, acc.Email)
 		}
@@ -152,7 +157,7 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 	}
 
 	eng := &engine.Engine{Store: store, Provider: provider, Log: log, Throttle: throttle,
-		Workers: start, MaxWorkers: maxWorkers}
+		Workers: start, MaxWorkers: maxWorkers, Jobs: cfg.ActiveJobs()}
 	svc.Wake = eng.Wake
 
 	// Power/network lifecycle: OS events where available, clock gaps always.
@@ -293,6 +298,7 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 		close(syncDone)
 	} else {
 		syncer := newSyncer(store, provider, eng.Wake, log)
+		syncer.applyAfterCopy = svc.ApplyAfterCopySync
 		if notifier != nil {
 			syncer.notifyError = notifier.SubscriptionError
 			syncer.notifyClear = notifier.SubscriptionHealthy

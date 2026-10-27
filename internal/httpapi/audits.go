@@ -10,9 +10,13 @@ import (
 
 // auditDTO is the wire shape of one integrity audit.
 func auditDTO(a state.Audit) map[string]any {
+	counts := a.Counts
+	if counts == nil {
+		counts = map[string]int{}
+	}
 	out := map[string]any{
 		"id": a.ID, "collection_id": a.CollectionID, "job_id": a.JobID, "state": a.State,
-		"counts": a.Counts, "scanned_folders": a.Scanned, "revision": a.Revision,
+		"counts": counts, "repairable_findings": a.Repairable, "scanned_folders": a.Scanned, "revision": a.Revision,
 		"started_at": ts(a.StartedAt),
 	}
 	if !a.FinishedAt.IsZero() {
@@ -47,6 +51,15 @@ func (s *Server) startAudit(w http.ResponseWriter, r *http.Request, p app.Princi
 	markReplay(w, replayed)
 	w.Header().Set("Location", "/v1/audits/"+a.ID)
 	return http.StatusAccepted, auditDTO(a), nil
+}
+
+// latestAudit returns the newest audit of a collection, or 404.
+func (s *Server) latestAudit(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
+	a, _, err := s.Svc.LastAudit(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		return 0, nil, err
+	}
+	return http.StatusOK, auditDTO(a), nil
 }
 
 // getAudit returns one audit.

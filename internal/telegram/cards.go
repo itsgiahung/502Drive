@@ -114,10 +114,6 @@ func (t *Telegram) show(ctx context.Context, p app.Principal, chatID int64, mess
 	return t.panel(ctx, p, chatID, messageID, text, rows, false)
 }
 
-func (t *Telegram) showBare(ctx context.Context, p app.Principal, chatID int64, messageID int, text string, rows ...[]button) (int, error) {
-	return t.panel(ctx, p, chatID, messageID, text, rows, true)
-}
-
 func (t *Telegram) answer(ctx context.Context, callbackID, toast string) error {
 	_, err := t.bot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: callbackID, Text: toast})
 	return err
@@ -273,7 +269,7 @@ func destName(ctx context.Context, svc *app.Service) string {
 }
 
 func (t *Telegram) jobsPage(ctx context.Context, p app.Principal, chatID int64, messageID int, tx texts) error {
-	jobs, _, err := t.svc.Jobs(ctx, p, false, "", 5, 0)
+	jobs, _, err := t.svc.Jobs(ctx, p, false, "", "", 5, 0)
 	if err != nil {
 		return t.showCard(ctx, p, chatID, messageID, tx.jobsEmpty, []button{nav(tx.back, "home")})
 	}

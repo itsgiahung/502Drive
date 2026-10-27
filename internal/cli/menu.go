@@ -296,7 +296,7 @@ func (a *App) menuJob(ctx context.Context, p prompter, id string) error {
 			return err
 		}
 		fmt.Fprintln(a.out())
-		a.printJob(j)
+		a.printJob(ctx, j)
 		var acts []string
 		var names []string
 		add := func(n, label string) { names = append(names, n); acts = append(acts, label) }
@@ -317,6 +317,9 @@ func (a *App) menuJob(ctx context.Context, p prompter, id string) error {
 		add("refresh", "Refresh")
 		i, err := p.Select(a.label(i18n.JobActions), acts)
 		if err != nil {
+			if errors.Is(err, errBack) {
+				return nil
+			}
 			return err
 		}
 		if names[i] == "refresh" {

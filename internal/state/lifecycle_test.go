@@ -81,18 +81,6 @@ func newTestStore(t *testing.T) *Store {
 	return s
 }
 
-func lifecycleFixture(t *testing.T, s *Store) (string, Job) {
-	t.Helper()
-	ctx := context.Background()
-	_, _, _ = s.AddDestination(ctx, "owner", "k-dest", "dest", Destination{ID: "d1", FolderID: "root", Name: "My Drive"})
-	_, _, _ = s.PutPlanIdempotent(ctx, "owner", "k-plan", "src", Plan{ID: "p1", Principal: "owner", SourceID: "s1", SourceName: "Photos", SourceKind: KindFolder, DestinationID: "d1", RootName: "Photos", ExpiresAt: time.Now().Add(time.Hour), Revision: 1})
-	res, err := s.Admit(ctx, "owner", "k-job", "p1", 1)
-	if err != nil {
-		t.Fatalf("admit: %v", err)
-	}
-	return res.Job.CollectionID, res.Job
-}
-
 func TestRetireCollectionFailsWhenBusy(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
@@ -156,7 +144,7 @@ func TestRetireAndResumeCollection(t *testing.T) {
 	}
 
 	// Default collection page (all=false) should NOT include retired collection
-	activeList, _, err := s.CollectionPage(ctx, "owner", "", "", false, 10, 0)
+	activeList, _, err := s.CollectionPage(ctx, "owner", "", "", false, false, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +155,7 @@ func TestRetireAndResumeCollection(t *testing.T) {
 	}
 
 	// Collection page with all=true SHOULD include retired collection
-	allList, _, err := s.CollectionPage(ctx, "owner", "", "", true, 10, 0)
+	allList, _, err := s.CollectionPage(ctx, "owner", "", "", true, false, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +182,7 @@ func TestRetireAndResumeCollection(t *testing.T) {
 	}
 
 	// Now it appears in activeList again
-	activeListAfter, _, err := s.CollectionPage(ctx, "owner", "", "", false, 10, 0)
+	activeListAfter, _, err := s.CollectionPage(ctx, "owner", "", "", false, false, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

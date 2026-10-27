@@ -12,6 +12,25 @@ import (
 
 const defaultDestinationKey = "default_destination"
 
+// After-copy sync modes (S8). Empty and "off" both mean "do not configure".
+const (
+	AfterCopyOff       = "off"
+	AfterCopyRealtime  = "realtime"
+	AfterCopyHourly    = "hourly"
+	AfterCopySixHourly = "six_hourly"
+	AfterCopyDaily     = "daily"
+)
+
+// ValidAfterCopySyncMode reports whether mode is one this build understands.
+// The empty string is accepted as "use the preference".
+func ValidAfterCopySyncMode(mode string) bool {
+	switch mode {
+	case "", AfterCopyOff, AfterCopyRealtime, AfterCopyHourly, AfterCopySixHourly, AfterCopyDaily:
+		return true
+	}
+	return false
+}
+
 func (s *Store) Setting(ctx context.Context, key string) (string, bool, error) {
 	var v string
 	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key=?", key).Scan(&v)
@@ -37,6 +56,8 @@ type Preferences struct {
 	NotifyFailed         bool    `json:"notify_failed"`
 	NotifyActionRequired bool    `json:"notify_action_required"`
 	AfterCopySyncMode    string  `json:"after_copy_sync_mode"`
+	DailyReport          bool    `json:"daily_report"`
+	DailyReportAt        string  `json:"daily_report_at,omitempty"`
 	QuietHoursStart      *string `json:"quiet_hours_start,omitempty"`
 	QuietHoursEnd        *string `json:"quiet_hours_end,omitempty"`
 	RetentionDays        int     `json:"retention_days"`
@@ -81,9 +102,18 @@ func DefaultTimezone() string {
 }
 
 func (s *Store) Preferences(ctx context.Context, principal string) (Preferences, error) {
+	return preferencesQuery(ctx, s.db, principal)
+}
+
+// preferencesQuery reads one principal's preferences inside any transaction.
+func preferencesQuery(ctx context.Context, q queryer, principal string) (Preferences, error) {
 	p := DefaultPreferences()
-	v, ok, err := s.Setting(ctx, "prefs:"+principal)
-	if err != nil || !ok {
+	var v string
+	err := q.QueryRowContext(ctx, "SELECT value FROM settings WHERE key=?", "prefs:"+principal).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return p, nil
+	}
+	if err != nil {
 		return p, err
 	}
 	return p, json.Unmarshal([]byte(v), &p)

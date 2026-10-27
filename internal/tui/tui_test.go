@@ -237,7 +237,7 @@ func TestJobDetailActions(t *testing.T) {
 	}
 	for _, k := range []string{"p", "u", "c", "t"} {
 		m, cmd := update(t, m, key(k))
-		m = run(t, m, cmd)
+		_ = run(t, m, cmd)
 	}
 	want := []string{"job:pause:job_1:3", "job:resume:job_1:3", "job:cancel:job_1:3", "job:retry:job_1:3"}
 	if got := fake.recorded(); strings.Join(got, "|") != strings.Join(want, "|") {
@@ -257,7 +257,7 @@ func TestLibraryPresetsAndSyncActions(t *testing.T) {
 	}
 	for _, k := range []string{"d", "h", "e", "t", "n", "p", "x"} {
 		m, cmd := update(t, m, key(k))
-		m = run(t, m, cmd)
+		_ = run(t, m, cmd)
 	}
 	want := []string{"preset:daily:col_1", "preset:hourly:col_1", "preset:sixhourly:col_1", "preset:realtime:col_1",
 		"run:col_1", "sync:pause:col_1", "sync:stop:col_1"}
@@ -270,7 +270,7 @@ func TestDestinationSetDefault(t *testing.T) {
 	m, fake := newTestModel(t, Options{Width: 80})
 	m, _ = update(t, m, key("4"))
 	m, cmd := update(t, m, key("enter"))
-	m = run(t, m, cmd)
+	_ = run(t, m, cmd)
 	if got := fake.recorded(); len(got) != 1 || got[0] != "dest:dst_1:1" {
 		t.Fatalf("calls = %v", got)
 	}
@@ -286,7 +286,7 @@ func TestAccountDoctorAndSettingsLanguage(t *testing.T) {
 	}
 	m, _ = update(t, m, key("6"))
 	m, cmd = update(t, m, key("l"))
-	m = run(t, m, cmd)
+	_ = run(t, m, cmd)
 	if got := fake.recorded(); got[len(got)-1] != "lang:vi" { // the model starts in English (override), so the switch goes to vi
 		t.Fatalf("calls = %v", got)
 	}

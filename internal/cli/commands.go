@@ -61,6 +61,7 @@ type jobView struct {
 	Counts       jobCounts `json:"counts"`
 	ResultURL    *string   `json:"result_url"`
 	LastError    *failure  `json:"last_error"`
+	CreatedAt    string    `json:"created_at"`
 	UpdatedAt    string    `json:"updated_at"`
 	// Kind is audit, repair or cleanup (empty for a copy); ResumeAfter is when
 	// a quota-blocked job continues by itself.
@@ -101,7 +102,7 @@ func terminalState(s string) bool {
 	return false
 }
 
-func (a *App) printJob(j jobView) {
+func (a *App) printJob(ctx context.Context, j jobView) {
 	s := a.style
 	rows := []kv{{"job", j.ID}, {"state", s.stateColor(j.State)}, {"source", Sanitize(j.SourceName)}, {"target", Sanitize(j.RootName)}}
 	if j.Phase != nil {
@@ -117,6 +118,12 @@ func (a *App) printJob(j jobView) {
 	}
 	if j.LastError != nil {
 		rows = append(rows, kv{"problem", s.warn(Sanitize(j.LastError.Message)) + " (" + j.LastError.Code + ")"})
+	}
+	if j.CreatedAt != "" {
+		rows = append(rows, kv{"created", a.formatTimestamp(ctx, j.CreatedAt)})
+	}
+	if j.UpdatedAt != "" {
+		rows = append(rows, kv{"updated", a.formatTimestamp(ctx, j.UpdatedAt)})
 	}
 	printKV(a.out(), s, rows)
 }
@@ -347,12 +354,16 @@ func (a *App) copyCmd() *cobra.Command {
 	var to, name, key string
 	var opts planOpts
 	var wait, useStdin, dry, autoName, update, newCopy bool
+	var syncMode string
 	var waitTimeout time.Duration
 	c := &cobra.Command{Use: "copy [SOURCE...]", Short: "Plan and durably submit one or more server-side copies", Args: cobra.ArbitraryArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		if update && newCopy {
 			return usage("give --update or --new, not both")
 		}
 		if err := opts.validate(); err != nil {
+			return err
+		}
+		if err := validateSyncMode(syncMode); err != nil {
 			return err
 		}
 		var sources []string
@@ -384,7 +395,7 @@ func (a *App) copyCmd() *cobra.Command {
 		}
 		if len(sources) > 1 {
 			// Several links: one job each, under one batch id. A batch never prompts.
-			return a.copyBatch(cmd.Context(), sources, to, name, key, opts, copyMode(update, newCopy, false), autoName, dry, wait, waitTimeout)
+			return a.copyBatch(cmd.Context(), sources, to, name, key, opts, copyMode(update, newCopy, false), syncMode, autoName, dry, wait, waitTimeout)
 		}
 		source := sources[0]
 		if autoName {
@@ -403,7 +414,7 @@ func (a *App) copyCmd() *cobra.Command {
 			return nil
 		}
 		mode := copyMode(update, newCopy, a.interactive())
-		job, r, err := a.submitCopyMode(cmd.Context(), source, to, name, key, opts, mode)
+		job, r, err := a.submitCopyMode(cmd.Context(), source, to, name, key, opts, mode, syncMode)
 		var ae *APIError
 		if errors.As(err, &ae) && ae.Code == "already_copied" && mode == "" {
 			// A terminal can ask; a script never reaches here (it sends update).
@@ -411,7 +422,7 @@ func (a *App) copyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			job, r, err = a.submitCopyMode(cmd.Context(), source, to, name, key, opts, mode)
+			job, r, err = a.submitCopyMode(cmd.Context(), source, to, name, key, opts, mode, syncMode)
 		}
 		if err != nil {
 			return err
@@ -438,6 +449,7 @@ func (a *App) copyCmd() *cobra.Command {
 	f.BoolVar(&dry, "dry-run", false, "preview only (same as inspect)")
 	f.BoolVar(&update, "update", false, "if this source is already copied to this destination, refresh that copy (default in scripts)")
 	f.BoolVar(&newCopy, "new", false, "always create another copy, even when one exists")
+	f.StringVar(&syncMode, "sync", "", "sync the new copy after it finishes: off, realtime, hourly, six_hourly or daily")
 	f.StringVar(&key, "idempotency-key", "", "explicit key for the job submission")
 	f.DurationVar(&waitTimeout, "wait-timeout", 0, "stop waiting after this long (job keeps running)")
 	return c
@@ -445,15 +457,24 @@ func (a *App) copyCmd() *cobra.Command {
 
 // submitCopy plans and submits with keys that survive a lost response.
 func (a *App) submitCopy(ctx context.Context, source, to, name, explicitKey string, o planOpts) (jobView, *Response, error) {
-	return a.submitCopyMode(ctx, source, to, name, explicitKey, o, "")
+	return a.submitCopyMode(ctx, source, to, name, explicitKey, o, "", "")
+}
+
+// validateSyncMode accepts the S8 after-copy sync modes.
+func validateSyncMode(mode string) error {
+	switch mode {
+	case "", "off", "realtime", "hourly", "six_hourly", "daily":
+		return nil
+	}
+	return usage("--sync must be off, realtime, hourly, six_hourly or daily")
 }
 
 // submitCopyMode is submitCopy with the L2 answer for an existing copy:
 // "update", "new" or "" (refuse with already_copied).
-func (a *App) submitCopyMode(ctx context.Context, source, to, name, explicitKey string, o planOpts, mode string) (jobView, *Response, error) {
+func (a *App) submitCopyMode(ctx context.Context, source, to, name, explicitKey string, o planOpts, mode, afterCopySync string) (jobView, *Response, error) {
 	var job jobView
 	ps := a.pending()
-	id := requestID(source, to, name, explicitKey, o.Shortcuts, o.OnConflict, fmt.Sprint(o.Filter))
+	id := requestID(source, to, name, explicitKey, o.Shortcuts, o.OnConflict, fmt.Sprint(o.Filter), afterCopySync)
 	var planKey, jobKey string
 	if explicitKey != "" {
 		planKey, jobKey = explicitKey+"-plan", explicitKey
@@ -478,6 +499,9 @@ func (a *App) submitCopyMode(ctx context.Context, source, to, name, explicitKey 
 	body := map[string]any{"plan_id": plan.ID, "expected_revision": plan.Revision}
 	if mode != "" {
 		body["mode"] = mode
+	}
+	if afterCopySync != "" {
+		body["after_copy_sync_mode"] = afterCopySync
 	}
 	r, err := a.call(ctx, "POST", "/v1/jobs", nil, body, jobKey)
 	if err != nil {
@@ -528,9 +552,10 @@ func (a *App) jobsCmd() *cobra.Command {
 			}
 			var rows [][]string
 			for _, j := range page.Items {
-				rows = append(rows, []string{j.ID, a.style.stateColor(j.State), Truncate(Sanitize(j.SourceName), 28, a.style.ASCII), fmt.Sprintf("%d/%s", j.Counts.Completed, totalText(j.Counts))})
+				rows = append(rows, []string{j.ID, a.style.stateColor(j.State), Truncate(Sanitize(j.SourceName), 28, a.style.ASCII),
+					fmt.Sprintf("%d/%s", j.Counts.Completed, totalText(j.Counts)), a.formatTimestamp(cmd.Context(), j.UpdatedAt)})
 			}
-			printTable(a.out(), a.style, []string{"job", "state", "source", "items"}, rows)
+			printTable(a.out(), a.style, []string{"job", "state", "source", "items", "updated"}, rows)
 			if page.Next != nil {
 				fmt.Fprintf(a.out(), "\nMore: 502drive jobs list --cursor %s\n", *page.Next)
 			}
@@ -543,7 +568,11 @@ func (a *App) jobsCmd() *cobra.Command {
 	list.Flags().BoolVar(&all, "all", false, "owner: include other principals' jobs")
 
 	get := &cobra.Command{Use: "get JOB_ID", Short: "Show one job", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		r, err := a.call(cmd.Context(), "GET", "/v1/jobs/"+url.PathEscape(args[0]), nil, nil, "")
+		resolved, err := a.resolveJobID(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		r, err := a.call(cmd.Context(), "GET", "/v1/jobs/"+url.PathEscape(resolved), nil, nil, "")
 		if err != nil {
 			return err
 		}
@@ -551,15 +580,17 @@ func (a *App) jobsCmd() *cobra.Command {
 		if err = r.Decode(&j); err != nil {
 			return err
 		}
-		a.emit(r, j.ID, func() { a.printJob(j) })
+		a.emit(r, j.ID, func() { a.printJob(cmd.Context(), j) })
 		return nil
 	}}
+	get.ValidArgsFunction = a.completeJobIDs
 
 	var waitTimeout time.Duration
 	wait := &cobra.Command{Use: "wait JOB_ID", Short: "Follow a job until it finishes", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		return a.waitJob(cmd.Context(), args[0], waitTimeout)
 	}}
 	wait.Flags().DurationVar(&waitTimeout, "wait-timeout", 0, "give up waiting after this long (job keeps running)")
+	wait.ValidArgsFunction = a.completeJobIDs
 
 	var after int64
 	var follow bool
@@ -568,13 +599,16 @@ func (a *App) jobsCmd() *cobra.Command {
 	}}
 	events.Flags().Int64Var(&after, "after-sequence", 0, "resume after this sequence")
 	events.Flags().BoolVar(&follow, "follow", false, "keep polling until the job is finished")
+	events.ValidArgsFunction = a.completeJobIDs
 
-	jobs.AddCommand(list, get, wait, events, a.cancelCmd(), a.jobsMoveCmd())
+	jobs.AddCommand(list, get, wait, events, a.reportCmd(), a.cancelCmd(), a.jobsMoveCmd())
 	for _, act := range []string{"pause", "resume", "retry"} {
 		act := act
-		jobs.AddCommand(&cobra.Command{Use: act + " JOB_ID", Short: strings.ToUpper(act[:1]) + act[1:] + " a job", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		sub := &cobra.Command{Use: act + " JOB_ID", Short: strings.ToUpper(act[:1]) + act[1:] + " a job", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 			return a.jobActionByID(cmd.Context(), args[0], act)
-		}})
+		}}
+		sub.ValidArgsFunction = a.completeJobIDs
+		jobs.AddCommand(sub)
 	}
 	return jobs
 }
@@ -588,6 +622,11 @@ func totalText(c jobCounts) string {
 
 func (a *App) fetchJob(ctx context.Context, id string) (jobView, error) {
 	var j jobView
+	resolved, err := a.resolveJobID(ctx, id)
+	if err != nil {
+		return j, err
+	}
+	id = resolved
 	r, err := a.call(ctx, "GET", "/v1/jobs/"+url.PathEscape(id), nil, nil, "")
 	if err != nil {
 		return j, err
@@ -598,6 +637,11 @@ func (a *App) fetchJob(ctx context.Context, id string) (jobView, error) {
 // waitJob polls until a terminal state. Ctrl-C and timeouts only stop
 // watching; the job keeps running.
 func (a *App) waitJob(ctx context.Context, id string, maxWait time.Duration) error {
+	resolved, err := a.resolveJobID(ctx, id)
+	if err != nil {
+		return err
+	}
+	id = resolved
 	deadline := time.Time{}
 	if maxWait > 0 {
 		deadline = time.Now().Add(maxWait)
@@ -622,18 +666,8 @@ func (a *App) waitJob(ctx context.Context, id string, maxWait time.Duration) err
 			last = line
 		}
 		if terminalState(j.State) {
-			a.emit(r, j.ID, func() { a.printJob(j) })
-			switch j.State {
-			case "succeeded":
-				return nil
-			case "cancelled":
-				return localErr(ExitCancelled, "job_cancelled", "The job was cancelled.")
-			}
-			msg := "The job finished as " + j.State + "."
-			if j.LastError != nil {
-				msg = j.LastError.Message
-			}
-			return localErr(ExitJobFailed, "job_"+j.State, msg)
+			a.emit(r, j.ID, func() { a.printJob(ctx, j) })
+			return jobOutcome(j)
 		}
 		if !deadline.IsZero() && time.Now().After(deadline) {
 			return localErr(ExitUnavailable, "wait_timeout", fmt.Sprintf("Still %s after waiting; job %s keeps running.", j.State, id))
@@ -647,7 +681,27 @@ func (a *App) waitJob(ctx context.Context, id string, maxWait time.Duration) err
 	}
 }
 
+// jobOutcome maps a finished job to the documented exit code.
+func jobOutcome(j jobView) error {
+	switch j.State {
+	case "succeeded":
+		return nil
+	case "cancelled":
+		return localErr(ExitCancelled, "job_cancelled", "The job was cancelled.")
+	}
+	msg := "The job finished as " + j.State + "."
+	if j.LastError != nil {
+		msg = j.LastError.Message
+	}
+	return localErr(ExitJobFailed, "job_"+j.State, msg)
+}
+
 func (a *App) streamEvents(ctx context.Context, id string, after int64, follow bool) error {
+	resolved, err := a.resolveJobID(ctx, id)
+	if err != nil {
+		return err
+	}
+	id = resolved
 	for {
 		q := url.Values{"after_sequence": {strconv.FormatInt(after, 10)}, "limit": {"100"}}
 		r, err := a.call(ctx, "GET", "/v1/jobs/"+url.PathEscape(id)+"/events", q, nil, "")
@@ -984,21 +1038,29 @@ func (a *App) printAccount(r *Response) {
 // ---- doctor ----
 
 func (a *App) doctorCmd() *cobra.Command {
-	var online bool
+	var online, fix bool
 	c := &cobra.Command{Use: "doctor", Short: "Health checks (offline unless --online)", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		q := url.Values{}
 		if online {
 			q.Set("online", "true")
 		}
-		r, err := a.call(cmd.Context(), "GET", "/v1/doctor", q, nil, "")
+		method, path := "GET", "/v1/doctor"
+		if fix {
+			method, path = "POST", "/v1/doctor/fix"
+		}
+		r, err := a.call(cmd.Context(), method, path, q, nil, "")
 		if err != nil {
 			return err
 		}
 		var d struct {
+			Fixed  []string                                 `json:"fixed"`
 			Checks []struct{ Name, Status, Message string } `json:"checks"`
 		}
 		if err = r.Decode(&d); err != nil {
 			return err
+		}
+		for _, f := range d.Fixed {
+			fmt.Fprintf(a.out(), "fixed: %s\n", Sanitize(f))
 		}
 		// The tray host is about this desktop session, which the daemon may
 		// not share (another session, a container), so the probe runs here.
@@ -1025,6 +1087,7 @@ func (a *App) doctorCmd() *cobra.Command {
 		return nil
 	}}
 	c.Flags().BoolVar(&online, "online", false, "also call Google Drive")
+	c.Flags().BoolVar(&fix, "fix", false, "repair fixable local checks (secret permissions, missing directories)")
 	return c
 }
 

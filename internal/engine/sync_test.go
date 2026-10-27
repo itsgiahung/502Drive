@@ -246,7 +246,7 @@ func TestMassSourceRemovalStopsAndQueuesAnAudit(t *testing.T) {
 		t.Fatalf("destination lost files: %d", got)
 	}
 
-	jobs, _, err := e.store.ListJobs(context.Background(), "", "", 100, 0)
+	jobs, _, err := e.store.ListJobs(context.Background(), "", "", "", 100, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestSmallSourceRemovalSyncsNormally(t *testing.T) {
 	if got := len(e.fake.Children(root)); got != 20 {
 		t.Fatalf("destination changed under churn: %d", got)
 	}
-	jobs, _, err := e.store.ListJobs(context.Background(), "", "", 100, 0)
+	jobs, _, err := e.store.ListJobs(context.Background(), "", "", "", 100, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

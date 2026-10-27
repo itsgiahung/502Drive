@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/itsgiahung/502Drive/internal/config"
 	"github.com/itsgiahung/502Drive/internal/daemon"
 	"github.com/itsgiahung/502Drive/internal/drive"
@@ -271,9 +273,9 @@ func TestResolveStylePrecedence(t *testing.T) {
 }
 
 func TestSanitizeNeutralisesTerminalInjection(t *testing.T) {
-	in := "ok\x1b]0;pwned\x07\nline\r‮evil\x9b"
+	in := "ok\x1b]0;pwned\x07\nline\r\u202eevil\x9b"
 	got := Sanitize(in)
-	for _, bad := range []string{"\x1b", "\n", "\r", "\x07", "‮", "\x9b"} {
+	for _, bad := range []string{"\x1b", "\n", "\r", "\x07", "\u202e", "\x9b"} {
 		if strings.Contains(got, bad) {
 			t.Fatalf("%q survived in %q", bad, got)
 		}
@@ -310,7 +312,7 @@ func TestLostSubmitResponseIsRetriedWithoutSecondJob(t *testing.T) {
 		fwd.Header = req.Header.Clone()
 		resp, err := http.DefaultClient.Do(fwd)
 		if err != nil {
-			http.Error(w, "x", 502)
+			http.Error(w, "x", http.StatusBadGateway)
 			return
 		}
 		defer resp.Body.Close()
@@ -465,4 +467,131 @@ func TestMenuFitsNarrowTerminals(t *testing.T) {
 	if strings.ContainsAny(res.out, "╭╮╰╯│─") {
 		t.Fatal("--ascii must not print box-drawing characters")
 	}
+}
+
+func TestCopySyncFlagIsValidatedAndCarriedOnTheJob(t *testing.T) {
+	r := newRig(t)
+	r.setupDest()
+	src := r.fake.Folder("Sync me", "root")
+	res := r.run("copy", src.ID, "--sync", "hourly", "--json")
+	if res.code != 0 {
+		t.Fatalf("%+v", res)
+	}
+	if got := decodeData(t, res.out)["after_copy_sync_mode"]; got != "hourly" {
+		t.Fatalf("after_copy_sync_mode = %v", got)
+	}
+	res = r.run("copy", src.ID, "--new", "--sync", "sometimes", "--json")
+	if res.code != ExitUsage || res.out != "" {
+		t.Fatalf("bad --sync = %d %q", res.code, res.out)
+	}
+}
+
+func TestBareLinkMeansCopyAndShortJobReferences(t *testing.T) {
+	r := newRig(t)
+	r.setupDest()
+	src := r.fake.Folder("Bare", "root")
+	res := r.run(src.ID, "--wait", "--quiet")
+	if res.code != 0 || !strings.HasPrefix(strings.TrimSpace(res.out), "job_") {
+		t.Fatalf("bare link = %+v", res)
+	}
+	id := strings.TrimSpace(res.out)
+	// A unique prefix resolves; @last is the newest job.
+	for _, ref := range []string{id[:8], "@last"} {
+		got := r.run("jobs", "get", ref, "--json")
+		if got.code != 0 {
+			t.Fatalf("jobs get %s: %+v", ref, got)
+		}
+		if decodeData(t, got.out)["id"] != id {
+			t.Fatalf("jobs get %s returned %v", ref, decodeData(t, got.out)["id"])
+		}
+	}
+	// The short wait form accepts the same references.
+	if got := r.run("wait", id[:10], "--quiet"); got.code != 0 {
+		t.Fatalf("wait prefix: %+v", got)
+	}
+	// An ambiguous prefix is a usage error, not a guess.
+	r.run("copy", src.ID, "--new", "--quiet")
+	if got := r.run("jobs", "get", "job_", "--json"); got.code != ExitUsage {
+		t.Fatalf("ambiguous prefix = %d %s", got.code, got.errOut)
+	}
+}
+
+func TestWatchPrintsOneJSONLinePerTick(t *testing.T) {
+	r := newRig(t)
+	r.setupDest()
+	src := r.fake.Folder("Watch", "root")
+	created := r.run("copy", src.ID, "--quiet")
+	if created.code != 0 {
+		t.Fatalf("%+v", created)
+	}
+	res := r.run("watch", strings.TrimSpace(created.out), "--json", "--interval", "100ms")
+	if res.code != 0 {
+		t.Fatalf("watch: %+v", res)
+	}
+	lines := strings.Split(strings.TrimSpace(res.out), "\n")
+	if len(lines) < 1 {
+		t.Fatalf("no watch lines: %q", res.out)
+	}
+	var env struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &env); err != nil || env.Data["id"] == nil {
+		t.Fatalf("watch line %q: %v", lines[0], err)
+	}
+}
+
+func TestDoctorFixRestrictsSecretPermissions(t *testing.T) {
+	r := newRig(t)
+	secret := filepath.Join(r.home, "token.json")
+	if err := os.WriteFile(secret, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if res := r.run("doctor"); res.code != ExitJobFailed || !strings.Contains(res.out, "secret_permissions") {
+		t.Fatalf("before fix: %+v", res)
+	}
+	// Other checks stay failed in this rig (no OAuth client/destination), so
+	// the exit code is 7; the fix itself must be visible and applied.
+	if res := r.run("doctor", "--fix"); res.code != ExitJobFailed || !strings.Contains(res.out, "chmod 0600") || !strings.Contains(res.out, "PASSED   secret_permissions") {
+		t.Fatalf("doctor --fix: %+v", res)
+	}
+	fi, err := os.Stat(secret)
+	if err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("secret mode = %v (%v)", fi.Mode().Perm(), err)
+	}
+}
+
+func TestShellCompletionListsJobAndCollectionIDs(t *testing.T) {
+	r := newRig(t)
+	r.setupDest()
+	src := r.fake.Folder("Complete", "root")
+	res := r.run("copy", src.ID, "--quiet")
+	if res.code != 0 {
+		t.Fatalf("%+v", res)
+	}
+	jobID := strings.TrimSpace(res.out)
+	cfg, err := config.Load(r.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &App{io: IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard},
+		g: global{endpoint: r.addr, tokenFile: cfg.TokenFile, timeout: 5 * time.Second}}
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	jobs, directive := a.completeJobIDs(cmd, nil, "job_")
+	if directive != cobra.ShellCompDirectiveNoFileComp || !contains(jobs, jobID) || !contains(jobs, aliasLast) {
+		t.Fatalf("job completion = %v %v", jobs, directive)
+	}
+	collections, directive := a.completeCollectionIDs(cmd, nil, "col_")
+	if directive != cobra.ShellCompDirectiveNoFileComp || len(collections) == 0 || !strings.HasPrefix(collections[0], "col_") {
+		t.Fatalf("collection completion = %v %v", collections, directive)
+	}
+}
+
+func contains(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }

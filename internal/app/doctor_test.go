@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/itsgiahung/502Drive/internal/state"
@@ -131,5 +132,91 @@ func TestCheckpointAgeCheck(t *testing.T) {
 	}
 	if cpCheck == nil || cpCheck.Status != "passed" {
 		t.Fatalf("expected passed checkpoint check, got: %+v", cpCheck)
+	}
+}
+
+func TestDoctorFixCreatesDirectoriesAndRestrictsSecrets(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits are not enforced on Windows")
+	}
+	store, err := state.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	configDir := filepath.Join(t.TempDir(), "missing", "config")
+	svc := &Service{Store: store, ConfigDir: configDir}
+	fixed, _, err := svc.DoctorFix(context.Background(), Owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fixed) == 0 {
+		t.Fatal("no directory fix reported")
+	}
+	fi, err := os.Stat(configDir)
+	if err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
+		t.Fatalf("config dir = %v (%v)", fi, err)
+	}
+	secret := filepath.Join(configDir, "token.json")
+	if err = os.WriteFile(secret, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixed, checks, err := svc.DoctorFix(context.Background(), Owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fixed) != 1 || !strings.Contains(fixed[0], "chmod 0600") {
+		t.Fatalf("fixed = %v", fixed)
+	}
+	if fi, err = os.Stat(secret); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("secret mode = %v (%v)", fi.Mode().Perm(), err)
+	}
+	for _, c := range checks {
+		if c.Name == "secret_permissions" && c.Status != "passed" {
+			t.Fatalf("secret check = %+v", c)
+		}
+	}
+}
+
+func TestDoctorSystemdUserUnitIsActionable(t *testing.T) {
+	dir := t.TempDir()
+	store, err := state.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	svc := &Service{Store: store, ConfigDir: t.TempDir(),
+		DiskSpaceFn: func(string) (uint64, uint64, error) { return 1 << 40, 1 << 41, nil },
+		FDLimitFn:   func() (uint64, uint64, error) { return 1024, 4096, nil },
+		Systemd: func() SystemdState {
+			return SystemdState{Installed: true, Enabled: false, Unit: "/home/u/.config/systemd/user/502drive.service", Detail: "disabled"}
+		}}
+	checks, err := svc.Doctor(context.Background(), Owner, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	find := func() *Check {
+		for i := range checks {
+			if checks[i].Name == "systemd_user" {
+				return &checks[i]
+			}
+		}
+		return nil
+	}
+	c := find()
+	if c == nil || c.Status != "failed" || !strings.Contains(c.Message, "systemctl --user enable") {
+		t.Fatalf("disabled unit check = %+v", c)
+	}
+	svc.Systemd = func() SystemdState {
+		return SystemdState{Installed: true, Enabled: true, Unit: "/home/u/.config/systemd/user/502drive.service", Detail: "enabled"}
+	}
+	checks, _ = svc.Doctor(context.Background(), Owner, false)
+	if c = find(); c == nil || c.Status != "passed" {
+		t.Fatalf("enabled unit check = %+v", c)
+	}
+	svc.Systemd = func() SystemdState { return SystemdState{Detail: "no user unit"} }
+	checks, _ = svc.Doctor(context.Background(), Owner, false)
+	if c = find(); c == nil || c.Status != "passed" {
+		t.Fatalf("missing unit check = %+v", c)
 	}
 }

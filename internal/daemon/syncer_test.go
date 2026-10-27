@@ -209,7 +209,7 @@ func (r *syncRig) subscription(collectionID string) state.Subscription {
 
 func (r *syncRig) runs(collectionID, trigger string) []state.Job {
 	r.t.Helper()
-	jobs, _, err := r.store.ListJobs(context.Background(), "", "", 100, 0)
+	jobs, _, err := r.store.ListJobs(context.Background(), "", "", "", 100, 0)
 	if err != nil {
 		r.t.Fatal(err)
 	}
