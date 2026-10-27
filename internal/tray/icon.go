@@ -64,9 +64,33 @@ func logo() (*image.NRGBA, error) {
 		}
 		dst := image.NewNRGBA(b)
 		draw.Draw(dst, b, src, b.Min, draw.Src)
-		logoImg = dst
+		logoImg = trimMargin(dst)
 	})
 	return logoImg, logoErr
+}
+
+// trimMargin crops the transparent border around the artwork and returns a
+// square, so the logo fills the tray slot as large as its neighbours do.
+func trimMargin(src *image.NRGBA) *image.NRGBA {
+	b := src.Bounds()
+	minX, minY, maxX, maxY := b.Max.X, b.Max.Y, b.Min.X, b.Min.Y
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if src.NRGBAAt(x, y).A > 8 {
+				minX, maxX = min(minX, x), max(maxX, x+1)
+				minY, maxY = min(minY, y), max(maxY, y+1)
+			}
+		}
+	}
+	if maxX <= minX || maxY <= minY {
+		return src
+	}
+	side := max(maxX-minX, maxY-minY)
+	x0 := min(max(minX-(side-(maxX-minX))/2, b.Min.X), b.Max.X-side)
+	y0 := min(max(minY-(side-(maxY-minY))/2, b.Min.Y), b.Max.Y-side)
+	dst := image.NewNRGBA(image.Rect(0, 0, side, side))
+	draw.Draw(dst, dst.Bounds(), src, image.Pt(x0, y0), draw.Src)
+	return dst
 }
 
 // resize shrinks src to size x size by area averaging in premultiplied space,
