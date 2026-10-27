@@ -32,6 +32,14 @@ type Fake struct {
 	// QuotaLimit and QuotaUsage are what StorageQuota reports (0 limit = unknown).
 	QuotaLimit, QuotaUsage int64
 
+	// TrashedVisible makes GetFile return an object that is in the trash
+	// (trashed=true), as Google's files.get does, instead of a 404. Off by
+	// default so older tests keep their 404 expectation.
+	TrashedVisible bool
+	// TokenEpoch is part of every page token issued. Raising it expires the
+	// tokens handed out before, like Google does after a few hours.
+	TokenEpoch int
+
 	sharedRoles   map[string]string
 	log           []drive.Change // append-only change feed; token = index
 	InvalidTokens bool           // makes every feed cursor expire
@@ -226,7 +234,7 @@ func (f *Fake) GetFile(ctx context.Context, id, key string) (drive.File, error) 
 		return drive.File{}, err
 	}
 	x, ok := f.files[id]
-	if !ok || x.Trashed {
+	if !ok || (x.Trashed && !f.TrashedVisible) {
 		return drive.File{}, &drive.Error{Kind: drive.KindNotFound, Status: 404}
 	}
 	return x, nil
@@ -244,16 +252,16 @@ func (f *Fake) ListChildren(ctx context.Context, folder, key, token string) ([]d
 	all := f.childrenLocked(folder)
 	start := 0
 	if token != "" {
-		n, err := strconv.Atoi(token)
-		if err != nil {
-			return nil, "", &drive.Error{Kind: drive.KindInvalid, Status: 400}
+		n, ok := f.parseToken(token)
+		if !ok {
+			return nil, "", &drive.Error{Kind: drive.KindInvalid, Status: 400, Reason: "invalid"}
 		}
 		start = n
 	}
 	end := start + f.PageSize
 	next := ""
 	if end < len(all) {
-		next = strconv.Itoa(end)
+		next = f.token(end)
 	} else {
 		end = len(all)
 	}
@@ -261,6 +269,23 @@ func (f *Fake) ListChildren(ctx context.Context, folder, key, token string) ([]d
 		start = end
 	}
 	return all[start:end], next, nil
+}
+
+// token renders a page cursor for the current epoch. Raising TokenEpoch
+// makes every cursor issued before the change fail like an expired one.
+func (f *Fake) token(index int) string { return fmt.Sprintf("%d:%d", f.TokenEpoch, index) }
+
+// parseToken reads a page cursor, rejecting one from an older epoch.
+func (f *Fake) parseToken(token string) (int, bool) {
+	epoch, index, ok := strings.Cut(token, ":")
+	if !ok {
+		return 0, false
+	}
+	if n, err := strconv.Atoi(epoch); err != nil || n != f.TokenEpoch {
+		return 0, false
+	}
+	n, err := strconv.Atoi(index)
+	return n, err == nil
 }
 
 // ListChildrenBatch implements drive.BatchLister: the flattened children of
@@ -276,9 +301,9 @@ func (f *Fake) ListChildrenBatch(ctx context.Context, parents []drive.Parent, to
 	}
 	start := 0
 	if token != "" {
-		n, err := strconv.Atoi(token)
-		if err != nil {
-			return nil, "", &drive.Error{Kind: drive.KindInvalid, Status: 400}
+		n, ok := f.parseToken(token)
+		if !ok {
+			return nil, "", &drive.Error{Kind: drive.KindInvalid, Status: 400, Reason: "invalid"}
 		}
 		start = n
 	}
@@ -289,7 +314,7 @@ func (f *Fake) ListChildrenBatch(ctx context.Context, parents []drive.Parent, to
 	end := start + f.PageSize
 	next := ""
 	if end < len(all) {
-		next = strconv.Itoa(end)
+		next = f.token(end)
 	} else {
 		end = len(all)
 	}

@@ -159,3 +159,71 @@ func TestThrottleSnapshotCountsOnlyTheLastFiveMinutes(t *testing.T) {
 		t.Fatalf("outside the window: %+v", snap)
 	}
 }
+
+// #18: a valid read rate below 1 request/s must still let reads through. The
+// bucket needs capacity for one token or it never fills enough to proceed.
+func TestThrottleReadAdvancesBelowOneRequestPerSecond(t *testing.T) {
+	thr := NewThrottle(ThrottleOptions{Start: 1, Max: 1, ReadPerSecond: 0.5})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	start := time.Now()
+	if err := thr.Read(ctx); err != nil {
+		t.Fatalf("first read at 0.5/s: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("first read waited %v", elapsed)
+	}
+}
+
+// Provider stubs for the wrapper test: the embedded nil interface supplies the
+// method set; only the optional methods are ever called.
+type plainProvider struct{ Provider }
+
+type optionalProvider struct {
+	Provider
+	quota int64
+}
+
+func (p optionalProvider) StorageQuota(context.Context) (int64, int64, error) {
+	return p.quota, 7, nil
+}
+
+func (p optionalProvider) ListChildrenBatch(context.Context, []Parent, string) ([]File, string, error) {
+	return []File{{ID: "b1"}}, "next", nil
+}
+
+// #19: the daemon wraps its provider with Paced, so optional capabilities the
+// engine asserts (F1 batching, deep-preflight quota) must survive the wrapper.
+func TestPacedKeepsOptionalProviderInterfaces(t *testing.T) {
+	thr := NewThrottle(ThrottleOptions{Start: 1, Max: 2, Successes: 1})
+	p := Paced(optionalProvider{quota: 999}, thr)
+	bl, ok := p.(BatchLister)
+	if !ok {
+		t.Fatal("Paced lost BatchLister: discovery would fall back to per-folder listing")
+	}
+	qr, ok := p.(QuotaReader)
+	if !ok {
+		t.Fatal("Paced lost QuotaReader: deep preflight would lose storage_free")
+	}
+	files, next, err := bl.ListChildrenBatch(context.Background(), []Parent{{ID: "A1"}}, "")
+	if err != nil || len(files) != 1 || files[0].ID != "b1" || next != "next" {
+		t.Fatalf("batch through the wrapper: %v %v %q", files, err, next)
+	}
+	if limit, usage, err := qr.StorageQuota(context.Background()); err != nil || limit != 999 || usage != 7 {
+		t.Fatalf("quota through the wrapper: %d %d %v", limit, usage, err)
+	}
+	if got := thr.Snapshot().WorkersNow; got != 2 {
+		t.Fatalf("paced calls did not feed Observe: workers = %d", got)
+	}
+
+	plain := Paced(plainProvider{}, thr)
+	if _, ok := plain.(BatchLister); ok {
+		t.Error("Paced invented a BatchLister the inner provider lacks")
+	}
+	if _, ok := plain.(QuotaReader); ok {
+		t.Error("Paced invented a QuotaReader the inner provider lacks")
+	}
+	if Paced(nil, thr) != nil {
+		t.Error("Paced(nil) did not stay nil")
+	}
+}

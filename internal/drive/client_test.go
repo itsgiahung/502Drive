@@ -89,6 +89,7 @@ func TestErrorClassification(t *testing.T) {
 		{429, "", "7", KindThrottled, 7 * time.Second},
 		{403, "rateLimitExceeded", "", KindThrottled, 0},
 		{403, "userRateLimitExceeded", "", KindThrottled, 0},
+		{403, "sharingRateLimitExceeded", "", KindThrottled, 0},
 		{403, "storageQuotaExceeded", "", KindQuota, 0},
 		{403, "forbidden", "", KindPermission, 0},
 		{401, "", "", KindAuth, 0},
@@ -232,5 +233,125 @@ func TestEveryFilesCallSendsSharedDriveFlags(t *testing.T) {
 		if r.Method == "GET" && (strings.HasSuffix(r.URL.Path, "/files") || strings.HasSuffix(r.URL.Path, "/changes")) && q.Get("includeItemsFromAllDrives") != "true" {
 			t.Errorf("%s %s without includeItemsFromAllDrives=true", r.Method, r.URL.Path)
 		}
+	}
+}
+
+// projectionServer answers a files.list with only the fields the client asked
+// for, like Google does: a field missing from `fields` is absent from the JSON
+// and therefore zero in File. A fake that returns the whole File hides this.
+func projectionServer(t *testing.T, seen *[]string) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		fields := r.URL.Query().Get("fields")
+		*seen = append(*seen, fields)
+		obj := map[string]any{"id": "f1", "name": "a.txt", "mimeType": "text/plain", "parents": []string{"A1"}, "version": "2"}
+		if strings.Contains(fields, "modifiedTime") {
+			obj["modifiedTime"] = "2026-10-27T10:00:00.000Z"
+		}
+		if strings.Contains(fields, "capabilities(canCopy)") {
+			obj["capabilities"] = map[string]bool{"canCopy": true}
+		}
+		if strings.Contains(fields, "appProperties") {
+			obj["appProperties"] = map[string]string{IntentProperty: "abc"}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"files": []any{obj}})
+	}
+}
+
+// #7: discovery listings are converted into filter (modified), preflight
+// (canCopy) and audit/cleanup (appProperties) inputs, so the projection must
+// ask for those fields.
+func TestListingProjectsTheFieldsCallersUse(t *testing.T) {
+	var seen []string
+	c := testClient(t, projectionServer(t, &seen))
+	ctx := context.Background()
+	lists := []struct {
+		name string
+		call func() ([]File, error)
+	}{
+		{"ListChildren", func() ([]File, error) {
+			f, _, err := c.ListChildren(ctx, "A1", "", "")
+			return f, err
+		}},
+		{"ListChildrenBatch", func() ([]File, error) {
+			f, _, err := c.ListChildrenBatch(ctx, []Parent{{ID: "A1"}}, "")
+			return f, err
+		}},
+	}
+	for _, tc := range lists {
+		files, err := tc.call()
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if len(files) != 1 {
+			t.Fatalf("%s: files = %d", tc.name, len(files))
+		}
+		f := files[0]
+		if f.Modified.IsZero() {
+			t.Errorf("%s: modifiedTime was not requested/parsed", tc.name)
+		}
+		if !f.CanCopy {
+			t.Errorf("%s: capabilities(canCopy) was not requested/parsed", tc.name)
+		}
+		if f.AppProperties[IntentProperty] != "abc" {
+			t.Errorf("%s: appProperties was not requested/parsed", tc.name)
+		}
+	}
+	if len(seen) != len(lists) {
+		t.Fatalf("requests = %d, want %d", len(seen), len(lists))
+	}
+}
+
+// #10: an incomplete allDrives answer must not travel as an empty, complete
+// page: discovery would commit the folder as fully listed and lose files.
+func TestIncompleteSearchFailsInsteadOfCommittingAPartialPage(t *testing.T) {
+	var requested bool
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Query().Get("fields"), "incompleteSearch") {
+			requested = true
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"incompleteSearch":true,"files":[]}`)
+	})
+	ctx := context.Background()
+	calls := []struct {
+		name string
+		call func() error
+	}{
+		{"ListChildren", func() error { _, _, err := c.ListChildren(ctx, "A1", "", ""); return err }},
+		{"ListChildrenBatch", func() error {
+			_, _, err := c.ListChildrenBatch(ctx, []Parent{{ID: "A1"}, {ID: "B2"}}, "")
+			return err
+		}},
+		{"FindByIntent", func() error { _, err := c.FindByIntent(ctx, "A1", "i1"); return err }},
+		{"FindChildrenByName", func() error { _, err := c.FindChildrenByName(ctx, "A1", "a.txt"); return err }},
+	}
+	for _, tc := range calls {
+		err := tc.call()
+		if KindOf(err) != KindUnavailable || ReasonOf(err) != "incomplete_search" {
+			t.Errorf("%s: err = %v, want an incomplete_search provider error", tc.name, err)
+		}
+	}
+	if !requested {
+		t.Error("incompleteSearch was not requested")
+	}
+}
+
+// A Retry-After HTTP-date (the other legal form) must yield a positive wait.
+func TestRetryAfterHTTPDate(t *testing.T) {
+	when := time.Now().UTC().Add(90 * time.Second).Truncate(time.Second)
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", when.Format(http.TimeFormat))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(429)
+		fmt.Fprint(w, `{"error":{"code":429,"message":"secret","errors":[{"reason":"rateLimitExceeded"}]}}`)
+	})
+	_, err := c.GetFile(context.Background(), "ID12345678", "")
+	if KindOf(err) != KindThrottled {
+		t.Fatalf("kind = %s (%v)", KindOf(err), err)
+	}
+	if d := RetryAfterOf(err); d < 80*time.Second || d > 100*time.Second {
+		t.Fatalf("retry-after from an HTTP-date = %v", d)
 	}
 }

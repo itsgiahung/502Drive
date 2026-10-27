@@ -18,10 +18,23 @@ import (
 
 const fileFields = "id,name,mimeType,parents,size,md5Checksum,version,resourceKey,driveId,trashed,shortcutDetails(targetId,targetMimeType,targetResourceKey),capabilities(canCopy,canAddChildren),appProperties,createdTime,modifiedTime,owners(displayName,emailAddress),webViewLink"
 
-// listFields is the minimal projection discovery needs: enough to map names,
-// kinds, sizes and versions, without owners/timestamps/links that only the UI
-// reads. Every list call (single or batched) uses it.
-const listFields = "id,name,mimeType,parents,size,md5Checksum,version,resourceKey,trashed,shortcutDetails(targetId,targetMimeType,targetResourceKey)"
+// listFields is the projection every files.list call uses: enough to map names,
+// kinds, sizes and versions, plus the three fields callers turn into business
+// decisions — modifiedTime (filter modified_after), capabilities(canCopy)
+// (deep preflight, browse) and appProperties (audit/cleanup ownership). Owners,
+// timestamps we do not filter on and links stay out: only the UI reads them and
+// it uses files.get.
+const listFields = "id,name,mimeType,parents,size,md5Checksum,version,resourceKey,trashed,shortcutDetails(targetId,targetMimeType,targetResourceKey),modifiedTime,capabilities(canCopy),appProperties"
+
+// incompleteSearch refuses a files.list answer Google marked as partial. An
+// incomplete allDrives page can be empty with no next token; committing it as a
+// fully listed folder would make discovery succeed with files missing.
+func incompleteSearch(r *gdrive.FileList) error {
+	if r.IncompleteSearch {
+		return &Error{Kind: KindUnavailable, Reason: "incomplete_search"}
+	}
+	return nil
+}
 
 // Client is the Google Drive v3 implementation of Provider.
 type Client struct {
@@ -118,16 +131,14 @@ func wrap(err error) error {
 		e.Reason = ge.Errors[0].Reason
 	}
 	if ra := ge.Header.Get("Retry-After"); ra != "" {
-		if n, perr := strconv.Atoi(ra); perr == nil {
-			e.RetryAfter = time.Duration(n) * time.Second
-		}
+		e.RetryAfter = parseRetryAfter(ra, time.Now())
 	}
 	switch {
 	case ge.Code == 401:
 		e.Kind = KindAuth
 	case ge.Code == 404:
 		e.Kind = KindNotFound
-	case ge.Code == 429, ge.Code == 403 && (e.Reason == "rateLimitExceeded" || e.Reason == "userRateLimitExceeded"):
+	case ge.Code == 429, ge.Code == 403 && (e.Reason == "rateLimitExceeded" || e.Reason == "userRateLimitExceeded" || e.Reason == "sharingRateLimitExceeded"):
 		e.Kind = KindThrottled
 	case ge.Code == 403 && (e.Reason == "storageQuotaExceeded" || e.Reason == "dailyLimitExceeded" || strings.Contains(e.Reason, "uota")):
 		e.Kind = KindQuota
@@ -139,6 +150,23 @@ func wrap(err error) error {
 		e.Kind = KindInvalid
 	}
 	return e
+}
+
+// parseRetryAfter reads both forms RFC 9110 allows: delay-seconds or an
+// HTTP-date. A date in the past or an unparsable value yields no hint.
+func parseRetryAfter(v string, now time.Time) time.Duration {
+	if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+		if n <= 0 {
+			return 0
+		}
+		return time.Duration(n) * time.Second
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		if d := t.Sub(now); d > 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 func (c *Client) Account(ctx context.Context) (Account, error) {
@@ -178,7 +206,7 @@ func (c *Client) ListChildren(ctx context.Context, folderID, resourceKey, pageTo
 	call := c.svc.Files.List().
 		Q(fmt.Sprintf("'%s' in parents and trashed=false", QueryEscape(folderID))).
 		Corpora("allDrives").SupportsAllDrives(true).IncludeItemsFromAllDrives(true).
-		PageSize(1000).OrderBy("folder,name").Fields("nextPageToken,files(" + listFields + ")").Context(ctx)
+		PageSize(1000).OrderBy("folder,name").Fields("nextPageToken,incompleteSearch,files(" + listFields + ")").Context(ctx)
 	keyHeader(call.Header(), folderID, resourceKey)
 	if pageToken != "" {
 		call.PageToken(pageToken)
@@ -186,6 +214,9 @@ func (c *Client) ListChildren(ctx context.Context, folderID, resourceKey, pageTo
 	r, err := call.Do()
 	if err != nil {
 		return nil, "", wrap(err)
+	}
+	if err := incompleteSearch(r); err != nil {
+		return nil, "", err
 	}
 	out := make([]File, 0, len(r.Files))
 	for _, f := range r.Files {
@@ -218,7 +249,7 @@ func (c *Client) ListChildrenBatch(ctx context.Context, parents []Parent, pageTo
 	call := c.svc.Files.List().
 		Q("(" + strings.Join(terms, " or ") + ") and trashed=false").
 		Corpora("allDrives").SupportsAllDrives(true).IncludeItemsFromAllDrives(true).
-		PageSize(1000).OrderBy("folder,name").Fields("nextPageToken,files(" + listFields + ")").Context(ctx)
+		PageSize(1000).OrderBy("folder,name").Fields("nextPageToken,incompleteSearch,files(" + listFields + ")").Context(ctx)
 	keyHeaders(call.Header(), parents)
 	if pageToken != "" {
 		call.PageToken(pageToken)
@@ -226,6 +257,9 @@ func (c *Client) ListChildrenBatch(ctx context.Context, parents []Parent, pageTo
 	r, err := call.Do()
 	if err != nil {
 		return nil, "", wrap(err)
+	}
+	if err := incompleteSearch(r); err != nil {
+		return nil, "", err
 	}
 	out := make([]File, 0, len(r.Files))
 	for _, f := range r.Files {
@@ -271,13 +305,16 @@ func (c *Client) FindByIntent(ctx context.Context, parentID, intent string) ([]F
 	token := ""
 	for {
 		call := c.svc.Files.List().Q(q).Corpora("allDrives").SupportsAllDrives(true).IncludeItemsFromAllDrives(true).
-			PageSize(10).Fields("nextPageToken,files(" + fileFields + ")").Context(ctx)
+			PageSize(10).Fields("nextPageToken,incompleteSearch,files(" + fileFields + ")").Context(ctx)
 		if token != "" {
 			call.PageToken(token)
 		}
 		r, err := call.Do()
 		if err != nil {
 			return nil, wrap(err)
+		}
+		if err := incompleteSearch(r); err != nil {
+			return nil, err
 		}
 		for _, f := range r.Files {
 			out = append(out, convert(f))
@@ -294,13 +331,16 @@ func (c *Client) FindChildrenByName(ctx context.Context, parentID, name string) 
 	token := ""
 	for {
 		call := c.svc.Files.List().Q(q).Corpora("allDrives").SupportsAllDrives(true).IncludeItemsFromAllDrives(true).
-			PageSize(10).Fields("nextPageToken,files(" + fileFields + ")").Context(ctx)
+			PageSize(10).Fields("nextPageToken,incompleteSearch,files(" + fileFields + ")").Context(ctx)
 		if token != "" {
 			call.PageToken(token)
 		}
 		r, err := call.Do()
 		if err != nil {
 			return nil, wrap(err)
+		}
+		if err := incompleteSearch(r); err != nil {
+			return nil, err
 		}
 		for _, f := range r.Files {
 			out = append(out, convert(f))

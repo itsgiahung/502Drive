@@ -55,6 +55,24 @@ func (h *harness) runNow(collectionID, key string) resp {
 	return resp{}
 }
 
+// retireNow retires a collection, retrying with the current revision: a run or
+// bookkeeping step finishing in between is a legitimate stale conflict and the
+// request was not applied.
+func (h *harness) retireNow(collectionID, key string) resp {
+	h.t.Helper()
+	for attempt := range 10 {
+		rev := h.collectionRevision(collectionID)
+		r := h.do("POST", "/v1/collections/"+collectionID+"/retire", map[string]any{"expected_revision": rev},
+			fmt.Sprintf("%s-%d", key, attempt), true)
+		if r.status != 409 {
+			return r
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	h.t.Fatal("retire kept conflicting")
+	return resp{}
+}
+
 // collectionRevision reads the current revision; runs may have changed it.
 func (h *harness) collectionRevision(id string) int {
 	h.t.Helper()

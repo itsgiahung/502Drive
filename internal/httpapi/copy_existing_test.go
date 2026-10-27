@@ -50,8 +50,7 @@ func TestCopyAgainAsksWhatToDo(t *testing.T) {
 	// update targets the newest copy of this source and destination. Retire it:
 	// a retired copy is not refreshed silently.
 	newest := h.data(r)["collection_id"].(string)
-	rev := h.collectionRevision(newest)
-	if r := h.do("POST", "/v1/collections/"+newest+"/retire", map[string]any{"expected_revision": rev}, "retire-again", true); r.status != 200 {
+	if r := h.retireNow(newest, "retire-again"); r.status != 200 {
 		t.Fatalf("retire = %d %s", r.status, r.body)
 	}
 	plan = h.planFor(source, "plan-again-4")

@@ -11,8 +11,8 @@ import (
 // Concurrency follows AIMD: it starts at Start (the configured worker count),
 // grows by one after Successes consecutive successful calls and halves on a
 // throttle (429/rateLimitExceeded), never below one and never above Max. Reads
-// (list/get/changes) pass through a token bucket so a burst of folders cannot
-// spend the account's per-second quota.
+// (list, batched list, get, changes, quota) pass through a token bucket so a
+// burst of folders cannot spend the account's per-second quota.
 //
 // One Throttle must be shared by every component that talks to the same
 // Google account (engine, syncer, audits); that is what makes it account-wide.
@@ -26,6 +26,7 @@ type Throttle struct {
 	inflight  int
 
 	rate   float64
+	burst  float64
 	tokens float64
 	last   time.Time
 
@@ -65,8 +66,14 @@ func NewThrottle(o ThrottleOptions) *Throttle {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
+	// The bucket must hold at least one token or a valid rate below 1 request
+	// per second never accumulates enough to let a read through.
+	burst := o.ReadPerSecond
+	if o.ReadPerSecond > 0 && burst < 1 {
+		burst = 1
+	}
 	t := &Throttle{limit: o.Start, start: o.Start, max: o.Max, successes: o.Successes,
-		rate: o.ReadPerSecond, tokens: o.ReadPerSecond, last: o.Now(), now: o.Now,
+		rate: o.ReadPerSecond, burst: burst, tokens: burst, last: o.Now(), now: o.Now,
 		wake: make(chan struct{}, 1)}
 	return t
 }
@@ -118,7 +125,7 @@ func (t *Throttle) Read(ctx context.Context) error {
 		t.mu.Lock()
 		now := t.now()
 		if elapsed := now.Sub(t.last); elapsed > 0 {
-			t.tokens = min(t.rate, t.tokens+elapsed.Seconds()*t.rate)
+			t.tokens = min(t.burst, t.tokens+elapsed.Seconds()*t.rate)
 			t.last = now
 		}
 		if t.tokens >= 1 {
@@ -202,16 +209,79 @@ func (t *Throttle) Snapshot() ThrottleSnapshot {
 // feeds the AIMD controller. The wrapper does not take concurrency slots: the
 // engine already does that around the calls it makes, and doing it twice would
 // halve the effective worker count.
+//
+// Optional interfaces survive the wrap exactly: the engine asserts BatchLister
+// for F1 batching and deep preflight asserts QuotaReader, so a wrapper that
+// hid them would silently disable both when the daemon wraps its Client.
 func Paced(p Provider, t *Throttle) Provider {
 	if p == nil || t == nil {
 		return p
 	}
-	return pacedProvider{Provider: p, t: t}
+	base := pacedProvider{Provider: p, t: t}
+	batch, isBatch := p.(BatchLister)
+	quota, isQuota := p.(QuotaReader)
+	switch {
+	case isBatch && isQuota:
+		return pacedProviderBatchQuota{pacedProvider: base, batch: batch, quota: quota}
+	case isBatch:
+		return pacedProviderBatch{pacedProvider: base, batch: batch}
+	case isQuota:
+		return pacedProviderQuota{pacedProvider: base, quota: quota}
+	default:
+		return base
+	}
 }
 
 type pacedProvider struct {
 	Provider
 	t *Throttle
+}
+
+// pacedProviderBatch, pacedProviderQuota and pacedProviderBatchQuota are the
+// same wrapper plus the optional interfaces the inner provider really has.
+type pacedProviderBatch struct {
+	pacedProvider
+	batch BatchLister
+}
+
+type pacedProviderQuota struct {
+	pacedProvider
+	quota QuotaReader
+}
+
+type pacedProviderBatchQuota struct {
+	pacedProviderBatch
+	quota QuotaReader
+}
+
+func (p pacedProviderBatch) ListChildrenBatch(ctx context.Context, parents []Parent, token string) ([]File, string, error) {
+	return p.listBatch(ctx, p.batch, parents, token)
+}
+
+func (p pacedProviderQuota) StorageQuota(ctx context.Context) (int64, int64, error) {
+	return p.storageQuota(ctx, p.quota)
+}
+
+func (p pacedProviderBatchQuota) StorageQuota(ctx context.Context) (int64, int64, error) {
+	return p.storageQuota(ctx, p.quota)
+}
+
+func (p pacedProvider) listBatch(ctx context.Context, bl BatchLister, parents []Parent, token string) ([]File, string, error) {
+	if err := p.read(ctx); err != nil {
+		return nil, "", err
+	}
+	files, next, err := bl.ListChildrenBatch(ctx, parents, token)
+	p.t.Observe(err)
+	return files, next, err
+}
+
+func (p pacedProvider) storageQuota(ctx context.Context, q QuotaReader) (int64, int64, error) {
+	if err := p.read(ctx); err != nil {
+		return 0, 0, err
+	}
+	limit, usage, err := q.StorageQuota(ctx)
+	p.t.Observe(err)
+	return limit, usage, err
 }
 
 func (p pacedProvider) read(ctx context.Context) error { return p.t.Read(ctx) }
