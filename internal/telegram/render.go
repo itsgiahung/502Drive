@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html"
 	"strings"
+	"time"
 
 	"github.com/itsgiahung/502Drive/internal/schedule"
 	"github.com/itsgiahung/502Drive/internal/state"
@@ -58,6 +59,9 @@ type texts struct {
 	saveToLabel, nameLabel, noFolders, renamed             string
 	errMsg                                                 map[string]string
 	states                                                 map[string]string
+	// lang names the language of this table, so batch-G strings (texts_g.go)
+	// can be picked without threading another argument everywhere.
+	lang language
 }
 
 func langOf(s string) language {
@@ -75,6 +79,7 @@ func textsFor(l language) texts {
 }
 
 var vietnamese = texts{
+	lang: langVI,
 	home: "Trang chính", copy: "Sao chép", jobs: "Công việc", library: "Nguồn đã copy / Đồng bộ",
 	destination: "Thư mục đích", account: "Tài khoản", settings: "Cài đặt",
 	details: "Chi tiết", back: "Về menu", pause: "Tạm dừng", resume: "Tiếp tục",
@@ -166,6 +171,7 @@ var vietnamese = texts{
 }
 
 var english = texts{
+	lang: langEN,
 	home: "Home", copy: "Copy", jobs: "Jobs", library: "Library & sync",
 	destination: "Destination", account: "Account", settings: "Settings",
 	details: "Details", back: "Home", pause: "Pause", resume: "Resume",
@@ -363,12 +369,27 @@ func progressBar(done, total int) string {
 
 func jobText(tx texts, j state.Job) string { return jobTextFrame(tx, j, 0) }
 
+// jobView is what a job text needs besides the row itself: the clock and the
+// zone of the person who reads it (quota waits are shown as a wall-clock time).
+type jobView struct {
+	now time.Time
+	loc *time.Location
+}
+
 // jobTextFrame renders the job panel; frame picks the animation step.
 func jobTextFrame(tx texts, j state.Job, frame int) string {
+	return jobTextView(tx, j, frame, jobView{})
+}
+
+func jobTextView(tx texts, j state.Job, frame int, v jobView) string {
+	g := tx.g()
 	var b strings.Builder
 	fmt.Fprintf(&b, "<b>%s%s</b> — %s\n", stateEmoji(j.State), escape(short(j.RootName, 60)), tx.stateLabel(j.State))
 	if busyJob(j.State) {
 		fmt.Fprintf(&b, "%s\n", travelFrames[((frame%len(travelFrames))+len(travelFrames))%len(travelFrames)])
+	}
+	if wait := quotaWaitLine(g, j, v); wait != "" {
+		fmt.Fprintf(&b, "%s\n", wait)
 	}
 	if j.Counts.Total != nil {
 		if bar := progressBar(j.Counts.Completed, *j.Counts.Total); bar != "" {
@@ -382,11 +403,18 @@ func jobTextFrame(tx texts, j state.Job, frame int) string {
 	}
 	fmt.Fprintf(&b, "%s: %d/%s · %s %d · %s %d\n", tx.itemsLabel, j.Counts.Completed, total,
 		tx.stateLabel(state.JobFailed), j.Counts.Failed, tx.stateLabel(state.JobBlocked), j.Counts.Blocked)
+	if line := skippedLine(g, j.Counts); line != "" {
+		fmt.Fprintf(&b, "%s\n", line)
+	}
 	if j.ResultURL != nil && *j.ResultURL != "" {
 		fmt.Fprintf(&b, "%s: %s\n", tx.resultLabel, escape(*j.ResultURL))
 	}
 	if j.LastError != nil {
 		fmt.Fprintf(&b, "%s: %s (%s)\n", tx.problemLabel, escape(short(j.LastError.Message, 160)), escape(j.LastError.Code))
+		// Say what to do next, not only what went wrong (a quota wait already did).
+		if hint := g.errHint[j.LastError.Code]; hint != "" && !quotaBlocked(j) {
+			fmt.Fprintf(&b, "💡 %s\n", escape(hint))
+		}
 	}
 	fmt.Fprintf(&b, "%s: %s", tx.updated, j.UpdatedAt.UTC().Format("2006-01-02 15:04"))
 	return b.String()

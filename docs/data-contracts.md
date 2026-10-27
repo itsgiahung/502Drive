@@ -27,7 +27,7 @@ nhất, `application_id=502002`. Không sửa migration đã áp; thêm file m�
 
 | Bảng | Cột chính | Ghi chú |
 | --- | --- | --- |
-| `settings` | `key`, `value` | Default destination, preferences (`prefs:<principal>`) |
+| `settings` | `key`, `value` | Default destination, preferences (`prefs:<principal>`), lịch báo cáo hằng ngày của Telegram (`tg_report:<principal>`, ngày đã gửi `tg_report_sent:<principal>`) |
 | `destinations` | `id`, `folder_id`, `resource_key`, `drive_id`, `name`, `revision` | Đích đã validate, không unique theo tên |
 | `items` | `(collection_id,source_id)`, `job_id`, `kind`, `state`, `generation`, `intent_key`, `dest_*`, `list_state`, `page_token`, `op`, `conflict_action`, `dest_name`, `rel_path` | Item = mapping + write intent; không unique theo tên. `dest_name` giữ tên dưới `dest_parent_id` (index `items_dest_name`); `rel_path` là đường dẫn tương đối để luật lọc theo đường dẫn (index `items_collection_kind_state`) |
 | `sync_subscriptions` | `collection_id` PK, `mode`, `state`, `schedule`, `schedule_revision`, `content_policy`, `next_due`, `next_key`, `cursor`, `rerun_requested`, `next_poll_at`, `full_reconcile_every`, `next_full_reconcile_at`, `replay_overflow` | Một subscription/collection |

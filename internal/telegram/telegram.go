@@ -66,6 +66,8 @@ type Telegram struct {
 	pollTimeout time.Duration
 	editEvery   time.Duration
 	now         func() time.Time
+	// reportWindow is how far back the daily report looks (24h when zero).
+	reportWindow time.Duration
 
 	state atomic.Value // string
 	proc  sync.Mutex
@@ -137,6 +139,7 @@ func (t *Telegram) setState(s string) { t.state.Store(s) }
 func (t *Telegram) Run(ctx context.Context) {
 	t.setState(StateStarting)
 	go t.notifyLoop(ctx)
+	go t.reportLoop(ctx)
 	go t.retryLoop(ctx)
 	t.processPending(ctx)
 

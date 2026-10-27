@@ -56,6 +56,70 @@ Store: [state/telegram.go](../../internal/state/telegram.go), migration
   one-shot nên bấm hai lần chỉ hủy một lần. Test:
   [cancelall_test.go](../../internal/telegram/cancelall_test.go).
 
+## Tuỳ chọn khi copy (đợt G)
+
+Thẻ xem trước có thêm ba nhóm nút; mọi lựa chọn đi theo payload của nút (không lưu ở nơi khác), nên đổi tên hay
+đổi nơi lưu không làm mất chúng. Mã: [options.go](../../internal/telegram/options.go).
+
+- **Preset lọc (S5)**: `🎬 Bỏ video` (`exclude class:video`), `📄 Chỉ tài liệu` (`include class:doc`),
+  `📦 Bỏ file > 1 GB` (`max_size 1073741824`); bấm lần nữa để tắt (nút đang bật có dấu ✓). Thẻ hiện
+  `Đạt: N · Bị loại: M` + vài tên bị loại + ghi chú "chỉ tính cấp cao nhất" (xem trước một trang, như API).
+- **Chính sách trùng tên (N1)**: một nút xoay vòng `đổi tên → bỏ qua → ghi cùng tên`; giá trị đi vào
+  `on_conflict` của plan. `ghi cùng tên` không xoá bản cũ (giới hạn của N1).
+- **Copy lại cùng nguồn (L2)**: nút Copy ngay gọi `SubmitMode(mode="")`; khi đã có bản copy tới đúng đích
+  (`409 already_copied`) bot hỏi **🔄 Cập nhật bản cũ** (một delta run trên cùng collection) hay **🆕 Tạo bản
+  mới**; cả `auto_copy` cũng hỏi thay vì tự nhân đôi. Bản cũ đã ngừng theo dõi → lỗi `collection_retired` kèm
+  hướng xử lý.
+- **Kết quả**: thẻ/thông báo job đếm mục bị bỏ qua theo mã (`⏭ Bỏ qua: bị bộ lọc loại ×3 · …`, K1); job
+  `blocked` do quota hiện `⏳ Chờ quota tới HH:MM (múi giờ)` (múi giờ preferences), **không có nút Thử lại**
+  vì job tự tiếp tục (Q1/S3); chỉ còn Huỷ.
+
+## Vòng đời collection (L1)
+
+Thẻ nguồn (Library) có nút **⏹ Ngừng theo dõi**. Mọi bước phá huỷ là thẻ xem trước + một nút đỏ; nút xác nhận là
+callback one-shot gắn revision của collection lúc xem trước và **hết hạn sau 5 phút** (trước đó callback vẫn sống
+15 phút, nhưng bot từ chối). Mã: [collection_life.go](../../internal/telegram/collection_life.go).
+
+- Ngừng theo dõi → tắt sync, giữ file/lịch sử/ánh xạ (`RetireCollection`); đang có job chạy → lỗi nêu id job kèm
+  hướng xử lý. Collection đã ngừng nằm trong **🗄 Đã ngừng (n)** ở Library, với **▶️ Theo dõi lại**,
+  **🧹 Dọn đích (vào thùng rác)** và **🗑 Quên**.
+- Dọn đích: bước 1 chạy job **dry-run** (không đổi Drive) và hiện id job; bước 2 (nút đỏ) tạo job thật, tên xác nhận
+  lấy từ thư mục đích đã hiện trên thẻ. Chỉ đưa vào thùng rác Drive, không xoá vĩnh viễn.
+- Quên: chỉ khi đã ngừng theo dõi; xoá bản ghi nội bộ, không đụng Drive.
+
+## Cài đặt thông báo, giờ yên tĩnh, báo cáo hằng ngày (S10)
+
+Trang Cài đặt có: công tắc `🔔 Xong / Lỗi / Cần xử lý` (ghi `notify_completed|failed|action_required` qua
+`PatchPreferences`, mỗi người một bộ), nút `🌙 Giờ yên tĩnh 22:00–07:00`, và hàng chọn giờ **📰** (07:00, 12:00, 18:00,
+21:00) + nút tắt. Mã: [settings_notify.go](../../internal/telegram/settings_notify.go),
+[report.go](../../internal/telegram/report.go), [quiet.go](../../internal/telegram/quiet.go).
+
+- **Báo cáo hằng ngày**: mặc định **tắt** (phải bật). Gửi đúng một lần mỗi ngày dương lịch ở múi giờ preferences
+  (qua DST: giờ không tồn tại hay xảy ra hai lần vẫn chỉ một lần), nội dung 24 giờ gần nhất: job xong, lỗi/xong
+  một phần, job cần xử lý, số lần đồng bộ có thay đổi, dung lượng và tốc độ trung bình. **Không có gì để nói thì
+  không gửi** (và không tính lại cho đến ngày sau). Lịch lưu ở bảng `settings` (`tg_report:<principal>`,
+  `tg_report_sent:<principal>`), tin đi qua outbox bền với khoá `report:<principal>:<ngày>` nên restart không gửi
+  lặp. Mỗi người chỉ thấy job của mình (operator không thấy job của owner). Chỉ quét 500 job gần nhất.
+- **Giờ yên tĩnh**: tin Telegram không do bạn vừa yêu cầu (job xong/lỗi do CLI, lỗi sync, báo cáo) **không bị bỏ**
+  mà hoãn tới khi hết khung (`quietEnd`, theo múi giờ preferences, qua nửa đêm). Trả lời thao tác của bạn trong
+  chat và panel tiến trình của job bạn tự bắt đầu ở chat không bị chặn. (Tray vẫn bỏ popup như trước.)
+
+## Quản lý job và tìm trong Drive (S10)
+
+- Trang Công việc có **🗂 Quản lý**: lọc theo trạng thái (Tất cả, Đang chạy, Chờ, Tạm dừng, Cần xử lý, Lỗi, Xong),
+  6 job mỗi trang, và nút theo lô **⏸ Tạm dừng N / ▶️ Tiếp tục N / 🔁 Thử lại N / 🧹 Huỷ N** cho cả nhóm đang lọc.
+  Mỗi job đi qua `JobAction` với revision hiện tại của nó; job đã đổi trạng thái thì **bỏ qua**, không ép; kết quả
+  là số thật (`xong N, bỏ qua M, lỗi K`). Thử lại theo lô **không** đụng job đang chờ quota. Huỷ theo lô cần thẻ
+  xác nhận (nút đỏ, 5 phút). Chỉ thấy/điều khiển job của chính mình. Mã:
+  [jobs_manage.go](../../internal/telegram/jobs_manage.go).
+- `/find tên`: liệt kê (tối đa 8, thư mục trước) mục ở **cấp cao nhất của My Drive** có tên chứa chuỗi (không phân
+  biệt hoa thường), nút chọn mục làm nguồn mở thẻ xem trước copy. Chỉ owner (dùng `Browse` vốn chỉ cho owner);
+  operator nhận lỗi "không có quyền", không có lệnh nào gọi tới Drive. Tìm sâu cả cây cần API tìm kiếm (xem báo
+  cáo đợt G, "Cần backend"). Mã: [find.go](../../internal/telegram/find.go).
+- **Lỗi có hướng xử lý**: thẻ lỗi luôn kèm dòng `💡` (bảng `errHint`, có mặc định), thẻ job lỗi/một phần cũng
+  thêm gợi ý theo mã lỗi của job. Chuỗi đợt G nằm ở [texts_g.go](../../internal/telegram/texts_g.go) (vi + en, có
+  test so khoá hai ngôn ngữ).
+
 ## Thông báo (job không tạo từ chat)
 
 [notifier.go](../../internal/telegram/notifier.go) chạy từ `Engine.AfterRun` +
@@ -78,13 +142,14 @@ syncer trong daemon:
 
 ## Chưa hỗ trợ
 
-- Nhập giờ HH:MM tuỳ biến (chỉ preset).
+- Nhập giờ HH:MM tuỳ biến (chỉ preset; báo cáo chỉ 4 mốc, giờ yên tĩnh chỉ 22:00–07:00 bằng nút, giờ khác đặt qua
+  CLI/preferences API).
 - Đăng nhập Google qua chat (chỉ hướng dẫn chạy CLI trên máy daemon).
-- Bật/tắt từng loại notification bằng nút (đổi qua CLI/preferences API).
 - Quản lý allowlist operator bằng chat (owner dùng `POST /v1/operators`).
-- Ảnh/sticker mascot, nút "copy bản mới" riêng, dedupe UX khi paste cùng link
-  đang có job, group chat (mặc định bỏ qua).
-- Notification desktop; digest; `/help` đầy đủ mọi lệnh (chỉ menu).
+- `/find` tìm sâu cả cây Drive (cần `GET /v1/drive/search`), và cho operator.
+- Ảnh/sticker mascot, dedupe UX khi paste cùng link đang có job, group chat (mặc định bỏ qua).
+- Notification desktop; `/help` đầy đủ mọi lệnh (chỉ menu).
+- Chưa chạy với bot Telegram thật và Drive thật: mọi test dùng bot giả (httptest) và `drivetest.Fake`.
 
 ## Menu (màu mè)
 

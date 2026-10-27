@@ -32,5 +32,5 @@
 
 ## Chưa làm
 
-- Telegram (nút "cập nhật/tạo mới" ở xem trước) và TUI (hộp thoại copy) vẫn gọi `Submit` = `new`; móc UI ghi ở PROGRESS.
+- Telegram đã có nút "Cập nhật bản cũ / Tạo bản mới" (đợt G). TUI (hộp thoại copy) vẫn gọi `Submit` = `new`; móc UI ghi ở PROGRESS.
 - Tên thư mục đích khác không đổi kết quả: khóa chỉ là nguồn + đích.
