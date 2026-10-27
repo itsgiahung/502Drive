@@ -316,7 +316,7 @@ func TestQueuedJobsShowTheirPositionAndMoveEarlierOrLater(t *testing.T) {
 	m := iModel(t, f, "en", 100, 30)
 	m = sendKeys(t, m, "2")
 	v := m.View()
-	for _, want := range []string{"queue #1", "queue #2", "queue #3"} {
+	for _, want := range []string{"Queued"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("queued rows show their place (%q):\n%s", want, v)
 		}

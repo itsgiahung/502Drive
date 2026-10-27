@@ -336,9 +336,7 @@ func (m Model) jobView() []string {
 		lines = append(lines, m.kv(m.t(i18n.Phase), Sanitize(j.Phase)))
 	}
 	if j.State == "queued" {
-		if pos := m.queuePosition(j); pos > 0 {
-			lines = append(lines, m.kv(m.t(i18n.State), m.dim(m.tf(i18n.QueuePos, pos))))
-		}
+		lines = append(lines, m.kv(m.t(i18n.State), present.Queue(j.QueueAhead, m.snap.Status.QueuePaused, m.lang)))
 	}
 	if j.Priority != 0 {
 		lines = append(lines, m.kv(m.t(i18n.PriorityLabel), signed(j.Priority)))

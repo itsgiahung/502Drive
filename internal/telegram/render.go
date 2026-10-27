@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itsgiahung/502Drive/internal/present"
 	"github.com/itsgiahung/502Drive/internal/schedule"
 	"github.com/itsgiahung/502Drive/internal/state"
 )
@@ -382,6 +383,9 @@ func jobTextFrame(tx texts, j state.Job, frame int) string {
 func jobTextView(tx texts, j state.Job, frame int, v jobView) string {
 	g := tx.g()
 	var b strings.Builder
+	if j.State == state.JobQueued {
+		fmt.Fprintln(&b, escape(present.Queue(j.QueueAhead, j.QueueIsPaused, string(tx.lang))))
+	}
 	fmt.Fprintf(&b, "<b>%s%s</b> — %s\n", stateEmoji(j.State), escape(short(j.RootName, 60)), tx.stateLabel(j.State))
 	if busyJob(j.State) {
 		fmt.Fprintf(&b, "%s\n", travelFrames[((frame%len(travelFrames))+len(travelFrames))%len(travelFrames)])

@@ -22,6 +22,7 @@ import (
 
 	"github.com/itsgiahung/502Drive/internal/config"
 	"github.com/itsgiahung/502Drive/internal/filter"
+	"github.com/itsgiahung/502Drive/internal/present"
 )
 
 func newLogger(w io.Writer) *slog.Logger {
@@ -48,21 +49,24 @@ type failure struct {
 }
 
 type jobView struct {
-	ID           string    `json:"id"`
-	CollectionID string    `json:"collection_id"`
-	SourceName   string    `json:"source_name"`
-	Destination  string    `json:"destination_id"`
-	RootName     string    `json:"root_name"`
-	State        string    `json:"state"`
-	Phase        *string   `json:"phase"`
-	DryRun       bool      `json:"dry_run"`
-	Desired      string    `json:"desired_state"`
-	Revision     int       `json:"revision"`
-	Counts       jobCounts `json:"counts"`
-	ResultURL    *string   `json:"result_url"`
-	LastError    *failure  `json:"last_error"`
-	CreatedAt    string    `json:"created_at"`
-	UpdatedAt    string    `json:"updated_at"`
+	QueuePosition *int      `json:"queue_position"`
+	QueueAhead    *int      `json:"queue_ahead"`
+	QueuePaused   bool      `json:"queue_paused"`
+	ID            string    `json:"id"`
+	CollectionID  string    `json:"collection_id"`
+	SourceName    string    `json:"source_name"`
+	Destination   string    `json:"destination_id"`
+	RootName      string    `json:"root_name"`
+	State         string    `json:"state"`
+	Phase         *string   `json:"phase"`
+	DryRun        bool      `json:"dry_run"`
+	Desired       string    `json:"desired_state"`
+	Revision      int       `json:"revision"`
+	Counts        jobCounts `json:"counts"`
+	ResultURL     *string   `json:"result_url"`
+	LastError     *failure  `json:"last_error"`
+	CreatedAt     string    `json:"created_at"`
+	UpdatedAt     string    `json:"updated_at"`
 	// Kind is audit, repair or cleanup (empty for a copy); ResumeAfter is when
 	// a quota-blocked job continues by itself.
 	Kind        string  `json:"kind"`
@@ -103,6 +107,9 @@ func terminalState(s string) bool {
 }
 
 func (a *App) printJob(ctx context.Context, j jobView) {
+	if j.State == "queued" {
+		fmt.Fprintln(a.out(), present.Queue(j.QueueAhead, j.QueuePaused, "en"))
+	}
 	s := a.style
 	rows := []kv{{"job", j.ID}, {"state", s.stateColor(j.State)}, {"source", Sanitize(j.SourceName)}, {"target", Sanitize(j.RootName)}}
 	if j.Phase != nil {

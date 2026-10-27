@@ -15,20 +15,6 @@ const (
 	MaxPriority    = 5
 )
 
-// claimQueuedSQL lists queued jobs best first:
-//  1. higher priority;
-//  2. fair share: fewer active jobs in the same group (a batch, or a lone
-//     collection), so a 20-link batch cannot take every slot while a single
-//     job waits;
-//  3. FIFO by queue_order, then admission order.
-//
-// It uses jobs_queue (state, priority, order) and jobs_fair (state, group).
-const claimQueuedSQL = `SELECT j.id FROM jobs j INDEXED BY jobs_queue WHERE j.state='queued'
-	ORDER BY j.queue_priority DESC,
-		(SELECT count(*) FROM jobs r INDEXED BY jobs_fair WHERE r.state IN ('running','reconciling','pausing','cancelling') AND r.fair_group=j.fair_group) ASC,
-		j.queue_order ASC, j.rowid ASC
-	LIMIT 1`
-
 // ClaimQueued moves the best queued job to running. It returns ErrNotFound when
 // there is nothing to start or the queue is paused.
 func (s *Store) ClaimQueued(ctx context.Context) (Job, error) {
@@ -41,14 +27,14 @@ func (s *Store) ClaimQueued(ctx context.Context) (Job, error) {
 		if paused {
 			return ErrNotFound
 		}
-		var id string
-		e = tx.QueryRowContext(ctx, claimQueuedSQL).Scan(&id)
-		if errors.Is(e, sql.ErrNoRows) {
-			return ErrNotFound
-		}
+		order, e := queueSchedule(ctx, tx, 1)
 		if e != nil {
 			return e
 		}
+		if len(order) == 0 {
+			return ErrNotFound
+		}
+		id := order[0]
 		j, e := readJob(ctx, tx, "", id)
 		if e != nil {
 			return e

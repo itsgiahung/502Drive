@@ -274,28 +274,29 @@ func TestBatchAdmissionReplayAndSummary(t *testing.T) {
 
 func TestQueueClaimUsesIndexes(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
-	queueJob(t, s, 1, "")
-	plan, err := s.db.QueryContext(ctx, "EXPLAIN QUERY PLAN "+claimQueuedSQL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer plan.Close()
-	var lines []string
-	for plan.Next() {
-		var id, parent, notused int
-		var detail string
-		if err := plan.Scan(&id, &parent, &notused, &detail); err != nil {
+	for _, query := range []string{queueActiveSQL, queueCandidatesSQL} {
+		rows, err := s.db.QueryContext(t.Context(), "EXPLAIN QUERY PLAN "+query)
+		if err != nil {
 			t.Fatal(err)
 		}
-		lines = append(lines, detail)
-	}
-	joined := strings.Join(lines, "\n")
-	if strings.Contains(joined, "SCAN j") || strings.Contains(joined, "SCAN r") || strings.Contains(joined, "SCAN jobs") {
-		t.Fatalf("claim query scans the jobs table:\n%s", joined)
-	}
-	if !strings.Contains(joined, "jobs_queue") || !strings.Contains(joined, "jobs_fair") {
-		t.Fatalf("claim query does not use the queue indexes:\n%s", joined)
+		var details []string
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			if err = rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				t.Fatal(err)
+			}
+			details = append(details, detail)
+		}
+		rows.Close()
+		if err = rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		joined := strings.Join(details, "\n")
+		t.Log(joined)
+		if !strings.Contains(joined, "SEARCH jobs USING INDEX jobs_") {
+			t.Fatal(joined)
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 package i18n
 
 const (
+	QueueAhead             Key = "queue_ahead"
 	SetupTitle             Key = "setup_title"
 	SetupDaemon            Key = "setup_daemon"
 	SetupOAuth             Key = "setup_oauth"
@@ -14,6 +15,7 @@ const (
 
 func init() {
 	vi := map[Key]string{
+		QueueAhead:             "Đang chờ (còn %d trước)",
 		SetupTitle:             "Bắt đầu",
 		SetupDaemon:            "Daemon: chạy 502drive up",
 		SetupOAuth:             "OAuth: tạo client Desktop tại https://console.cloud.google.com/apis/credentials rồi nhập file JSON (0600)",
@@ -25,6 +27,7 @@ func init() {
 		SetupIncomplete:        "Chưa đủ điều kiện; hoàn thành các bước trong checklist.",
 	}
 	en := map[Key]string{
+		QueueAhead:             "Queued (%d ahead)",
 		SetupTitle:             "Get started",
 		SetupDaemon:            "Daemon: run 502drive up",
 		SetupOAuth:             "OAuth: create a Desktop client at https://console.cloud.google.com/apis/credentials and supply its JSON file (0600)",

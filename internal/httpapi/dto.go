@@ -46,7 +46,8 @@ func jobDTO(j state.Job) map[string]any {
 		"destination_id": j.DestinationID, "root_name": j.RootName, "state": j.State, "phase": j.Phase,
 		"desired_state": j.DesiredState, "revision": j.Revision, "counts": j.Counts, "result_url": j.ResultURL,
 		"last_error": failureDTO(j.LastError), "created_at": ts(j.CreatedAt), "updated_at": ts(j.UpdatedAt),
-		"resume_after": tsPtr(j.ResumeAfter),
+		"resume_after":   tsPtr(j.ResumeAfter),
+		"queue_position": j.QueuePosition, "queue_ahead": j.QueueAhead, "queue_paused": j.QueueIsPaused,
 	}
 	out["priority"] = j.Priority
 	if j.BatchID != "" {

@@ -135,3 +135,6 @@ hook dừng. Đây là thứ **Quit trên tray** gọi; TUI/CLI không bao giờ
 
 - U1: `GET /v1/setup` (owner) returns `{ready,checks}` from Doctor's database,
   OAuth client, Google account and default destination checks; no Google calls.
+
+- U2: job reads add nullable `queue_position` (>=1), `queue_ahead` (>=0) and
+  `queue_paused`. Queue positions follow successive fair admissions.

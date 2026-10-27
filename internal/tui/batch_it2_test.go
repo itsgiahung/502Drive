@@ -680,7 +680,7 @@ func TestBatchITScreensReadWithoutColourOrUnicodeBars(t *testing.T) {
 	m := iModel(t, f, "en", 80, 40, func(o *Options) { o.ASCII = true })
 	m = sendKeys(t, m, "2")
 	m = refresh(t, m)
-	check("jobs", m, "The queue is paused", "queue #1")
+	check("jobs", m, "The queue is paused")
 	m = sendKeys(t, m, "f")
 	check("jobs filtered", m, "Filter: Queued")
 	m = sendKeys(t, m, "f", "f", "f", "f", "f", "f", "enter") // back to all states, open a job

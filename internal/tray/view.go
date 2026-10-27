@@ -51,12 +51,14 @@ type Status struct {
 
 // Job is one recent job shown in the tray submenu.
 type Job struct {
-	ID         string
-	SourceName string
-	State      string
-	Completed  int
-	Total      *int
-	ResultURL  string
+	QueueAhead  *int
+	QueuePaused bool
+	ID          string
+	SourceName  string
+	State       string
+	Completed   int
+	Total       *int
+	ResultURL   string
 }
 
 // Snapshot is what one poll produced.
@@ -247,6 +249,9 @@ func jobItems(snap Snapshot, lang string, result string) []Item {
 
 // jobLine is one compact job row: state, name, progress. No fake ETA.
 func jobLine(j Job, lang string) string {
+	if j.State == "queued" {
+		return plain(j.SourceName) + " · " + present.Queue(j.QueueAhead, j.QueuePaused, lang)
+	}
 	progress := fmt.Sprintf("%d", j.Completed)
 	if j.Total != nil {
 		progress = fmt.Sprintf("%d/%d", j.Completed, *j.Total)

@@ -370,11 +370,21 @@ func (s *Service) SubmitModeInBatchWithSync(ctx context.Context, p Principal, ke
 }
 
 func (s *Service) Job(ctx context.Context, p Principal, id string) (state.Job, error) {
-	return s.Store.GetJob(ctx, scope(p, true), id)
+	j, err := s.Store.GetJob(ctx, scope(p, true), id)
+	if err != nil {
+		return j, err
+	}
+	jobs := []state.Job{j}
+	err = s.jobQueuePositions(ctx, jobs)
+	return jobs[0], err
 }
 
 func (s *Service) Jobs(ctx context.Context, p Principal, all bool, st, collectionID string, limit int, cursor int64) ([]state.Job, int64, error) {
-	return s.Store.ListJobs(ctx, scope(p, all), st, collectionID, limit, cursor)
+	jobs, next, err := s.Store.ListJobs(ctx, scope(p, all), st, collectionID, limit, cursor)
+	if err == nil {
+		err = s.jobQueuePositions(ctx, jobs)
+	}
+	return jobs, next, err
 }
 
 func (s *Service) Events(ctx context.Context, p Principal, id string, after int64, limit int) ([]state.Event, error) {

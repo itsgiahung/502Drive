@@ -155,10 +155,13 @@ type Failure struct {
 }
 
 type Job struct {
-	ID           string `json:"id"`
-	Principal    string `json:"principal_id"`
-	CollectionID string `json:"collection_id"`
-	Trigger      string `json:"trigger"`
+	QueuePosition *int   `json:"-"`
+	QueueAhead    *int   `json:"-"`
+	QueueIsPaused bool   `json:"-"`
+	ID            string `json:"id"`
+	Principal     string `json:"principal_id"`
+	CollectionID  string `json:"collection_id"`
+	Trigger       string `json:"trigger"`
 	// Kind distinguishes the job families: "" is a copy, "audit" scans a
 	// collection read-only, "repair" applies the fixes of an audit.
 	Kind          string      `json:"kind,omitempty"`

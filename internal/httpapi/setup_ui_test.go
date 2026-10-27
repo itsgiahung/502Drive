@@ -25,3 +25,17 @@ func TestSetupChecklistUsesDoctorAndRequiresAuth(t *testing.T) {
 		}
 	}
 }
+
+func TestJobQueueFieldsAreFromScheduler(t *testing.T) {
+	h := newHarness(t, false)
+	h.setup()
+	plan := h.batchPlan(1, "position-http")
+	r := h.do("POST", "/v1/jobs", map[string]any{"plan_id": plan["id"], "expected_revision": plan["revision"]}, "position-job", true)
+	id := h.data(r)["id"].(string)
+	r = h.do("GET", "/v1/jobs/"+id, nil, "", true)
+	data := h.data(r)
+	if data["queue_position"] != float64(1) || data["queue_ahead"] != float64(0) {
+		t.Fatal(data)
+	}
+	h.conform("GET", "/v1/jobs/{job_id}", r)
+}

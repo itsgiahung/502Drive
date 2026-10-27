@@ -520,3 +520,4 @@ probe chạy riêng không `-race`:
 | UI batch | Evidence | Status |
 | --- | --- | --- |
 | U1 readiness API/auth, unattended checklist/no stdin, TUI checklist snapshot | `TestSetupChecklistUsesDoctorAndRequiresAuth`, `TestOnboardNonTTYDoesNotReadInput`, `TestSetupHomeDisappearsWhenReady` | local |
+| U2 fair positions match actual claims, pause/old-server display, HTTP fields | `TestQueuePositionsFollowActualFairClaims`, `TestQueueUsesServerAheadAndSuppressesWhilePaused`, `TestJobQueueFieldsAreFromScheduler` | local |

@@ -27,7 +27,7 @@ type tuiJobView struct {
 }
 
 func (j tuiJobView) job() tui.Job {
-	job := tui.Job{ID: j.ID, CollectionID: j.CollectionID, SourceName: j.SourceName, State: j.State,
+	job := tui.Job{QueuePosition: j.QueuePosition, QueueAhead: j.QueueAhead, ID: j.ID, CollectionID: j.CollectionID, SourceName: j.SourceName, State: j.State,
 		Desired: j.Desired, Revision: j.Revision, Completed: j.Counts.Completed, Failed: j.Counts.Failed,
 		Blocked: j.Counts.Blocked, Skipped: j.Counts.Skipped, Total: j.Counts.Total,
 		Kind: j.Kind, SkippedByCode: j.Counts.SkippedByCode, Bytes: j.Counts.Bytes,

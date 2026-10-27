@@ -219,3 +219,8 @@ Thiết kế: [design/s7-deep-preflight.md](../design/s7-deep-preflight.md). `PO
 kết quả, `POST /v1/plans/{id}/preflight/cancel` để hủy. Kết quả chỉ `complete = true` khi quét hết; hủy, hết hạn
 (TTL 1 giờ) hoặc daemon khởi động lại (`interrupted`) đều không được báo là tổng. Cảnh báo (không chặn):
 `estimate_unknown`, `destination_storage_short`, `may_hit_daily_limit`.
+
+U2: job GET/list returns additive `queue_position` (1-based), `queue_ahead`
+and `queue_paused`. The admission scheduler and position query share fair-group
+ordering. These are snapshots; running jobs completing or new admissions can
+change them. Clients hide numeric hints while paused and when fields are absent.

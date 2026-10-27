@@ -32,20 +32,22 @@ type Status struct {
 
 // Job is one job row; counts are real, never estimated.
 type Job struct {
-	ID           string
-	CollectionID string
-	SourceName   string
-	State        string
-	Phase        string
-	Desired      string
-	Revision     int
-	Completed    int
-	Failed       int
-	Blocked      int
-	Skipped      int
-	Total        *int
-	ResultURL    string
-	LastError    string
+	QueuePosition *int
+	QueueAhead    *int
+	ID            string
+	CollectionID  string
+	SourceName    string
+	State         string
+	Phase         string
+	Desired       string
+	Revision      int
+	Completed     int
+	Failed        int
+	Blocked       int
+	Skipped       int
+	Total         *int
+	ResultURL     string
+	LastError     string
 	// Kind is empty for a copy or sync run, else audit, repair or cleanup.
 	Kind string
 	// ResumeAfter is when a quota-blocked job continues by itself (zero: not waiting).

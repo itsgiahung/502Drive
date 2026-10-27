@@ -303,13 +303,6 @@ func applyMove(order []string, mv moveRec) []string {
 	return append(out, rest[at:]...)
 }
 
-func (m Model) queuePosition(j Job) int {
-	if j.State != "queued" {
-		return 0
-	}
-	return indexOf(queueOrder(m.snap.Jobs, m.qm.recs), j.ID) + 1
-}
-
 // moveQueued moves the highlighted queued job one place earlier (-1) or later (+1).
 func (m Model) moveQueued(dir int) (Model, tea.Cmd) {
 	j, ok := m.selectedJob()
@@ -461,9 +454,7 @@ func (m Model) onBatch(msg batchMsg) (tea.Model, tea.Cmd) {
 // queueLine is what the second row of a queued job says.
 func (m Model) queueLine(j Job) string {
 	var parts []string
-	if pos := m.queuePosition(j); pos > 0 {
-		parts = append(parts, m.tf(i18n.QueuePos, pos))
-	}
+	parts = append(parts, present.Queue(j.QueueAhead, m.snap.Status.QueuePaused, m.lang))
 	if j.Priority != 0 {
 		parts = append(parts, m.t(i18n.PriorityLabel)+" "+signed(j.Priority))
 	}
