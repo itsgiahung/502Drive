@@ -50,6 +50,8 @@ func (t *Telegram) onMessage(ctx context.Context, updateID int64, m *models.Mess
 		return t.page(ctx, p, m.Chat.ID, 0, "jobs")
 	case "/cancelall":
 		return t.cancelAllAsk(ctx, p, m.Chat.ID, 0)
+	case "/find":
+		return t.findCmd(ctx, p, m.Chat.ID, rest)
 	case "/copy", "/clone":
 		if rest == "" {
 			return t.page(ctx, p, m.Chat.ID, 0, "copy")
@@ -127,9 +129,13 @@ func (t *Telegram) paste(ctx context.Context, p app.Principal, chatID int64, mes
 		return t.showError(ctx, p, chatID, messageID, err)
 	}
 	if auto && prefs.DestinationRevision != nil && *prefs.DestinationRevision == view.DestinationRevision {
-		res, err := t.svc.Submit(ctx, p, base+":copy", view.ID, view.Revision)
+		res, err := t.svc.SubmitMode(ctx, p, base+":copy", view.ID, view.Revision, "")
 		if err == nil {
 			return t.submitted(ctx, p, chatID, messageID, res.Job)
+		}
+		if existingCopy(err) {
+			pl, _ := json.Marshal(planPayload{Source: refOf(view.Plan), Destination: view.DestinationID})
+			return t.copyChoiceCard(ctx, p, chatID, messageID, view.ID, view.Revision, string(pl))
 		}
 		if !previewOnSubmitError(err) {
 			return t.showError(ctx, p, chatID, messageID, err)
@@ -260,6 +266,44 @@ func (t *Telegram) act(ctx context.Context, p app.Principal, st state.Callback, 
 		return t.cancelAllAsk(ctx, p, st.ChatID, st.MessageID)
 	case "cancelall_do":
 		return t.cancelAllDo(ctx, p, st)
+	case "preview_opt":
+		return t.actPreviewOpt(ctx, p, st, tx)
+	case "copy_update":
+		return t.actCopyMode(ctx, p, st, "update")
+	case "copy_new":
+		return t.actCopyMode(ctx, p, st, "new")
+	case "retire_ask":
+		return t.actRetireAsk(ctx, p, st, tx)
+	case "retire_do":
+		return t.actRetireDo(ctx, p, st, tx)
+	case "col_resume":
+		return t.actResumeCollection(ctx, p, st, tx)
+	case "forget_ask":
+		return t.actForgetAsk(ctx, p, st, tx)
+	case "forget_do":
+		return t.actForgetDo(ctx, p, st, tx)
+	case "cleanup_ask":
+		return t.actCleanupAsk(ctx, p, st, tx)
+	case "cleanup_do":
+		return t.actCleanupDo(ctx, p, st, tx)
+	case "retired_list":
+		return t.retiredListCard(ctx, p, st.ChatID, st.MessageID)
+	case "notify_toggle":
+		return t.actNotifyToggle(ctx, p, st)
+	case "quiet_set":
+		return t.actQuietSet(ctx, p, st)
+	case "report_set":
+		return t.actReportSet(ctx, p, st)
+	case "jobs_mgmt":
+		return t.manageCard(ctx, p, st.ChatID, st.MessageID, decodeManage(st.Payload))
+	case "batch_do":
+		return t.actBatchDo(ctx, p, st)
+	case "batch_cancel_ask":
+		return t.actBatchCancelAsk(ctx, p, st)
+	case "batch_cancel_do":
+		return t.actBatchCancelDo(ctx, p, st)
+	case "find_pick":
+		return t.actFindPick(ctx, p, st)
 	case "audit":
 		return t.auditStart(ctx, p, st)
 	case "audit_repair":
@@ -269,9 +313,13 @@ func (t *Telegram) act(ctx context.Context, p app.Principal, st state.Callback, 
 }
 
 func (t *Telegram) actCopy(ctx context.Context, p app.Principal, st state.Callback, tx texts) error {
-	res, err := t.svc.Submit(ctx, p, "tg-cb:"+st.ID, st.Object, st.Revision)
+	// An unanswered copy of a source that is already there asks first (L2).
+	res, err := t.svc.SubmitMode(ctx, p, "tg-cb:"+st.ID, st.Object, st.Revision, "")
 	if err == nil {
 		return t.submitted(ctx, p, st.ChatID, st.MessageID, res.Job)
+	}
+	if existingCopy(err) {
+		return t.copyChoiceCard(ctx, p, st.ChatID, st.MessageID, st.Object, st.Revision, st.Payload)
 	}
 	if previewOnSubmitError(err) {
 		var pl planPayload
@@ -310,7 +358,7 @@ func (t *Telegram) actUseDest(ctx context.Context, p app.Principal, st state.Cal
 	if err := json.Unmarshal([]byte(st.Payload), &pl); err != nil || pl.Source == "" || pl.Destination == "" {
 		return t.showError(ctx, p, st.ChatID, st.MessageID, app.Fail(409, "plan_changed", tx.confirmDest))
 	}
-	view, _, err := t.svc.Inspect(ctx, p, "tg-cb:"+st.ID+":plan", app.PlanRequest{Source: pl.Source, DestinationID: pl.Destination, RootName: pl.Root})
+	view, _, err := t.svc.Inspect(ctx, p, "tg-cb:"+st.ID+":plan", pl.request())
 	if err != nil {
 		return t.showError(ctx, p, st.ChatID, st.MessageID, err)
 	}

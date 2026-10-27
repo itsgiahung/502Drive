@@ -67,7 +67,7 @@ func (t *Telegram) deliver(ctx context.Context, m state.Outbox) {
 		return
 	}
 	tx := t.textFor(callCtx, m.Principal)
-	text := jobTextFrame(tx, job, int(t.now().Unix()/3))
+	text := jobTextView(tx, job, int(t.now().Unix()/3), t.jobViewFor(callCtx, m.Principal))
 	hash := hashText(text)
 	if m.MessageID != 0 && hash == m.LastHash {
 		// Nothing to say: a repeated edit would only burn the rate budget.
@@ -113,6 +113,9 @@ func (t *Telegram) deliver(ctx context.Context, m state.Outbox) {
 func (t *Telegram) deliverFinal(ctx context.Context, m state.Outbox) {
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	if t.holdForQuiet(callCtx, m) { // quiet hours: keep it for the morning
+		return
+	}
 	p := app.Principal{ID: m.Principal, Role: app.RoleOperator}
 	tx := t.textFor(callCtx, m.Principal)
 	var text string
@@ -126,7 +129,14 @@ func (t *Telegram) deliverFinal(ctx context.Context, m state.Outbox) {
 			t.retry(callCtx, m, "unavailable", 30*time.Second)
 			return
 		}
-		text = finalNoticeText(tx, job)
+		text = finalNoticeTextView(tx, job, t.jobViewFor(callCtx, m.Principal))
+	} else if strings.HasPrefix(m.Note, reportNotePrefix) {
+		report, ok := t.reportText(callCtx, m, tx)
+		if !ok {
+			t.dead(callCtx, m, "bad_report")
+			return
+		}
+		text = report
 	} else {
 		text = fmt.Sprintf(tx.syncErrorNotice, escape(short(m.Note, 120)))
 	}
@@ -157,6 +167,10 @@ func (t *Telegram) deliverFinal(ctx context.Context, m state.Outbox) {
 
 // finalNoticeText is the message body for a finished job.
 func finalNoticeText(tx texts, job state.Job) string {
+	return finalNoticeTextView(tx, job, jobView{})
+}
+
+func finalNoticeTextView(tx texts, job state.Job, v jobView) string {
 	header := tx.noticeCompleted
 	switch job.State {
 	case state.JobPartial, state.JobFailed:
@@ -164,7 +178,7 @@ func finalNoticeText(tx texts, job state.Job) string {
 	case state.JobBlocked:
 		header = tx.noticeAction
 	}
-	return "<b>" + header + "</b>\n" + jobText(tx, job)
+	return "<b>" + header + "</b>\n" + jobTextView(tx, job, 0, v)
 }
 
 func (t *Telegram) finishOrDefer(ctx context.Context, m state.Outbox, job state.Job, hash string, messageID int) {

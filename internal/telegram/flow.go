@@ -86,7 +86,7 @@ func (t *Telegram) finishAwait(ctx context.Context, p app.Principal, chatID int6
 	case "rename":
 		pl := a.plan
 		pl.Root = name
-		view, _, err := t.svc.Inspect(ctx, p, planKey(base), app.PlanRequest{Source: pl.Source, DestinationID: pl.Destination, RootName: name})
+		view, _, err := t.svc.Inspect(ctx, p, planKey(base), pl.request())
 		if err != nil {
 			return t.showError(ctx, p, chatID, 0, err)
 		}
@@ -137,7 +137,7 @@ func (t *Telegram) actBackPreview(ctx context.Context, p app.Principal, st state
 
 // replay inspects again with the choices made so far and shows the preview.
 func (t *Telegram) replay(ctx context.Context, p app.Principal, chatID int64, messageID int, pl planPayload, base string) error {
-	view, _, err := t.svc.Inspect(ctx, p, planKey(base), app.PlanRequest{Source: pl.Source, DestinationID: pl.Destination, RootName: pl.Root})
+	view, _, err := t.svc.Inspect(ctx, p, planKey(base), pl.request())
 	if err != nil {
 		return t.showError(ctx, p, chatID, messageID, err)
 	}

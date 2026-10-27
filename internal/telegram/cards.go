@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -46,6 +47,9 @@ type planPayload struct {
 	Source      string `json:"source"`
 	Root        string `json:"root,omitempty"`
 	Destination string `json:"destination,omitempty"`
+	// Presets and Conflict are the copy options picked on the preview (S5, N1).
+	Presets  []string `json:"pf,omitempty"`
+	Conflict string   `json:"oc,omitempty"`
 }
 
 // panel sends or edits one card and returns the message it lives in. An empty
@@ -291,7 +295,7 @@ func (t *Telegram) jobsPage(ctx context.Context, p app.Principal, chatID int64, 
 			break
 		}
 	}
-	rows = append(rows, []button{nav(tx.back, "home")})
+	rows = append(rows, []button{act(tx.g().manageBtn, "jobs_mgmt", "", 0, ""), nav(tx.back, "home")})
 	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
 }
 
@@ -300,8 +304,18 @@ func (t *Telegram) libraryPage(ctx context.Context, p app.Principal, chatID int6
 	if err != nil {
 		return t.showCard(ctx, p, chatID, messageID, tx.libraryEmpty, []button{nav(tx.back, "home")})
 	}
+	retired := t.retiredCount(ctx, p)
+	var retiredRow []button
+	if retired > 0 {
+		retiredRow = []button{act(fmt.Sprintf(tx.g().retiredButton, retired), "retired_list", "", 0, "")}
+	}
 	if len(cols) == 0 {
-		return t.showCard(ctx, p, chatID, messageID, "<b>"+tx.library+"</b>\n"+tx.libraryEmpty, []button{nav(tx.back, "home")})
+		rows := [][]button{}
+		if retiredRow != nil {
+			rows = append(rows, retiredRow)
+		}
+		rows = append(rows, []button{nav(tx.back, "home")})
+		return t.showCard(ctx, p, chatID, messageID, "<b>"+tx.library+"</b>\n"+tx.libraryEmpty, rows...)
 	}
 	var b strings.Builder
 	b.WriteString("<b>" + tx.library + "</b>\n")
@@ -316,6 +330,9 @@ func (t *Telegram) libraryPage(ctx context.Context, p app.Principal, chatID int6
 		}
 		fmt.Fprintf(&b, "· %s — %s\n", escape(short(c.SourceName, 40)), escape(status))
 		rows = append(rows, []button{act(short(c.SourceName, 24)+" · "+status, "collection", c.ID, c.Revision, "")})
+	}
+	if retiredRow != nil {
+		rows = append(rows, retiredRow)
 	}
 	rows = append(rows, []button{nav(tx.destination, "dest"), nav(tx.back, "home")})
 	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
@@ -333,6 +350,9 @@ func (t *Telegram) collectionCard(ctx context.Context, p app.Principal, chatID i
 		return t.showError(ctx, p, chatID, messageID, err)
 	}
 	tx := t.text(ctx, p)
+	if c.State == state.CollectionRetired {
+		return t.retiredCard(ctx, p, chatID, messageID, c, note)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "<b>%s</b>\n", escape(short(c.SourceName, 60)))
 	fmt.Fprintf(&b, "%s: %s\n", tx.copyStateLabel, escape(c.State))
@@ -363,10 +383,12 @@ func (t *Telegram) collectionCard(ctx context.Context, p app.Principal, chatID i
 		b.WriteString("\n" + escape(summary))
 		rows := repairRow
 		rows = append(rows, t.collectionButtons(tx, id, view, configured)...)
+		rows = append(rows, t.lifecycleRows(tx, c)...)
 		rows = append(rows, []button{nav(tx.library, "library"), nav(tx.back, "home")})
 		return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
 	}
 	rows := t.collectionButtons(tx, id, view, configured)
+	rows = append(rows, t.lifecycleRows(tx, c)...)
 	rows = append(rows, []button{nav(tx.library, "library"), nav(tx.back, "home")})
 	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
 }
@@ -514,11 +536,16 @@ func (t *Telegram) settingsPage(ctx context.Context, p app.Principal, chatID int
 	var b strings.Builder
 	b.WriteString("<b>" + tx.settings + "</b>\n")
 	fmt.Fprintf(&b, "%s: %s\n", tx.language, escape(string(langOf(prefs.Language))))
-	fmt.Fprintf(&b, "%s: %s\n\n%s", tx.autoCopy, onOff(prefs.AutoCopy, tx), tx.settingsHint)
-	return t.showCard(ctx, p, chatID, messageID, b.String(),
-		[]button{act("Tiếng Việt", "lang", string(langVI), 0, ""), act("English", "lang", string(langEN), 0, "")},
-		[]button{act(tx.on, "auto", "on", 0, ""), act(tx.off, "auto", "off", 0, "")},
-		[]button{nav(tx.back, "home")})
+	fmt.Fprintf(&b, "%s: %s\n", tx.autoCopy, onOff(prefs.AutoCopy, tx))
+	block, extra := t.notifySettings(ctx, p, tx, prefs)
+	fmt.Fprintf(&b, "%s\n%s", block, tx.settingsHint)
+	rows := [][]button{
+		{act("Tiếng Việt", "lang", string(langVI), 0, ""), act("English", "lang", string(langEN), 0, "")},
+		{act(tx.on, "auto", "on", 0, ""), act(tx.off, "auto", "off", 0, "")},
+	}
+	rows = append(rows, extra...)
+	rows = append(rows, []button{nav(tx.back, "home")})
+	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
 }
 
 func (t *Telegram) previewCard(ctx context.Context, p app.Principal, chatID int64, messageID int, view app.PlanView, note, root string) error {
@@ -538,12 +565,19 @@ func (t *Telegram) previewCard(ctx context.Context, p app.Principal, chatID int6
 	if note != "" {
 		fmt.Fprintf(&b, "\n%s\n", note)
 	}
-	pl := planPayload{Source: refOf(view.Plan), Root: root, Destination: view.DestinationID}
+	if block := filterPreview(tx, view); block != "" {
+		b.WriteString("\n" + block)
+	}
+	pl := planPayload{Source: refOf(view.Plan), Root: root, Destination: view.DestinationID,
+		Presets: presetsOf(view.Filter), Conflict: conflictOf(view.OnConflict)}
 	payload, _ := json.Marshal(pl)
-	return t.showCard(ctx, p, chatID, messageID, b.String(),
-		[]button{styled(act(tx.copyNow, "copy", view.ID, view.Revision, string(payload)), "success")},
-		[]button{act(tx.renameBtn, "rename", view.ID, view.Revision, string(payload)), act(tx.pickBtn, "pick", view.ID, view.Revision, string(payload))},
-		[]button{styled(act("✖ "+tx.cancel, "cancel_preview", view.ID, view.Revision, ""), "danger")})
+	rows := [][]button{
+		{styled(act(tx.copyNow, "copy", view.ID, view.Revision, string(payload)), "success")},
+		{act(tx.renameBtn, "rename", view.ID, view.Revision, string(payload)), act(tx.pickBtn, "pick", view.ID, view.Revision, string(payload))},
+	}
+	rows = append(rows, optionRows(tx, view, pl)...)
+	rows = append(rows, []button{styled(act("✖ "+tx.cancel, "cancel_preview", view.ID, view.Revision, ""), "danger")})
+	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
 }
 
 // destinationLabel is the name shown for a destination id.
@@ -573,7 +607,7 @@ func refOf(p state.Plan) string {
 
 func (t *Telegram) jobCard(ctx context.Context, p app.Principal, chatID int64, messageID int, j state.Job, fresh bool) (int, error) {
 	tx := t.text(ctx, p)
-	text := jobText(tx, j)
+	text := jobTextView(tx, j, 0, t.jobViewFor(ctx, p.ID))
 	if fresh {
 		text = tx.copyStarted + "\n" + text
 	}
@@ -607,6 +641,12 @@ func (t *Telegram) jobButtons(tx texts, j state.Job) [][]button {
 	case state.JobPaused:
 		rows = append(rows, []button{styled(control(tx.resume, "resume"), "success"), styled(control(tx.cancel, "job_cancel"), "danger")})
 	case state.JobBlocked, state.JobFailed, state.JobPartial:
+		if quotaBlocked(j) {
+			// A quota wait resumes by itself (Q1): retrying blindly would only
+			// hit the same limit.
+			rows = append(rows, []button{styled(control(tx.cancel, "job_cancel"), "danger")})
+			break
+		}
 		rows = append(rows, []button{styled(control(tx.retry, "retry"), "success")})
 	}
 	rows = append(rows, []button{act(tx.details, "job", j.ID, j.Revision, ""), nav(tx.jobs, "jobs")})
@@ -615,6 +655,7 @@ func (t *Telegram) jobButtons(tx texts, j state.Job) [][]button {
 
 func (t *Telegram) showError(ctx context.Context, p app.Principal, chatID int64, messageID int, err error) error {
 	tx := t.text(ctx, p)
+	g := tx.g()
 	ae := app.Classify(err)
 	if ae == nil {
 		ae = app.Fail(500, "internal_error", "Internal error.")
@@ -622,7 +663,17 @@ func (t *Telegram) showError(ctx context.Context, p app.Principal, chatID int64,
 	msg := ae.Message
 	if local := tx.errMsg[ae.Code]; local != "" {
 		msg = local
+	} else if local := g.errMsg[ae.Code]; local != "" {
+		msg = local
 	}
-	return t.showCard(ctx, p, chatID, messageID, fmt.Sprintf("⚠️ %s: %s", tx.problemLabel, escape(msg)),
+	var busy state.ErrCollectionBusy
+	if errors.As(err, &busy) {
+		msg = fmt.Sprintf(g.busyMsg, busy.ActiveJobID)
+	}
+	hint := g.errHint[ae.Code]
+	if hint == "" {
+		hint = g.errHintDefault
+	}
+	return t.showCard(ctx, p, chatID, messageID, fmt.Sprintf("⚠️ %s: %s\n💡 %s", tx.problemLabel, escape(msg), escape(hint)),
 		[]button{nav(tx.back, "home")})
 }

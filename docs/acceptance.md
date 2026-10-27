@@ -158,7 +158,7 @@ power source trong test; mô phỏng không thay thế kiểm trên OS thật.
 | T5-2 | Hàm định dạng ngày giờ theo múi giờ + locale (vi: 02/01/2006 15:04; en: 2006-01-02 15:04). **Chưa nối vào đầu ra CLI/tray** | local (hàm) | — | `TestFormatTimeAndDate` |
 | T5-3 | Đổi ngôn ngữ không cần restart: tray cập nhật view ở lần poll kế | local | — | [tray/tray_test.go](../internal/tray/tray_test.go) `TestTrayDynamicLanguageChangeWithoutRestart` |
 | T5-4 | JSON/exit code/mã lỗi giữ nguyên qua snapshot test | local | — | [cli/snapshot_test.go](../internal/cli/snapshot_test.go) `TestJSONOutputSnapshotAndExitCodesGuardsAgainstRegression` |
-| T5-5 | Giờ yên tĩnh (quiet hours): start/end theo múi giờ preferences, hỗ trợ qua nửa đêm; thông báo desktop của tray bị chặn trong khung giờ. Thông báo Telegram **chưa** áp dụng | local | — | [state/settings_test.go](../internal/state/settings_test.go) `TestInQuietHours`, [tray/tray_test.go](../internal/tray/tray_test.go) `TestNotifySkippedDuringQuietHours` |
+| T5-5 | Giờ yên tĩnh (quiet hours): start/end theo múi giờ preferences, hỗ trợ qua nửa đêm; thông báo desktop của tray bị chặn trong khung giờ. Thông báo Telegram không do chat tạo được hoãn tới hết khung (đợt G-12) | local | — | [state/settings_test.go](../internal/state/settings_test.go) `TestInQuietHours`, [tray/tray_test.go](../internal/tray/tray_test.go) `TestNotifySkippedDuringQuietHours` |
 
 ## Linux reliability (S11)
 
@@ -302,7 +302,7 @@ power source trong test; mô phỏng không thay thế kiểm trên OS thật.
 | C1-S5-11 | Lọc không thêm lệnh `files.list` trên cây 10k file / 1k thư mục | local | `FASTLIST_MODE=filter` (xem verification) |
 | C1-S5-12 | Cờ CLI `--include/--exclude/--ext/--min-size/--max-size/--filter-file`, `sync filter show|set` | local (phân tích cờ) | [cli/filter_test.go](../internal/cli/filter_test.go) |
 | C1-S5-13 | Quy tắc lọc đổi giữa các lần chạy trên cây thật của Drive | chưa chạy | cần live harness |
-| C1-S5-14 | Móc giao diện TUI/Telegram cho lọc (preset, hộp thoại) | chưa làm: xem "Móc UI cho Claude" trong PROGRESS | — |
+| C1-S5-14 | Móc giao diện cho lọc: Telegram đã có preset (đợt G-6); TUI chưa | local (Telegram) / chưa làm (TUI) | [telegram/g1_copy_test.go](../internal/telegram/g1_copy_test.go) |
 
 ## Vận hành, release, login
 
@@ -408,6 +408,31 @@ Chỉ ghi `local` khi có test. Chưa chạy trong terminal thật và chưa ch�
 | TUI-11 | Adapter CLI: snapshot đọc lifecycle, `resume_after`, `skipped_by_code`, bytes, filter/on_conflict của collection, preferences; daemon cũ không có các trường này vẫn chạy; `SetPreference` chỉ nhận 5 trường, sai kiểu bị từ chối trước khi gửi; autostart ghi/xóa file người dùng | local | [tui_ext_test.go](../internal/cli/tui_ext_test.go) |
 | TUI-12 | Không màu / `--ascii`: không mã ESC, không thanh unicode, nghĩa nằm trong chữ chứ không chỉ màu | local | `TestNewScreensReadWithoutColourOrUnicodeBars` |
 | TUI-13 | Terminal thật (màu, chuột, resize), daemon thật đang ngủ/dậy, audit/cleanup trên Drive thật | chưa chạy | cần máy và tài khoản thật |
+## Telegram — đợt G (móc giao diện C1 + S10)
+
+Tất cả dùng bot giả (`httptest`), `drivetest.Fake`, đồng hồ giả; **không** chạy với Telegram/Drive thật.
+Chạy: `go test -race ./internal/telegram`.
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| G-1 | L1: Ngừng theo dõi hiện thẻ xem trước, chỉ đổi sau một nút đỏ; nút one-shot; bấm lại không đổi | local | [g1_lifecycle_test.go](../internal/telegram/g1_lifecycle_test.go) `TestRetireShowsAPreviewThenRetiresOnlyAfterOneConfirmation` |
+| G-2 | L1: xác nhận hết hạn sau 5 phút (đồng hồ giả) và gắn revision collection; đang có job chạy → lỗi nêu id job + hướng xử lý | local | `TestRetireConfirmationExpiresAndNothingChanges`, `TestRetireIsBoundToTheCollectionRevision`, `TestRetireRefusedWhileARunIsActiveShowsAHint` |
+| G-3 | L1: collection đã ngừng có Theo dõi lại / Dọn đích / Quên, nằm trong danh sách Đã ngừng; Quên chỉ khi đã ngừng, cần xác nhận | local | `TestRetiredCollectionOffersResumeForgetAndCleanup`, `TestForgetAsksFirstAndOnlyWorksOnARetiredCollection` |
+| G-4 | L1: Dọn đích chạy dry-run trước, job thật chỉ sau nút đỏ (và khi dry-run đã xong) | local | `TestCleanupRunsAPreviewJobThenTrashesOnlyAfterConfirmation` |
+| G-5 | L1: operator/người lạ không dùng được nút của owner, operator không retire được collection của owner | local | `TestLifecycleButtonsBelongToTheirOwnerAndChat`, `TestOperatorCannotRetireTheOwnersCollection` |
+| G-6 | S5: preset Bỏ video / Chỉ tài liệu / Bỏ file > 1 GB → khối Đạt/Bị loại + mẫu, đi vào filter của job, tắt được, sống qua Đổi tên | local | [g1_copy_test.go](../internal/telegram/g1_copy_test.go) `TestVideoPresetShowsKeptAndExcludedAndIsSubmitted`, `TestDocumentsOnlyAndSizePresetsMapToTheFilterSpec`, `TestPresetsToggleOffAndSurviveARename` |
+| G-7 | N1: nút chính sách trùng tên xoay vòng và vào `on_conflict` của job | local | `TestNameConflictPolicyCyclesOnThePreviewAndIsSubmitted` |
+| G-8 | L2: copy lại cùng nguồn hỏi Cập nhật/Tạo mới (không nhân đôi), cả khi `auto_copy`; bản cũ đã ngừng → lỗi có hướng xử lý | local | `TestCopyingTheSameSourceAgainAsksUpdateOrNewInsteadOfDoubling`, `TestCopyingAgainCanStillCreateANewCopyOnPurpose`, `TestPasteToCopyAlsoAsksWhenTheSourceWasAlreadyCopied`, `TestUpdatingARetiredCopyExplainsWhatToDo` |
+| G-9 | K1: thẻ/thông báo kết quả đếm mục bỏ qua theo mã (vi/en), mã lạ vẫn hiện | local | `TestFinishedJobCardCountsSkippedItemsByCode`, `TestSkippedLineIsSortedAndTruncatesUnknownCodes` |
+| G-10 | Q1/S3: job `blocked` có `resume_after` hiện "Chờ quota tới HH:MM" theo múi giờ preferences, không nút Thử lại; job blocked khác giữ Thử lại | local | `TestQuotaBlockedJobShowsTheWaitAndHasNoBlindRetry`, `TestBlockedJobWithoutAQuotaWaitKeepsItsRetryButton` |
+| G-11 | S10: công tắc notify_completed/failed/action_required trong Cài đặt, one-shot, riêng từng người; tắt thì notifier không gửi | local | [g2_settings_test.go](../internal/telegram/g2_settings_test.go) `TestSettingsButtonsToggleEachNotificationKind`, `TestNotificationToggleStopsTheNotifier`, `TestNotificationTogglesAreOneShotAndPerPerson` |
+| G-12 | S10: giờ yên tĩnh hoãn (không bỏ) tin không do chat tạo tới hết khung; không chặn trả lời thao tác của bạn; qua nửa đêm | local | `TestQuietHoursHoldTelegramNoticesUntilTheyEnd`, `TestQuietHoursDoNotBlockTheAnswerToYourOwnAction`, `TestQuietEndHandlesOvernightSpans`, `TestQuietHoursButtonSetsAndClearsThePreference` |
+| G-13 | S10: báo cáo hằng ngày đúng giờ địa phương, một lần/ngày (qua restart), tắt được, không gửi khi rỗng, đúng người | local | `TestDailyReportIsSentOnceAtTheConfiguredLocalTime`, `TestDailyReportIsSkippedWhenThereIsNothingToSay`, `TestDailyReportCanBeTurnedOff`, `TestDailyReportCountsOnlyThatPersonsJobs`, `TestReportButtonsStoreTheLocalTimeAndCanTurnItOff`, `TestReportShowsTheAverageSpeedAndOmitsEmptyLines` |
+| G-14 | S10: giờ báo cáo đúng một lần mỗi ngày qua DST (New York, Berlin: giờ không tồn tại / lặp) và theo giờ địa phương, không theo UTC | local | `TestDailyReportDueIsExactlyOncePerLocalDayAcrossDST`, `TestReportDueWaitsForTheLocalClockNotUTC` |
+| G-15 | S10: trang Quản lý job lọc theo trạng thái, phân trang, pause/resume/retry/cancel theo lô (cancel cần xác nhận hết hạn), bỏ qua job đã đổi, không retry job chờ quota, one-shot, chỉ job của mình | local | [g2_jobs_test.go](../internal/telegram/g2_jobs_test.go) (9 test) |
+| G-16 | S10: `/find tên` ở cấp cao nhất My Drive, chọn làm nguồn, escape, giới hạn 8, chỉ owner, người lạ/operator không chạm Drive | local | [g2_find_test.go](../internal/telegram/g2_find_test.go) (6 test) |
+| G-17 | Lỗi có hướng xử lý (vi/en), job lỗi kèm gợi ý theo mã; mọi chuỗi đợt G có đủ vi + en | local | `TestErrorCardsExplainWhatToDoInBothLanguages`, `TestFailedJobNoticeSaysWhatToDoNext`, `TestBatchGStringsExistInBothLanguages` |
+| G-18 | Toàn bộ trên bot Telegram thật, Drive thật, múi giờ/DST thật của máy, quota thật | chưa chạy | cần bot + tài khoản thật |
 
 ## Cách chạy
 

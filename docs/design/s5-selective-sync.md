@@ -39,4 +39,4 @@ Thiết kế cho §S5 (phase-12), bổ sung theo phase-13 mục 0.
 - Lọc không áp dụng cho nguồn là tệp đơn.
 - Đổi tên thư mục do delta: đường dẫn của các mục trong cây con cập nhật, nhưng quyết định của bộ lọc đối với mục
   con mới trong cùng lần chạy dùng đường dẫn thư mục đọc được lúc đó.
-- TUI/Telegram: chưa có preset và hộp thoại (xem "Móc UI cho Claude").
+- Telegram: đã có preset (Bỏ video / Chỉ tài liệu / Bỏ file > 1 GB) và khối Đạt/Bị loại trên xem trước (đợt G). TUI: chưa (xem "Móc UI cho Claude").
