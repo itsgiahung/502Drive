@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/itsgiahung/502Drive/internal/app"
@@ -102,7 +103,12 @@ func (n *Notifier) JobFinished(ctx context.Context, jobID string) error {
 	if err != nil || !ok {
 		return err
 	}
-	_, err = n.store.EnqueueFinal(ctx, job.Principal, jobID, chat, noticeCode(job), "final:"+jobID, n.now())
+	// One notice per terminal outcome, not per job: a blocked job that is
+	// retried and then succeeds must be announced again. The hook running twice
+	// for the same outcome (restart, replayed bookkeeping) sees the same
+	// revision and stays coalesced.
+	key := "final:" + jobID + ":" + strconv.Itoa(job.Revision)
+	_, err = n.store.EnqueueFinal(ctx, job.Principal, jobID, chat, noticeCode(job), key, n.now())
 	return err
 }
 

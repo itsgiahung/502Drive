@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -340,5 +341,27 @@ func TestNotifierAnnouncesOneSubscriptionErrorUntilHealthy(t *testing.T) {
 	}
 	if rows = pendingFinal(t, h.store); len(rows) != 2 {
 		t.Fatalf("a recovered error was not announced again: %d rows", len(rows))
+	}
+}
+
+// A job that was announced as blocked and then succeeds after a retry gets a
+// second notice; the same outcome reported twice still coalesces.
+func TestNotifierAnnouncesTheOutcomeAfterARetry(t *testing.T) {
+	h := newHarness(t, 42)
+	n := NewNotifier(NotifierOptions{Service: h.svc, OwnerID: 42, Now: h.clock})
+	job := admit(t, h.store, "owner", "Crash copy")
+	finish(t, h.store, job.ID, state.JobBlocked, "unknown_remote_outcome")
+	if err := n.JobFinished(context.Background(), job.ID); err != nil {
+		t.Fatal(err)
+	}
+	finish(t, h.store, job.ID, state.JobSucceeded, "")
+	for range 2 {
+		if err := n.JobFinished(context.Background(), job.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows := pendingFinal(t, h.store)
+	if len(rows) != 2 || !strings.HasPrefix(rows[0].Note, state.JobBlocked) || !strings.HasPrefix(rows[1].Note, state.JobSucceeded) {
+		t.Fatalf("notices = %+v, want blocked then succeeded", rows)
 	}
 }
