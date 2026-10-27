@@ -223,6 +223,13 @@ type Querier = queryer
 // AdmitGuarded is Admit with a check that runs inside the admission
 // transaction, after replay detection and before the plan is consumed.
 func (s *Store) AdmitGuarded(ctx context.Context, principal, key, planID string, revision int, guard func(ctx context.Context, q Querier, p Plan) error) (Result, error) {
+	return s.AdmitInBatch(ctx, principal, key, planID, revision, "", guard)
+}
+
+// AdmitInBatch is AdmitGuarded for one link of a batch (S6). batchID may be
+// empty. Replays of the same key return the job admitted the first time, with
+// its original batch.
+func (s *Store) AdmitInBatch(ctx context.Context, principal, key, planID string, revision int, batchID string, guard func(ctx context.Context, q Querier, p Plan) error) (Result, error) {
 	body, replayed, err := s.idempotent(ctx, principal, "POST /v1/jobs", key, []any{planID, revision}, func(tx *sql.Tx) (any, error) {
 		var raw []byte
 		var consumed sql.NullString
@@ -260,7 +267,8 @@ func (s *Store) AdmitGuarded(ctx context.Context, principal, key, planID string,
 			return nil, ErrCapacity
 		}
 		now := time.Now().UTC()
-		j := Job{ID: ID("job"), Principal: principal, CollectionID: ID("col"), Trigger: "initial", SourceName: p.SourceName, DestinationID: p.DestinationID, RootName: p.RootName, State: JobQueued, DesiredState: "run", Shortcuts: p.Shortcuts, OnConflict: p.OnConflict, Filter: p.Filter, Revision: 1, CreatedAt: now, UpdatedAt: now}
+		j := Job{ID: ID("job"), Principal: principal, CollectionID: ID("col"), Trigger: "initial", SourceName: p.SourceName, DestinationID: p.DestinationID, RootName: p.RootName, State: JobQueued, DesiredState: "run", Shortcuts: p.Shortcuts, OnConflict: p.OnConflict, Filter: p.Filter, Revision: 1, CreatedAt: now, UpdatedAt: now,
+			BatchID: batchID, QueueOrder: now.UnixNano()}
 		c := Collection{ID: j.CollectionID, SourceID: p.SourceID, SourceName: p.SourceName, SourceKind: p.SourceKind, SourceMime: p.SourceMime, ResourceKey: p.ResourceKey, DestinationID: p.DestinationID, RootName: p.RootName, BaselineJobID: j.ID, State: "copying", Shortcuts: p.Shortcuts, OnConflict: p.OnConflict, Filter: p.Filter, Revision: 1}
 		cb, _ := json.Marshal(c)
 		if _, e = tx.ExecContext(ctx, "INSERT INTO collections(id, principal, plan_id, body) VALUES(?,?,?,?)", c.ID, principal, p.ID, cb); e != nil {
@@ -324,6 +332,7 @@ func (s *Store) ActionAs(ctx context.Context, actor, owner, key, id, action stri
 			if j.State != JobPaused && j.State != JobBlocked {
 				return nil, ErrTransition
 			}
+			j.QueuePaused = false // a user resume takes the job out of the queue pause
 			var blocked int
 			if e = tx.QueryRowContext(ctx, "SELECT count(*) FROM items WHERE job_id=? AND state='blocked'", j.ID).Scan(&blocked); e != nil {
 				return nil, e

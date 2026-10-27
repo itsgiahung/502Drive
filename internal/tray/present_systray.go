@@ -54,6 +54,8 @@ type systrayPresenter struct {
 	agent  *agent
 	now    func() time.Time
 	motion bool
+	// shown is the icon state last set on the desktop.
+	shown State
 }
 
 func (p *systrayPresenter) build(a *agent) {
@@ -111,7 +113,10 @@ func (p *systrayPresenter) show(v View) error {
 			p.apply(c)
 		}
 	}
-	systray.SetTooltip(v.Title)
+	systray.SetTooltip(v.Tooltip)
+	if v.State == p.shown {
+		return nil // the icon only changes with the state (busy frames are set by the animation)
+	}
 	return p.setIconLocked(v.State, 0)
 }
 
@@ -145,6 +150,7 @@ func (p *systrayPresenter) setIconLocked(st State, frame int) error {
 		return err
 	}
 	systray.SetIcon(data)
+	p.shown = st
 	return nil
 }
 

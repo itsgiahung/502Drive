@@ -71,7 +71,7 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 	}
 	defer store.Close()
 
-	svc := &app.Service{Store: store, Version: o.Version, ConfigDir: filepath.Dir(cfg.TokenFile)}
+	svc := &app.Service{Store: store, Version: o.Version, ConfigDir: filepath.Dir(cfg.TokenFile), BaseCtx: ctx}
 	if every, err := cfg.FullReconcileEveryDuration(); err != nil {
 		return err
 	} else if every > 0 {

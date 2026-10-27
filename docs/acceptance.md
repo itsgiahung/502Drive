@@ -342,6 +342,54 @@ power source trong test; mô phỏng không thay thế kiểm trên OS thật.
 | S13-4 | Progress: hoàn thành/tổng số, tốc độ, ETA, lỗi/chặn | local | [present/present_test.go](../internal/present/present_test.go) `TestProgress` |
 | S13-5 | OneLine: một dòng tổng hợp gọn gàng cho danh sách | local | [present/present_test.go](../internal/present/present_test.go) `TestOneLine` |
 
+## Batch, hàng đợi và tạm dừng (S6)
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| S6-1 | Lô nhiều link: mỗi link một job chung `batch_id`; link lỗi không làm hỏng link khác; báo đủ số nhận/lỗi | local | [cli/batch_test.go](../internal/cli/batch_test.go) `TestBatchCopyPartialFailureAndReplay` |
+| S6-2 | Gửi lại cả lô (cùng nội dung, cùng khóa suy ra) không tạo job thứ hai | local | `TestBatchCopyPartialFailureAndReplay` (phần replay) |
+| S6-3 | Replay idempotent ở tầng state: cùng khóa `khóa:i` trả đúng job cũ, `GET /v1/batches` có scope principal | local | [state/queue_test.go](../internal/state/queue_test.go) `TestBatchAdmissionReplayAndSummary` |
+| S6-4 | Fair share: lô admit trước không chiếm cả hai slot khi job đơn lẻ đang chờ | local | `TestQueueFairShareDoesNotLetBatchStarveSingleJob` |
+| S6-5 | Ưu tiên và di chuyển (before/after) đánh số lại đúng; priority ngoài -5..5 bị từ chối; revision cũ bị 409 | local | `TestQueuePriorityBeatsFIFOAndMoveRenumbers`, `TestMoveRefusesRunningJobAndStaleRevision` |
+| S6-6 | Tạm dừng hàng đợi: job đang chạy → pausing → paused không mất item; job chờ không được nhận; idempotent | local | `TestQueuePauseHoldsQueueAndPausesRunningWithoutLoss` |
+| S6-7 | Tạm dừng bền qua khởi động lại | local | `TestQueuePausedSurvivesRestart` |
+| S6-8 | Resume chỉ đưa lại job do hàng đợi tạm dừng; job người dùng tự tạm dừng vẫn tạm dừng | local | `TestUserPausedJobIsNotResumedByQueueResume` |
+| S6-9 | Chọn job bằng index (không SCAN jobs) | local | `TestQueueClaimUsesIndexes` (`EXPLAIN QUERY PLAN`) |
+| S6-10 | Migration 020→021 có dữ liệu: job cũ vẫn đọc được, vẫn nhận được, `foreign_key_check` sạch | local | `TestBatchMigrationUpgradesWithData` |
+| S6-11 | HTTP: admit có batch_id (202), replay, 400 batch_id sai, GET batch (conformance), move (409/400/200), queue pause/resume, status.queue | local | [httpapi/queue_test.go](../internal/httpapi/queue_test.go) |
+| S6-12 | CLI: `pause`/`resume`/`jobs move`, copy nhiều link, `--json` lô | local | [cli/batch_test.go](../internal/cli/batch_test.go) |
+| S6-13 | Lô 20 link thật, restart giữa lô, pause khi đang chạy trên Drive thật | chưa chạy | cần live harness (S12) |
+
+## Preflight sâu (S7)
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| S7-1 | Cây có thư mục, file, native, shortcut, không copy được, thư mục không đọc được: đếm đúng, bytes chỉ tính file copy được | local | [app/preflight_test.go](../internal/app/preflight_test.go) `TestDeepPreflightCountsWithoutWriting` |
+| S7-2 | Quét không ghi Drive lần nào (Writes = 0, không copy/folder) | local | `TestDeepPreflightCountsWithoutWriting` |
+| S7-3 | Hủy giữa chừng: `cancelled`, `complete=false`, không ghi | local | `TestDeepPreflightCancelStopsScan` |
+| S7-4 | Plan hết hạn trong lúc quét: `expired`, không báo tổng | local | `TestDeepPreflightExpiresWithThePlan` |
+| S7-5 | Daemon khởi động lại giữa quét: `interrupted`; hủy không đổi | local | `TestDeepPreflightAfterRestartIsInterrupted` |
+| S7-6 | Ước thời gian: chưa có số đo → `unknown` + cảnh báo; có số đo → giây = byte / tốc độ | local | `TestDeepPreflightCountsWithoutWriting`, [state/queue_test.go](../internal/state/queue_test.go) `TestRecentThroughputFromMeasuredJobs` |
+| S7-7 | Cảnh báo dung lượng đích và giới hạn ngày (chỉ cảnh báo, không chặn) | local | `TestDeepPreflightWarnsAboutStorageAndDailyLimit` |
+| S7-8 | HTTP: plan deep, GET tới `complete`, cancel, conformance | local | [httpapi/preflight_test.go](../internal/httpapi/preflight_test.go) |
+| S7-9 | CLI: `inspect --deep --json` trả khối deep hoàn chỉnh | local | [cli/batch_test.go](../internal/cli/batch_test.go) `TestInspectDeepFollowsTheScanToTheTotals` |
+| S7-10 | Deep scan trên Drive thật (cây lớn, shared drive, quota thật) | chưa chạy | cần live harness (S12) |
+
+## Tray (T4)
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| T4-1 | Bảy trạng thái theo thứ tự ưu tiên (offline, error, warning, reconnecting, paused, running, idle) | local | [tray/tray_test.go](../internal/tray/tray_test.go) `TestClassifyPrecedence` |
+| T4-2 | Mỗi icon trạng thái khác idle ở 16px (đọc được) | local | `TestEveryStateIconIsReadableAt16px` |
+| T4-3 | Menu cố định: thứ tự, mục ẩn/mờ đúng; mờ kèm lý do (daemon tắt, chưa đăng nhập Google) | local | `TestBuildViewKeepsAStableStructure`, `TestPasteAndQueueStateAreGreyedOutWithAReason` |
+| T4-4 | Chỉ đẩy menu khi nội dung đổi (poll rảnh không đẩy gì) | local | `TestAgentPushesOnlyChangedViews` |
+| T4-5 | Tooltip có chi tiết và hướng dẫn | local | `TestTooltipCarriesDetailAndHints` |
+| T4-6 | Nhãn tiếng Việt không quá 48 ký tự (không bị cắt trên menu) | local | `TestVietnameseMenuLabelsFitTheRow` |
+| T4-7 | Tạm dừng/tiếp tục tất cả gọi đúng API theo trạng thái hiển thị | local | `TestQueueToggleCallsTheDaemonWithTheOppositeState` |
+| T4-8 | Clipboard chỉ đọc khi bấm; đúng một link | local | `TestReadDriveLinkValidatesTheClipboard` (có từ trước) |
+| T4-9 | CPU nhàn rỗi trước/sau thay đổi tray | chưa chạy | cần desktop thật |
+| T4-10 | Linux SNI/AppIndicator, Windows: click, icon, Explorer restart, tooltip thật | chưa chạy | cần máy desktop thật |
+
 ## Cách chạy
 
 `gofmt -l cmd internal && go vet ./... && go test -race ./...` cho toàn bộ; load

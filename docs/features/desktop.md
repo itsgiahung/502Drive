@@ -33,14 +33,18 @@ tường/đơn điệu > 30s (logind/Power API là lớp phụ, chỉ thêm đ�
 
 | Mục menu | Hành vi |
 | --- | --- |
-| dòng trạng thái | `Google: … · N chạy · N chờ · N cần xử lý` (tooltip theo trạng thái) |
-| Open TUI | mở terminal chạy `502drive menu` (argv cố định) |
-| Copy link trong clipboard | đọc clipboard (`wl-paste`/`xclip`/`xsel`, PowerShell `Get-Clipboard`), đúng **một** link qua `drive.Parse`, rồi submit copy |
-| Jobs & thư viện | 3 job gần nhất (state · tên · tiến độ) + Open TUI |
-| Open latest result folder | mở URL kết quả (chỉ https, host `drive.google.com`) |
-| Start daemon | chỉ bật khi daemon đang tắt: spawn `502drive serve` tách khỏi terminal (Unix `setsid`, Windows `DETACHED_PROCESS`), log ở `<config>/logs/daemon.log` |
-| Dừng 502Drive… | chỉ bật khi daemon đang chạy: `POST /v1/shutdown` (graceful, không kill theo tên), chờ tối đa 6s rồi báo kết quả; khi còn job phải **bấm xác nhận lần hai trong 10s** (mục menu đổi thành "Dừng 502Drive (N việc)?…", poll kế tự hạ) |
-| Quit tray | chỉ thoát khay — **daemon tiếp tục chạy**; opt-in `tray_quit_stops_daemon: true` trả lại hành vi cũ (thoát khay cũng dừng daemon) |
+| dòng trạng thái | `Google: … · N chạy · N chờ · N cần xử lý` (không bấm); tooltip có tài khoản, số việc và hướng dẫn khi cần |
+| Bật 502Drive | chỉ hiện khi daemon tắt: spawn `502drive serve` tách khỏi terminal (Unix `setsid`, Windows `DETACHED_PROCESS`), log ở `<config>/logs/daemon.log` |
+| Clone từ clipboard | đọc clipboard **khi bấm** (`wl-paste`/`xclip`/`xsel`, PowerShell `Get-Clipboard`), đúng **một** link qua `drive.Parse`, rồi clone mặc định; mờ kèm lý do khi daemon tắt hoặc chưa đăng nhập Google |
+| Mở 502Drive | mở terminal chạy `502drive menu` (argv cố định); double-click icon trên Windows cũng mở |
+| Tác vụ & thư viện › | 3 job gần nhất (trạng thái · tên · tiến độ), Mở tất cả, Mở thư mục kết quả gần nhất |
+| Tạm dừng tất cả / Tiếp tục tất cả | `POST /v1/queue/pause|resume` (S6); mờ khi daemon tắt |
+| Cài đặt › Khởi động cùng hệ thống | bật/tắt autostart, dấu ✓ là trạng thái thật |
+| Thoát khay | chỉ thoát khay — **daemon tiếp tục chạy**; opt-in `tray_quit_stops_daemon: true` trả lại hành vi cũ (thoát khay cũng dừng daemon) |
+| Dừng 502Drive… | chỉ bật khi daemon đang chạy: `POST /v1/shutdown` (graceful, không kill theo tên), chờ tối đa 6s rồi báo kết quả; khi còn job phải **bấm xác nhận lần hai trong 10s** |
+
+Icon có bảy trạng thái (offline, error, warning, reconnecting, paused, running, idle); chi tiết và ma trận click:
+[design/tray.md](../design/tray.md). Icon giữ logo nền đen; trạng thái chỉ thêm một overlay nhỏ.
 
 Ba hành động dùng chung từ vựng ở tray/CLI/docs: *Đóng TUI* (daemon tiếp tục), *Thoát
 khay* (daemon tiếp tục), *Dừng 502Drive…* — CLI tương ứng `502drive stop [--yes]`

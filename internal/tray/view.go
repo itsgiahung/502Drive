@@ -21,6 +21,11 @@ const (
 	ActionStopDaemon = "stop-daemon"
 	ActionAutostart  = "autostart"
 	ActionQuit       = "quit"
+	// ActionQueueToggle pauses the whole queue, or resumes it when it is paused
+	// (the POST /v1/queue/pause|resume API of S6).
+	ActionQueueToggle = "queue-toggle"
+	// ActionOpenAll opens the full library in the TUI.
+	ActionOpenAll = ActionOpenTUI + ":jobs"
 	// Job slots are informational menu rows, addressed by index.
 	jobSlotID = "job"
 	jobSlots  = 3
@@ -35,6 +40,10 @@ type Status struct {
 	Blocked       int
 	AccountStatus string
 	AccountLabel  string
+	// QueuePaused is the global queue pause (S6); Lifecycle is the daemon's
+	// power/network state ("running", "sleeping", "resuming", ...).
+	QueuePaused bool
+	Lifecycle   string
 }
 
 // Job is one recent job shown in the tray submenu.
@@ -65,17 +74,21 @@ type Item struct {
 	Children  []Item
 }
 
-// View is the rendered tray state for one poll.
+// View is the rendered tray state for one poll. Tooltip is the longer
+// description shown on hover; it is kept separate from the menu rows.
 type View struct {
 	State      State
 	Title      string
 	StatusLine string
+	Tooltip    string
 	Items      []Item
 }
 
-// Classify maps a snapshot to one of the five icon states.
+// Classify maps a snapshot to one of the seven icon states. Precedence: the
+// daemon being unreachable, then errors, then anything that needs the user,
+// then the transient or background states.
 func Classify(s Snapshot, online bool) State {
-	if !online {
+	if !online || s.Status.Lifecycle == "sleeping" || s.Status.Lifecycle == "offline" {
 		return StateOffline
 	}
 	switch {
@@ -85,6 +98,12 @@ func Classify(s Snapshot, online bool) State {
 		return StateNeeds
 	case s.Status.AccountStatus != "" && s.Status.AccountStatus != "connected":
 		return StateNeeds
+	case s.Status.Lifecycle == "reconnect_required":
+		return StateNeeds
+	case s.Status.Lifecycle == "resuming" || s.Status.Lifecycle == "reconnecting":
+		return StateReconnecting
+	case s.Status.QueuePaused:
+		return StatePaused
 	case s.Status.Running+s.Status.Queued > 0:
 		return StateBusy
 	}
@@ -98,7 +117,8 @@ func BuildView(snap Snapshot, online bool, note string) View {
 	return BuildViewLang(snap, online, note, "en")
 }
 
-// BuildViewLang renders the menu in the given language.
+// BuildViewLang renders the menu in the given language. The menu is short and
+// grouped; rows that cannot be used are greyed out with the reason in the label.
 func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 	state := Classify(snap, online)
 	status := snap.Status
@@ -109,6 +129,9 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 	line := i18n.T(lang, i18n.OfflineLine)
 	if online {
 		line = i18n.Tf(lang, i18n.StatusLine, plain(account), status.Running, status.Queued, status.Blocked)
+		if status.QueuePaused {
+			line = i18n.Tf(lang, i18n.TrayPausedLine, plain(account), status.Blocked)
+		}
 	}
 	title := "502Drive · " + stateLabel(state, lang)
 	if done, total, ok := runningProgress(snap.Jobs); ok && state == StateBusy {
@@ -121,20 +144,52 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 		title += " · " + plain(note)
 	}
 	result := latestResult(snap)
+
+	googleOK := online && (status.AccountStatus == "" || status.AccountStatus == "connected")
+	cloneTitle := i18n.T(lang, i18n.TrayClone)
+	if !online {
+		cloneTitle += " " + i18n.T(lang, i18n.TrayReasonDaemon)
+	} else if !googleOK {
+		cloneTitle += " " + i18n.T(lang, i18n.TrayReasonGoogle)
+	}
+	toggleKey := i18n.TrayPauseAll
+	if status.QueuePaused {
+		toggleKey = i18n.TrayResumeAll
+	}
+	toggleTitle := i18n.T(lang, toggleKey)
+	if !online {
+		toggleTitle += " " + i18n.T(lang, i18n.TrayReasonDaemon)
+	}
 	items := []Item{
 		{ID: "status", Title: line},
-		{ID: ActionOpenTUI, Title: i18n.T(lang, i18n.OpenTUI), Enabled: true},
-		{ID: ActionPaste, Title: i18n.T(lang, i18n.PasteLink), Enabled: online},
-		{ID: "jobs", Title: i18n.T(lang, i18n.JobsLibrary), Enabled: true, Children: jobItems(snap, lang)},
-		{ID: ActionOpenResult, Title: i18n.T(lang, i18n.OpenResult), Enabled: online && result != ""},
 		{Separator: true},
-		{ID: ActionDaemon, Title: i18n.T(lang, i18n.StartDaemon), Enabled: !online},
-		{ID: ActionStopDaemon, Title: i18n.T(lang, i18n.StopApp), Enabled: online},
-		{ID: ActionAutostart, Title: autostartTitle(lang), Enabled: true},
+		{ID: ActionDaemon, Title: i18n.T(lang, i18n.TrayStartApp), Enabled: !online, Hidden: online},
+		{ID: ActionPaste, Title: cloneTitle, Enabled: googleOK},
+		{ID: ActionOpenTUI, Title: i18n.T(lang, i18n.TrayOpenApp), Enabled: true},
+		{ID: "jobs", Title: i18n.T(lang, i18n.JobsLibrary), Enabled: true, Children: jobItems(snap, lang, result)},
+		{Separator: true},
+		{ID: ActionQueueToggle, Title: toggleTitle, Enabled: online},
+		{ID: "settings", Title: i18n.T(lang, i18n.MenuSettings), Enabled: true, Children: []Item{
+			{ID: ActionAutostart, Title: autostartTitle(lang), Enabled: true},
+		}},
 		{Separator: true},
 		{ID: ActionQuit, Title: i18n.T(lang, i18n.Quit), Enabled: true},
+		{ID: ActionStopDaemon, Title: i18n.T(lang, i18n.StopApp), Enabled: online},
 	}
-	return View{State: state, Title: title, StatusLine: line, Items: items}
+	return View{State: state, Title: title, StatusLine: line, Tooltip: tooltip(title, line, status, online, lang), Items: items}
+}
+
+// tooltip is the detail shown on hover: account, counts, progress when the
+// total is known, and what to do when something needs the user.
+func tooltip(title, line string, status Status, online bool, lang string) string {
+	parts := []string{title, line}
+	if online && status.Blocked > 0 {
+		parts = append(parts, i18n.T(lang, i18n.TrayNeedsHint))
+	}
+	if !online {
+		parts = append(parts, i18n.T(lang, i18n.TrayStartHint))
+	}
+	return strings.Join(parts, "\n")
 }
 
 func autostartTitle(lang string) string {
@@ -147,8 +202,9 @@ func autostartTitle(lang string) string {
 }
 
 // jobItems fills the fixed job slots with the last snapshot, which is kept
-// while the daemon is unreachable.
-func jobItems(snap Snapshot, lang string) []Item {
+// while the daemon is unreachable. The library and the latest result come after
+// the slots.
+func jobItems(snap Snapshot, lang string, result string) []Item {
 	items := make([]Item, 0, jobSlots+2)
 	for i := range jobSlots {
 		item := Item{ID: fmt.Sprintf("%s:%d", jobSlotID, i), Hidden: true}
@@ -160,7 +216,8 @@ func jobItems(snap Snapshot, lang string) []Item {
 		items = append(items, item)
 	}
 	items = append(items, Item{Separator: true})
-	items = append(items, Item{ID: ActionOpenTUI + ":jobs", Title: i18n.T(lang, i18n.OpenTUI), Enabled: true})
+	items = append(items, Item{ID: ActionOpenAll, Title: i18n.T(lang, i18n.TrayOpenAll), Enabled: true})
+	items = append(items, Item{ID: ActionOpenResult, Title: i18n.T(lang, i18n.OpenResult), Enabled: result != ""})
 	return items
 }
 
@@ -206,6 +263,10 @@ func stateLabel(s State, lang string) string {
 		return i18n.T(lang, i18n.StateError)
 	case StateOffline:
 		return i18n.T(lang, i18n.StateOffline)
+	case StatePaused:
+		return i18n.T(lang, i18n.StatePaused)
+	case StateReconnecting:
+		return i18n.T(lang, i18n.StateReconnect)
 	}
 	return i18n.T(lang, i18n.StateIdle)
 }

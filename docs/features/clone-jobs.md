@@ -189,3 +189,28 @@ Chi tiết: [design/s5-selective-sync.md](../design/s5-selective-sync.md).
   lại link tạo job mới sau khi job cũ kết thúc).
 - Không chọn nhiều nguồn/batch trong một request; không watch/push.
 - Unknown outcome chỉ reconcile bằng query (không có tool repair thủ công).
+
+## Lô (batch), hàng đợi và tạm dừng (S6)
+
+Thiết kế đầy đủ: [design/s6-batch-queue.md](../design/s6-batch-queue.md). Tóm tắt:
+
+- Nhiều link trong một lệnh: mỗi link một job, chung `batch_id` (`jobs.batch_id`, cột sinh từ body). Khóa
+  idempotency của từng link là `khóa-lô:chỉ-số`, nên gửi lại cả lô không tạo job mới; một link lỗi không làm hỏng các
+  link khác. `GET /v1/batches/{id}` tổng hợp theo trạng thái (chỉ trong principal).
+- Hàng đợi: job `queued` được chọn theo ưu tiên (`priority` -5..5), rồi **fair share** theo nhóm (lô, hoặc collection
+  đơn lẻ): nhóm đang có ít job chạy hơn được ưu tiên, nên một lô 20 link không chiếm hết slot khi có job đơn lẻ chờ.
+  Cùng ưu tiên và cùng số chạy thì FIFO (`queue_order`). Truy vấn dùng chỉ mục `jobs_queue` và `jobs_fair`
+  (kiểm bằng `EXPLAIN QUERY PLAN` trong test). `POST /v1/jobs/{id}/move` (before/after/priority, có revision).
+- Tạm dừng toàn hàng đợi: `POST /v1/queue/pause|resume` (owner). Cờ bền `settings.queue_paused`; job đang chạy
+  chuyển `pausing` → `paused` ở điểm an toàn; resume chỉ đưa lại job **do hàng đợi** tạm dừng (job người dùng tự
+  tạm dừng vẫn tạm dừng). Trạng thái ở `GET /v1/status` (`queue.paused`).
+- Số slot đồng thời là `Engine.Jobs` (mặc định 2). **Chưa có tùy chọn `max_active_jobs` trong cấu hình** — hiện là
+  hằng số của engine.
+
+## Kiểm tra sâu trước khi copy (S7)
+
+Thiết kế: [design/s7-deep-preflight.md](../design/s7-deep-preflight.md). `POST /v1/plans` với `deep: true` (hoặc
+`inspect --deep`) trả plan ngay với `preview.deep.state = "running"`; quét chỉ đọc chạy nền, `GET /v1/plans/{id}` cho
+kết quả, `POST /v1/plans/{id}/preflight/cancel` để hủy. Kết quả chỉ `complete = true` khi quét hết; hủy, hết hạn
+(TTL 1 giờ) hoặc daemon khởi động lại (`interrupted`) đều không được báo là tổng. Cảnh báo (không chặn):
+`estimate_unknown`, `destination_storage_short`, `may_hit_daily_limit`.

@@ -22,12 +22,17 @@ import (
 type State string
 
 const (
-	StateIdle    State = "idle"
-	StateBusy    State = "busy"
-	StateNeeds   State = "needs"
-	StateError   State = "error"
-	StateOffline State = "offline"
+	StateIdle         State = "idle"
+	StateBusy         State = "busy"
+	StateNeeds        State = "needs"
+	StateError        State = "error"
+	StateOffline      State = "offline"
+	StatePaused       State = "paused"
+	StateReconnecting State = "reconnecting"
 )
+
+// AllStates lists every icon state in the order the menu documents them.
+var AllStates = []State{StateBusy, StateIdle, StatePaused, StateOffline, StateReconnecting, StateNeeds, StateError}
 
 const (
 	// iconSize is the PNG size used for the tray (scaled by the desktop).
@@ -185,6 +190,13 @@ func drawIcon(st State, frame, size int) (*image.NRGBA, error) {
 		for i := 3; i < len(img.Pix); i += 4 {
 			img.Pix[i] /= 2
 		}
+	case StatePaused:
+		// Two bars in the corner: they stay readable at 16px, unlike a thin symbol.
+		bar := color.NRGBA{R: 0xf2, G: 0xf2, B: 0xf2, A: 0xff}
+		rect(img, s*0.64, s*0.62, s*0.75, s*0.92, bar)
+		rect(img, s*0.82, s*0.62, s*0.93, s*0.92, bar)
+	case StateReconnecting:
+		dot(img, s*0.78, s*0.78, s*0.17, color.NRGBA{R: 0x4d, G: 0xa6, B: 0xff, A: 0xff})
 	}
 	return img, nil
 }
@@ -286,4 +298,14 @@ func WriteIcons(dir string) error {
 // decodeIcon is used by tests to check the produced image.
 func decodeIcon(data []byte) (image.Image, error) {
 	return png.Decode(bytes.NewReader(data))
+}
+
+// rect fills an axis-aligned box in icon pixels, clipped to the image.
+func rect(img *image.NRGBA, x0, y0, x1, y1 float64, fill color.NRGBA) {
+	b := img.Bounds()
+	for y := max(b.Min.Y, int(y0)); y < min(b.Max.Y, int(y1)+1); y++ {
+		for x := max(b.Min.X, int(x0)); x < min(b.Max.X, int(x1)+1); x++ {
+			img.SetNRGBA(x, y, fill)
+		}
+	}
 }

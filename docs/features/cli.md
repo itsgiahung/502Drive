@@ -18,8 +18,10 @@ Test: [cli_test.go](../../internal/cli/cli_test.go), [drive_test.go](../../inter
                [--env-file PATH] [--no-env]   # keys from .env/env; hỏi trong terminal nếu còn thiếu
 502drive serve [--maintenance]
 502drive status
-502drive inspect SOURCE [--to ID] [--name NAME] [--shortcuts follow|skip] [--on-conflict skip|rename|update] [FILTER]
-502drive copy [SOURCE|--stdin] [--to ID] [--name NAME|--auto-name] [--wait] [--idempotency-key K] [--shortcuts follow|skip] [--on-conflict skip|rename|update] [FILTER] [--update|--new]
+502drive inspect SOURCE [--to ID] [--name NAME] [--shortcuts follow|skip] [--on-conflict skip|rename|update] [FILTER] [--deep]
+502drive copy [SOURCE...|--stdin] [--to ID] [--name NAME|--auto-name] [--wait] [--idempotency-key K] [--shortcuts follow|skip] [--on-conflict skip|rename|update] [FILTER] [--update|--new]
+502drive pause|resume                        # S6: pause/resume the whole job queue (owner)
+502drive jobs move ID [--before ID|--after ID] [--priority N]   # S6: reorder a queued job (-5..5, higher first)
 502drive ls [FOLDER] [--all]                 # FOLDER = link/ID/root (mặc định root)
 502drive info LINK|ID
 502drive mkdir NAME [--in PARENT] [--idempotency-key K]
@@ -115,6 +117,18 @@ Bộ lọc (`FILTER`, S5) dùng chung cho `inspect`, `copy` và `sync filter set
 - `mkdir NAME [--in PARENT]`: `POST /v1/drive/folders` với `Idempotency-Key`
   (cờ riêng hoặc key ngẫu nhiên); in `id` + `link`; `--quiet` chỉ `id`; 409 →
   exit 5. `PARENT` nhận link/ID/`root`; key của folder cha không đi kèm body.
+- `copy` nhiều link (S6): đối số lặp hoặc `--stdin` một link mỗi dòng (dòng trống và trùng bị bỏ). Mỗi link là
+  một job, chung `batch_id` (`batch-…`, suy ra từ nội dung lệnh, nên chạy lại lệnh không tạo job thứ hai). Lô
+  không hỏi; mặc định `--update` (như script). Đầu ra: `Batch … N accepted, M failed` và một dòng cho từng link;
+  `--json` trả `{"data":{"batch_id","accepted","failed","items":[…]}}`. Có link lỗi thì exit code là mã của lỗi
+  đầu tiên, các link khác vẫn được nhận.
+- `inspect --deep` (S7): quét đầy đủ nguồn chỉ đọc, chờ đến khi xong (Ctrl-C chỉ ngừng theo dõi, quét vẫn chạy).
+  In số file/thư mục/byte, native, shortcut, không copy được, thư mục không đọc được, thời gian ước tính và cảnh
+  báo. Kết quả thiếu `complete` (đang chạy/hủy/hết hạn) không được coi là tổng.
+- `pause` / `resume`: tạm dừng hoặc tiếp tục toàn bộ hàng đợi. Job đang chạy chuyển *pausing* rồi *paused* ở điểm an
+  toàn, không mất tiến độ; job chờ không được nhận cho đến khi `resume`. Trạng thái bền qua khởi động lại.
+- `jobs move ID --before OTHER` / `--after OTHER` / `--priority N`: chỉ với job `queued`; phải kèm đúng `revision`
+  (CLI tự lấy).
 - `copy --auto-name`: đặt root `<tên nguồn> (copy YYYY-MM-DD)`, lấy tên nguồn
   bằng một plan chỉ đọc trước khi submit (hai plan, một job); không dùng cùng
   `--name` (exit 2). `--dry-run --auto-name` in plan với tên tự đặt.

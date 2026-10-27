@@ -5,7 +5,9 @@ import (
 	"errors"
 	"github.com/itsgiahung/502Drive/internal/filter"
 	"net/http"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -46,6 +48,15 @@ type Service struct {
 	Throttle  func() ThrottleStatus
 	Now       func() time.Time
 	ConfigDir string
+	// BaseCtx parents background work (deep scans); nil uses Background.
+	BaseCtx context.Context
+	// DeepPlanTTL bounds a deep plan (default 1h). DailyCopyLimit is the
+	// server-side copy allowance per day used for warnings (default 750 GB).
+	DeepPlanTTL    time.Duration
+	DailyCopyLimit int64
+	// deepMu guards deepCancel, the running deep scans by plan id.
+	deepMu     sync.Mutex
+	deepCancel map[string]context.CancelFunc
 
 	// Hooks for doctor checks (nil uses system defaults)
 	DiskSpaceFn func(path string) (freeBytes uint64, totalBytes uint64, err error)
@@ -96,6 +107,9 @@ type PlanRequest struct {
 	Shortcuts     string      `json:"shortcuts,omitempty"`
 	OnConflict    string      `json:"on_conflict,omitempty"`
 	Filter        filter.Spec `json:"filter,omitempty"`
+	// Deep asks for a read-only scan of the whole source (S7). The plan is
+	// returned at once; GET /v1/plans/{id} shows the scan until it completes.
+	Deep bool `json:"deep,omitempty"`
 }
 
 type Preview struct {
@@ -196,6 +210,10 @@ func (s *Service) Inspect(ctx context.Context, p Principal, key string, req Plan
 	plan := state.Plan{ID: state.ID("plan"), Principal: p.ID, SourceID: src.ID, SourceName: src.Name, SourceKind: kind, SourceMime: src.MimeType, SourceSize: src.Size,
 		SourceVersion: src.Fingerprint(), ResourceKey: ref.Key, DestinationID: dst.ID, DestinationFolder: dst.FolderID, DestinationRevision: dst.Revision,
 		RootName: root, Shortcuts: shortcuts, OnConflict: onConflict, Filter: req.Filter, ExpiresAt: s.now().Add(planTTL).UTC(), Revision: 1}
+	if req.Deep {
+		plan.ExpiresAt = s.now().Add(s.deepTTL()).UTC()
+		plan.Deep = &state.DeepPreflight{State: "running", EstimateBasis: "unknown", Warnings: []string{}, UpdatedAt: s.now().UTC()}
+	}
 	view := PlanView{Plan: plan, Warnings: []string{}}
 	if kind == state.KindFile {
 		view.Preview = Preview{ObservedFiles: 1, ScanComplete: true}
@@ -229,6 +247,11 @@ func (s *Service) Inspect(ctx context.Context, p Principal, key string, req Plan
 	}
 	if replayed {
 		view.Plan = stored
+		return view, replayed, nil
+	}
+	if req.Deep {
+		view.Deep = plan.Deep
+		s.startDeep(prov, plan)
 	}
 	return view, replayed, nil
 }
@@ -275,6 +298,18 @@ func (s *Service) Submit(ctx context.Context, p Principal, key, planID string, r
 //   - "update": refresh the existing copy with one delta run, or copy when none exists;
 //   - "": create only when no copy exists; otherwise 409 already_copied.
 func (s *Service) SubmitMode(ctx context.Context, p Principal, key, planID string, revision int, mode string) (state.Result, error) {
+	return s.SubmitModeInBatch(ctx, p, key, planID, revision, mode, "")
+}
+
+// BatchIDPattern is the shape of a batch id: a client-derived token.
+var batchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{8,64}$`)
+
+// SubmitModeInBatch is SubmitMode for one link of a batch (S6). batchID may be
+// empty; when set it must look like a batch id.
+func (s *Service) SubmitModeInBatch(ctx context.Context, p Principal, key, planID string, revision int, mode, batchID string) (state.Result, error) {
+	if batchID != "" && !batchIDPattern.MatchString(batchID) {
+		return state.Result{}, Fail(http.StatusBadRequest, "invalid_request", "batch_id must be 8-64 letters, digits, '-' or '_'.")
+	}
 	if err := state.ValidateKey(key); err != nil {
 		return state.Result{}, Fail(http.StatusBadRequest, "invalid_request", "Idempotency-Key is required (1-128 printable characters).")
 	}
@@ -301,7 +336,7 @@ func (s *Service) SubmitMode(ctx context.Context, p Principal, key, planID strin
 		}
 		return nil
 	}
-	res, err := s.Store.AdmitGuarded(ctx, p.ID, key, planID, revision, guard)
+	res, err := s.Store.AdmitInBatch(ctx, p.ID, key, planID, revision, batchID, guard)
 	var existing state.ErrExistingCopy
 	if errors.As(err, &existing) {
 		return s.answerExistingCopy(ctx, p, key, existing.Copy, mode)

@@ -95,6 +95,13 @@ type Provider interface {
 	ListChanges(ctx context.Context, pageToken string) (changes []Change, next, newStart string, err error)
 }
 
+// QuotaReader is optional: a provider that can report the account's storage
+// quota implements it (limit 0 means unknown or unlimited). Deep preflight uses
+// it to warn, never to block.
+type QuotaReader interface {
+	StorageQuota(ctx context.Context) (limit, usage int64, err error)
+}
+
 // Parent names one folder in a batch listing. ResourceKey is optional (shared
 // drives need it beside the ID).
 type Parent struct {

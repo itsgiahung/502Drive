@@ -28,6 +28,9 @@ type Fake struct {
 	Calls  map[string]int
 	Writes int
 
+	// QuotaLimit and QuotaUsage are what StorageQuota reports (0 limit = unknown).
+	QuotaLimit, QuotaUsage int64
+
 	sharedRoles   map[string]string
 	log           []drive.Change // append-only change feed; token = index
 	InvalidTokens bool           // makes every feed cursor expire
@@ -204,6 +207,11 @@ func (f *Fake) call(op string, x drive.File) error {
 		return f.Before(op, x)
 	}
 	return nil
+}
+
+// StorageQuota implements drive.QuotaReader.
+func (f *Fake) StorageQuota(ctx context.Context) (int64, int64, error) {
+	return f.QuotaLimit, f.QuotaUsage, nil
 }
 
 func (f *Fake) Account(ctx context.Context) (drive.Account, error) {

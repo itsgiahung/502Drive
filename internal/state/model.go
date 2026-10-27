@@ -18,6 +18,7 @@ var (
 	ErrCapacity             = errors.New("capacity_exceeded")
 	ErrPlanChanged          = errors.New("plan_changed")
 	ErrCollectionNotRetired = errors.New("collection_not_retired")
+	ErrInvalidMove          = errors.New("invalid_move")
 )
 
 type ErrCollectionBusy struct {
@@ -109,6 +110,32 @@ type Plan struct {
 	Filter              filter.Spec `json:"filter,omitempty"`
 	ExpiresAt           time.Time   `json:"expires_at"`
 	Revision            int         `json:"revision"`
+	// Deep is the read-only deep scan of the source (S7), when requested.
+	Deep *DeepPreflight `json:"deep,omitempty"`
+}
+
+// DeepPreflight is the result of a read-only scan of a plan's whole source
+// tree (S7). State is running, complete, cancelled, expired, failed, or
+// interrupted (the daemon stopped during the scan). Only a complete scan is
+// Complete; partial counts are never presented as a total.
+type DeepPreflight struct {
+	State         string    `json:"state"`
+	Complete      bool      `json:"complete"`
+	Folders       int       `json:"folders"`
+	Files         int       `json:"files"`
+	Bytes         int64     `json:"bytes"`
+	Native        int       `json:"native_files"`
+	Shortcuts     int       `json:"shortcuts"`
+	CannotCopy    int       `json:"cannot_copy"`
+	Unreadable    int       `json:"unreadable_folders"`
+	Scanned       int       `json:"scanned"`
+	EstimateSecs  *int64    `json:"estimate_seconds,omitempty"`
+	EstimateBasis string    `json:"estimate_basis"`
+	StorageFree   *int64    `json:"storage_free_bytes,omitempty"`
+	DailyLeft     *int64    `json:"daily_copy_left_bytes,omitempty"`
+	Warnings      []string  `json:"warnings"`
+	Error         string    `json:"error,omitempty"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type Counts struct {
@@ -160,6 +187,16 @@ type Job struct {
 	// ResumeAfter is the instant a quota-blocked job may continue on its own.
 	// It is body-only: the engine scans blocked jobs for it.
 	ResumeAfter *time.Time `json:"resume_after,omitempty"`
+	// BatchID groups the links of one "copy many" request (S6). Empty for a
+	// lone job. Stored in the body; batch_id/fair_group columns are generated.
+	BatchID string `json:"batch_id,omitempty"`
+	// Priority orders queued jobs (-5..5, default 0; higher runs first).
+	Priority int `json:"priority"`
+	// QueueOrder is the FIFO position among queued jobs of the same priority.
+	QueueOrder int64 `json:"queue_order,omitempty"`
+	// QueuePaused marks a job that the global queue pause moved to pausing or
+	// paused; only the queue resume (not a user action) may resume it.
+	QueuePaused bool `json:"queue_paused,omitempty"`
 }
 
 // Collection states.

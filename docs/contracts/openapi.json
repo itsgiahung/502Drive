@@ -89,6 +89,8 @@
     }
    }
   },
+  "/v1/plans/{plan_id}": {"get": {"summary": "Read a plan and its deep scan (S7)", "description": "Principal-scoped. A deep scan recorded as running with no worker behind it (after a restart) is reported as interrupted.", "parameters": [{"name": "plan_id", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 128}}], "responses": {"200": {"description": "Plan", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PlanResponse"}}}}, "404": {"$ref": "#/components/responses/Error404"}, "default": {"$ref": "#/components/responses/DefaultError"}}}},
+  "/v1/plans/{plan_id}/preflight/cancel": {"post": {"summary": "Cancel a running deep scan (S7)", "description": "The scan keeps its partial counts but is never reported complete. Cancelling a scan that is not running changes nothing.", "parameters": [{"name": "plan_id", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 128}}], "responses": {"200": {"description": "Plan", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PlanResponse"}}}}, "404": {"$ref": "#/components/responses/Error404"}, "default": {"$ref": "#/components/responses/DefaultError"}}}},
   "/v1/plans": {
    "post": {
     "summary": "Inspect source and create a ten-minute immutable plan",
@@ -801,6 +803,10 @@
     ]
    }
   },
+  "/v1/jobs/{job_id}/move": {"post": {"summary": "Move a queued job (S6)", "description": "Place a queued job before or after another queued job, and/or set its priority. Revision-guarded; a running or finished job returns 409 invalid_transition.", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/JobResponse"}}}}, "403": {"$ref": "#/components/responses/Error403"}, "409": {"$ref": "#/components/responses/Error409"}, "default": {"$ref": "#/components/responses/DefaultError"}}, "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MoveInput"}}}}, "parameters": [{"name": "job_id", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 128}}]}},
+  "/v1/batches/{batch_id}": {"get": {"summary": "Summarise one batch (S6)", "description": "Principal-scoped. Lists the jobs admitted with this batch_id and counts them by state.", "parameters": [{"name": "batch_id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$"}}], "responses": {"200": {"description": "Batch summary", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/BatchResponse"}}}}, "404": {"$ref": "#/components/responses/Error404"}, "default": {"$ref": "#/components/responses/DefaultError"}}}},
+  "/v1/queue/pause": {"post": {"summary": "Pause the whole queue (S6)", "description": "Owner only. Durable: a restart keeps the queue paused. Running jobs move to pausing and settle to paused with every item and cursor kept; queued jobs wait. Idempotent.", "responses": {"200": {"description": "Queue state", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/QueueResponse"}}}}, "403": {"$ref": "#/components/responses/Error403"}, "default": {"$ref": "#/components/responses/DefaultError"}}}},
+  "/v1/queue/resume": {"post": {"summary": "Resume the whole queue (S6)", "description": "Owner only. Returns the jobs the queue pause stopped to queued; jobs a user paused stay paused. Idempotent.", "responses": {"200": {"description": "Queue state", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/QueueResponse"}}}}, "403": {"$ref": "#/components/responses/Error403"}, "default": {"$ref": "#/components/responses/DefaultError"}}}},
   "/v1/jobs/{job_id}/pause": {
    "post": {
     "summary": "Guarded pause; preserve job identity",
@@ -2393,6 +2399,9 @@
      "scan_complete": {
       "type": "boolean"
      },
+     "deep": {
+      "$ref": "#/components/schemas/DeepPreflight"
+     },
      "filter": {
       "type": "object",
       "additionalProperties": false,
@@ -2445,6 +2454,10 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+     "deep": {
+      "type": "boolean",
+      "description": "Scan the whole source read-only in the background (S7). Poll GET /v1/plans/{plan_id} until deep.complete or a final state."
+     },
      "source": {
       "type": "string",
       "minLength": 1,
@@ -2595,7 +2608,8 @@
        "new"
       ],
       "description": "Omit to refuse a second copy of the same source to the same destination (409 already_copied). update refreshes the existing copy with one delta run (or copies when none exists); new always creates another copy."
-     }
+     },
+     "batch_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$", "description": "Groups the links of one batch. Derived from the batch key so a replay keeps it; the fair-share unit of the queue."}
     },
     "required": [
      "plan_id",
@@ -2787,6 +2801,8 @@
       "minLength": 1,
       "maxLength": 128
      },
+     "priority": {"type": "integer", "minimum": -5, "maximum": 5, "description": "Queue priority; higher runs first. Default 0."},
+     "batch_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$", "description": "Set when this job is one link of a batch (S6)."},
      "kind": {
       "type": "string",
       "enum": [
@@ -3382,7 +3398,8 @@
      },
      "throttle": {
       "$ref": "#/components/schemas/Throttle"
-     }
+     },
+     "queue": {"type": "object", "additionalProperties": false, "properties": {"paused": {"type": "boolean", "description": "Global queue pause (S6): queued jobs wait; running jobs settle to paused."}}, "required": ["paused"]}
     },
     "required": [
      "version",
@@ -3685,6 +3702,10 @@
      "request_id"
     ]
    },
+   "MoveInput": {"type": "object", "additionalProperties": false, "properties": {"expected_revision": {"type": "integer", "minimum": 0}, "before": {"type": "string", "minLength": 1, "maxLength": 128}, "after": {"type": "string", "minLength": 1, "maxLength": 128}, "priority": {"type": "integer", "minimum": -5, "maximum": 5}}, "required": ["expected_revision"]},
+   "BatchResponse": {"type": "object", "additionalProperties": false, "properties": {"data": {"type": "object", "additionalProperties": false, "properties": {"batch_id": {"type": "string"}, "total": {"type": "integer", "minimum": 0}, "completed_jobs": {"type": "integer", "minimum": 0}, "by_state": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}}, "items": {"type": "array", "items": {"$ref": "#/components/schemas/Job"}}}, "required": ["batch_id", "total", "completed_jobs", "by_state", "items"]}, "request_id": {"type": "string"}}, "required": ["data", "request_id"]},
+   "QueueResponse": {"type": "object", "additionalProperties": false, "properties": {"data": {"type": "object", "additionalProperties": false, "properties": {"paused": {"type": "boolean"}, "changed": {"type": "boolean"}, "affected_jobs": {"type": "integer", "minimum": 0}}, "required": ["paused", "changed", "affected_jobs"]}, "request_id": {"type": "string"}}, "required": ["data", "request_id"]},
+   "DeepPreflight": {"type": "object", "additionalProperties": false, "properties": {"state": {"type": "string", "enum": ["running", "complete", "cancelled", "expired", "failed", "interrupted"]}, "complete": {"type": "boolean"}, "folders": {"type": "integer", "minimum": 0}, "files": {"type": "integer", "minimum": 0}, "bytes": {"type": "integer", "minimum": 0}, "native_files": {"type": "integer", "minimum": 0}, "shortcuts": {"type": "integer", "minimum": 0}, "cannot_copy": {"type": "integer", "minimum": 0}, "unreadable_folders": {"type": "integer", "minimum": 0}, "scanned": {"type": "integer", "minimum": 0}, "estimate_seconds": {"type": "integer", "minimum": 0}, "estimate_basis": {"type": "string", "enum": ["measured", "unknown"]}, "storage_free_bytes": {"type": "integer"}, "daily_copy_left_bytes": {"type": "integer"}, "warnings": {"type": "array", "items": {"type": "string", "enum": ["estimate_unknown", "destination_storage_short", "may_hit_daily_limit"]}}, "error": {"type": "string"}, "updated_at": {"type": "string", "format": "date-time"}}, "required": ["state", "complete", "folders", "files", "bytes", "native_files", "shortcuts", "cannot_copy", "unreadable_folders", "scanned", "estimate_basis", "warnings", "updated_at"]},
    "ScheduleSpec": {
     "oneOf": [
      {

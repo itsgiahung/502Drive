@@ -374,8 +374,10 @@ func TestStdinSourceAndUsageErrors(t *testing.T) {
 	if res := r.runWith(src.ID+"\n", nil, "copy", "--stdin", "--quiet"); res.code != 0 {
 		t.Fatalf("%+v", res)
 	}
-	if res := r.runWith(src.ID+"\n"+src.ID+"\n", nil, "copy", "--stdin"); res.code != ExitUsage {
-		t.Fatalf("two refs: %+v", res)
+	// Several references are a batch (S6): both lines are admitted, the
+	// repeated one is dropped, and the command succeeds.
+	if res := r.runWith(src.ID+"\n"+src.ID+"\n", nil, "copy", "--stdin", "--quiet"); res.code != 0 || strings.Count(strings.TrimSpace(res.out), "\n") != 0 {
+		t.Fatalf("batch with a repeated ref: %+v", res)
 	}
 	if res := r.runWith("", nil, "copy", src.ID, "--stdin"); res.code != ExitUsage {
 		t.Fatalf("both: %+v", res)

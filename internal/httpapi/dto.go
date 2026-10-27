@@ -48,6 +48,10 @@ func jobDTO(j state.Job) map[string]any {
 		"last_error": failureDTO(j.LastError), "created_at": ts(j.CreatedAt), "updated_at": ts(j.UpdatedAt),
 		"resume_after": tsPtr(j.ResumeAfter),
 	}
+	out["priority"] = j.Priority
+	if j.BatchID != "" {
+		out["batch_id"] = j.BatchID
+	}
 	if j.Shortcuts != "" {
 		out["shortcuts"] = j.Shortcuts
 	}
@@ -95,6 +99,11 @@ func planDTO(v app.PlanView) map[string]any {
 
 func previewDTO(v app.PlanView) map[string]any {
 	out := map[string]any{"observed_files": v.Preview.ObservedFiles, "observed_folders": v.Preview.ObservedFolders, "scan_complete": v.Preview.ScanComplete}
+	if v.Deep != nil {
+		// The deep block is the whole scan result (S7); complete is true only
+		// when the scan finished. Partial counts never read as totals.
+		out["deep"] = v.Deep
+	}
 	if v.Filter.Active() {
 		out["filter"] = map[string]any{
 			"included": v.Preview.FilterIncluded, "excluded": v.Preview.FilterExcluded,

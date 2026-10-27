@@ -214,3 +214,17 @@ SEARCH c USING INDEX items_parent (collection_id=? AND parent_source_id=?)
 - **Chưa đo**: copy 10k file (cần Drive thật), `scripts/soak.sh` (chỉ kiểm `bash -n`).
 - `systemd-analyze verify packaging/502drive.service`: không lỗi cú pháp; chỉ cảnh báo
   `/usr/bin/502drive` chưa được cài.
+
+## Đợt C2 (S6 → S7 → T4)
+
+Lệnh kiểm chứng và kết quả: xem `docs/handoff/BATCH-C2-REPORT.md` (dán nguyên văn).
+
+Số đo (hàng đợi): không đo thời gian trên bảng lớn trong đợt này. Chứng cứ đã có: `EXPLAIN QUERY PLAN` của truy vấn
+chọn job (`TestQueueClaimUsesIndexes`) dùng `jobs_queue` và `jobs_fair`, không `SCAN jobs`. Đo thực tế với 10 000
+job chờ và tốc độ `ClaimQueued` là việc còn lại.
+
+Số đo (tray): **chưa đo CPU nhàn rỗi** — không có desktop thật trong môi trường đợt này. Phép đo đề xuất:
+`/proc/<pid>/stat` của `502drive-tray` trong 60 s nhàn rỗi, trước và sau đợt T4.
+
+Số đo (preflight): không đo; quét dùng BFS theo trang và chỉ giữ id thư mục, không nạp cây vào RAM. Chưa đo số
+lệnh API trên cây lớn.

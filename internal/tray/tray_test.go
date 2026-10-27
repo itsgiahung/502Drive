@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestIconStatesAreDistinctAndSized(t *testing.T) {
@@ -142,7 +143,34 @@ func snapOf(running, queued, blocked int, account string, jobs ...Job) Snapshot 
 		Blocked: blocked, AccountStatus: account}, Jobs: jobs}
 }
 
+// itemByID finds a menu row (top level or inside a submenu) by its fixed id.
+func menuRow(t *testing.T, v View, id string) Item {
+	t.Helper()
+	for _, it := range v.Items {
+		if it.ID == id {
+			return it
+		}
+		for _, c := range it.Children {
+			if c.ID == id {
+				return c
+			}
+		}
+	}
+	t.Fatalf("no menu item %q in %+v", id, v.Items)
+	return Item{}
+}
+
 func TestClassifyPrecedence(t *testing.T) {
+	paused := snapOf(1, 0, 0, "connected")
+	paused.Status.QueuePaused = true
+	blockedPaused := snapOf(0, 0, 1, "connected")
+	blockedPaused.Status.QueuePaused = true
+	resuming := snapOf(0, 0, 0, "connected")
+	resuming.Status.Lifecycle = "resuming"
+	sleeping := snapOf(0, 0, 0, "connected")
+	sleeping.Status.Lifecycle = "sleeping"
+	accountLost := snapOf(0, 0, 0, "connected")
+	accountLost.Status.Lifecycle = "reconnect_required"
 	for _, tc := range []struct {
 		name   string
 		snap   Snapshot
@@ -150,9 +178,14 @@ func TestClassifyPrecedence(t *testing.T) {
 		want   State
 	}{
 		{"offline wins", snapOf(1, 1, 1, "connected"), false, StateOffline},
+		{"sleeping machine is offline", sleeping, true, StateOffline},
 		{"not ready", Snapshot{Status: Status{Ready: false}}, true, StateError},
 		{"blocked", snapOf(0, 0, 2, "connected"), true, StateNeeds},
 		{"account", snapOf(0, 0, 0, "reconnect_required"), true, StateNeeds},
+		{"account lost after resume", accountLost, true, StateNeeds},
+		{"resuming reconnects", resuming, true, StateReconnecting},
+		{"paused", paused, true, StatePaused},
+		{"blocked beats paused", blockedPaused, true, StateNeeds},
 		{"busy", snapOf(1, 0, 0, "connected"), true, StateBusy},
 		{"queued is busy", snapOf(0, 3, 0, "connected"), true, StateBusy},
 		{"idle", snapOf(0, 0, 0, "connected"), true, StateIdle},
@@ -165,36 +198,43 @@ func TestClassifyPrecedence(t *testing.T) {
 
 func TestBuildViewUsesTheLanguage(t *testing.T) {
 	vi := BuildViewLang(snapOf(1, 0, 0, "connected"), true, "", "vi")
-	if vi.Items[1].Title != "Mở menu TUI" || vi.Items[6].Title != "Bật daemon" {
-		t.Fatalf("vi view = %+v", vi.Items)
+	for id, want := range map[string]string{
+		ActionOpenTUI: "Mở 502Drive", ActionQueueToggle: "Tạm dừng tất cả",
+		ActionStopDaemon: "Dừng 502Drive…", ActionQuit: "Thoát khay", ActionOpenAll: "Mở tất cả",
+	} {
+		if got := menuRow(t, vi, id).Title; got != want {
+			t.Errorf("vi %s = %q, want %q", id, got, want)
+		}
 	}
-	if vi.Items[7].Title != "Dừng 502Drive…" || vi.Items[10].Title != "Thoát khay" {
-		t.Fatalf("vi stop/quit = %q / %q", vi.Items[7].Title, vi.Items[10].Title)
-	}
-	if !strings.Contains(vi.Items[8].Title, "Khởi động cùng hệ thống") {
-		t.Fatalf("vi autostart = %q", vi.Items[8].Title)
+	if !strings.Contains(menuRow(t, vi, ActionAutostart).Title, "Khởi động cùng hệ thống") {
+		t.Fatalf("vi autostart = %q", menuRow(t, vi, ActionAutostart).Title)
 	}
 	en := BuildViewLang(snapOf(1, 0, 0, "connected"), true, "", "en")
-	if en.Items[1].Title != "Open TUI" || en.Items[6].Title != "Start daemon" {
-		t.Fatalf("en view = %+v", en.Items)
+	for id, want := range map[string]string{
+		ActionOpenTUI: "Open 502Drive", ActionQueueToggle: "Pause all",
+		ActionStopDaemon: "Stop 502Drive…", ActionQuit: "Quit tray",
+	} {
+		if got := menuRow(t, en, id).Title; got != want {
+			t.Errorf("en %s = %q, want %q", id, got, want)
+		}
 	}
-	if en.Items[7].Title != "Stop 502Drive…" || en.Items[10].Title != "Quit tray" {
-		t.Fatalf("en stop/quit = %q / %q", en.Items[7].Title, en.Items[10].Title)
+	if !strings.Contains(menuRow(t, en, ActionAutostart).Title, "Start on login") {
+		t.Fatalf("en autostart = %q", menuRow(t, en, ActionAutostart).Title)
 	}
-	if !strings.Contains(en.Items[8].Title, "Start on login") {
-		t.Fatalf("en autostart = %q", en.Items[8].Title)
+	// Start is for a down daemon (hidden while online); stopping is the confirmed item, only online.
+	if !menuRow(t, en, ActionDaemon).Hidden && menuRow(t, en, ActionDaemon).Enabled {
+		t.Fatal("start is offered while the daemon is online")
 	}
-	// Start is for a down daemon; stopping is the confirmed item, only online.
-	if en.Items[6].Enabled || !en.Items[7].Enabled {
-		t.Fatalf("start/stop enabled flags = %v / %v while online", en.Items[6].Enabled, en.Items[7].Enabled)
+	if !menuRow(t, en, ActionStopDaemon).Enabled {
+		t.Fatal("stop is disabled while online")
 	}
 	// The default BuildView stays English for the CLI contract.
-	if got := BuildView(snapOf(0, 0, 0, "connected"), true, "").Items[1].Title; got != "Open TUI" {
+	if got := menuRow(t, BuildView(snapOf(0, 0, 0, "connected"), true, ""), ActionOpenTUI).Title; got != "Open 502Drive" {
 		t.Fatalf("default view = %q", got)
 	}
 	withJob := BuildViewLang(snapOf(1, 0, 0, "connected", Job{SourceName: "Alpha", State: "running", Completed: 2}), true, "", "vi")
-	if !strings.Contains(withJob.Items[3].Children[0].Title, "ĐANG CHẠY") {
-		t.Fatalf("vi job line = %q", withJob.Items[3].Children[0].Title)
+	if !strings.Contains(menuRow(t, withJob, "job:0").Title, "ĐANG CHẠY") {
+		t.Fatalf("vi job line = %q", menuRow(t, withJob, "job:0").Title)
 	}
 }
 
@@ -202,6 +242,9 @@ func TestBuildViewKeepsAStableStructure(t *testing.T) {
 	empty := BuildView(Snapshot{}, false, "")
 	busy := BuildView(snapOf(1, 2, 0, "connected", Job{SourceName: "Alpha", State: "running", Completed: 3}),
 		true, "copied job_1")
+	if len(empty.Items) != len(busy.Items) {
+		t.Fatalf("menu length changed: %d vs %d", len(empty.Items), len(busy.Items))
+	}
 	for i := range empty.Items {
 		if empty.Items[i].ID != busy.Items[i].ID || empty.Items[i].Separator != busy.Items[i].Separator {
 			t.Fatalf("item %d changed identity: %+v vs %+v", i, empty.Items[i], busy.Items[i])
@@ -220,40 +263,62 @@ func TestBuildViewKeepsAStableStructure(t *testing.T) {
 			ids = append(ids, c.ID)
 		}
 	}
-	want := []string{"status", ActionOpenTUI, ActionPaste, "jobs", "job:0", "job:1", "job:2", ActionOpenTUI + ":jobs", ActionOpenResult, ActionDaemon, ActionStopDaemon, ActionAutostart, ActionQuit}
+	// Grouped: status, clone/open, jobs, queue pause, settings, quit and stop.
+	want := []string{"status", ActionDaemon, ActionPaste, ActionOpenTUI, "jobs", "job:0", "job:1", "job:2",
+		ActionOpenAll, ActionOpenResult, ActionQueueToggle, "settings", ActionAutostart, ActionQuit, ActionStopDaemon}
 	if strings.Join(ids, ",") != strings.Join(want, ",") {
 		t.Fatalf("ids = %v, want %v", ids, want)
 	}
-	if busy.State != StateBusy || busy.Items[1].Title != "Open TUI" {
-		t.Fatalf("busy view = %+v", busy)
+	if busy.State != StateBusy {
+		t.Fatalf("busy view state = %q", busy.State)
 	}
-	if busy.Items[3].Children[0].Title == "" || busy.Items[3].Children[1].Hidden != true {
-		t.Fatalf("job slots = %+v", busy.Items[3].Children)
+	if menuRow(t, busy, "job:0").Title == "" || !menuRow(t, busy, "job:1").Hidden {
+		t.Fatalf("job slots = %+v", menuRow(t, busy, "job:0"))
 	}
 	if !strings.Contains(busy.Title, "copied job_1") {
-		t.Fatalf("note not shown in the tooltip: %q", busy.Title)
+		t.Fatalf("note not shown in the title: %q", busy.Title)
 	}
 	offline := BuildView(Snapshot{}, false, "")
-	if offline.Items[2].Enabled {
+	if menuRow(t, offline, ActionPaste).Enabled {
 		t.Fatal("paste is enabled while offline")
 	}
-	if offline.Items[6].Title != "Start daemon" {
-		t.Fatalf("daemon label = %q", offline.Items[6].Title)
+	if menuRow(t, offline, ActionDaemon).Title != "Start 502Drive" {
+		t.Fatalf("daemon label = %q", menuRow(t, offline, ActionDaemon).Title)
 	}
-	if !offline.Items[6].Enabled || offline.Items[7].Enabled {
-		t.Fatalf("start/stop enabled flags offline = %v / %v", offline.Items[6].Enabled, offline.Items[7].Enabled)
+	if !menuRow(t, offline, ActionDaemon).Enabled || menuRow(t, offline, ActionStopDaemon).Enabled {
+		t.Fatalf("start/stop enabled flags offline")
+	}
+	if menuRow(t, offline, ActionQueueToggle).Enabled {
+		t.Fatal("queue pause is enabled while the daemon is offline")
+	}
+}
+
+func TestPasteAndQueueStateAreGreyedOutWithAReason(t *testing.T) {
+	notConnected := BuildView(snapOf(0, 0, 0, "reconnect_required"), true, "")
+	paste := menuRow(t, notConnected, ActionPaste)
+	if paste.Enabled || !strings.Contains(paste.Title, "Google") {
+		t.Fatalf("paste without a Google account = %+v", paste)
+	}
+	offline := BuildView(Snapshot{}, false, "")
+	if q := menuRow(t, offline, ActionQueueToggle); q.Enabled || !strings.Contains(q.Title, "not running") {
+		t.Fatalf("queue toggle offline = %+v", q)
+	}
+	paused := snapOf(0, 1, 0, "connected")
+	paused.Status.QueuePaused = true
+	toggle := menuRow(t, BuildView(paused, true, ""), ActionQueueToggle)
+	if toggle.Title != "Resume all" || !toggle.Enabled {
+		t.Fatalf("paused toggle = %+v", toggle)
 	}
 }
 
 func TestBuildViewEnablesTheResultOnlyWhenThereIsOne(t *testing.T) {
 	done := Job{SourceName: "Alpha", State: "succeeded", ResultURL: "https://drive.google.com/drive/folders/abc"}
 	view := BuildView(snapOf(0, 0, 0, "connected", done), true, "")
-	result := view.Items[4]
-	if !result.Enabled {
+	if !menuRow(t, view, ActionOpenResult).Enabled {
 		t.Fatal("result item disabled although a copy completed")
 	}
 	none := BuildView(snapOf(0, 0, 0, "connected"), true, "")
-	if none.Items[4].Enabled {
+	if menuRow(t, none, ActionOpenResult).Enabled {
 		t.Fatal("result item enabled without a finished copy")
 	}
 }
@@ -261,12 +326,117 @@ func TestBuildViewEnablesTheResultOnlyWhenThereIsOne(t *testing.T) {
 func TestBuildViewStripsControlCharacters(t *testing.T) {
 	name := "evil\x1b[31m\nname\u202ereversed"
 	view := BuildView(snapOf(0, 0, 0, "connected", Job{SourceName: name, State: "running"}), true, "")
-	line := view.Items[3].Children[0].Title
+	line := menuRow(t, view, "job:0").Title
 	if strings.ContainsAny(line, "\x1b\n\r\u202e") {
 		t.Fatalf("control characters reached the menu: %q", line)
 	}
 	if !strings.Contains(line, "evil") || !strings.Contains(line, "reversed") {
 		t.Fatalf("the name was mangled: %q", line)
+	}
+}
+
+// The tooltip carries the detail the menu does not: the account, the counts,
+// and what to do when something needs the user or the daemon is down.
+func TestTooltipCarriesDetailAndHints(t *testing.T) {
+	blocked := BuildViewLang(snapOf(0, 0, 2, "connected"), true, "", "en")
+	if !strings.Contains(blocked.Tooltip, "Google: connected") || !strings.Contains(blocked.Tooltip, "Something needs you") {
+		t.Fatalf("blocked tooltip = %q", blocked.Tooltip)
+	}
+	offline := BuildViewLang(Snapshot{}, false, "", "en")
+	if !strings.Contains(offline.Tooltip, "Start 502Drive") {
+		t.Fatalf("offline tooltip = %q", offline.Tooltip)
+	}
+}
+
+// Vietnamese menu labels, including the reasons, must stay short enough for a
+// menu row (48 characters) so they are not cut off by the desktop.
+func TestVietnameseMenuLabelsFitTheRow(t *testing.T) {
+	offline := BuildViewLang(Snapshot{}, false, "", "vi")
+	notConnected := BuildViewLang(snapOf(0, 0, 0, "reconnect_required"), true, "", "vi")
+	for _, v := range []View{offline, notConnected} {
+		for _, it := range v.Items {
+			for _, row := range append([]Item{it}, it.Children...) {
+				if n := utf8.RuneCountInString(row.Title); n > 48 && row.ID != "status" && !strings.HasPrefix(row.ID, jobSlotID) {
+					t.Errorf("row %q is %d characters: %q", row.ID, n, row.Title)
+				}
+			}
+		}
+	}
+}
+
+// Only a changed view reaches the desktop: an idle poll pushes nothing.
+func TestAgentPushesOnlyChangedViews(t *testing.T) {
+	paused := false
+	o := Options{
+		Host: Host{GOOS: "linux", Getenv: func(string) string { return "" }},
+		Status: func(context.Context) (Status, error) {
+			return Status{Ready: true, AccountStatus: "connected", QueuePaused: paused}, nil
+		},
+		Jobs:       func(context.Context) ([]Job, error) { return nil, nil },
+		Copy:       func(context.Context, string) (string, error) { return "", nil },
+		Now:        func() time.Time { return time.Unix(1_700_000_000, 0) },
+		QueuePause: func(context.Context, bool) error { return nil },
+	}
+	a := newAgent(o)
+	p := &fakePresenter{}
+	a.p = p
+	a.refresh(context.Background())
+	a.refresh(context.Background())
+	a.refresh(context.Background())
+	if len(p.views) != 1 {
+		t.Fatalf("idle polls pushed %d views, want 1", len(p.views))
+	}
+	paused = true
+	a.refresh(context.Background())
+	if len(p.views) != 2 || p.last().State != StatePaused {
+		t.Fatalf("pause did not reach the desktop: %d views, last %q", len(p.views), p.last().State)
+	}
+}
+
+// The queue toggle calls the daemon with the opposite of the state it shows.
+func TestQueueToggleCallsTheDaemonWithTheOppositeState(t *testing.T) {
+	var calls []bool
+	paused := false
+	o := Options{
+		Host: Host{GOOS: "linux", Getenv: func(string) string { return "" }},
+		Status: func(context.Context) (Status, error) {
+			return Status{Ready: true, AccountStatus: "connected", QueuePaused: paused}, nil
+		},
+		Jobs: func(context.Context) ([]Job, error) { return nil, nil },
+		Copy: func(context.Context, string) (string, error) { return "", nil },
+		QueuePause: func(_ context.Context, p bool) error {
+			calls = append(calls, p)
+			paused = p
+			return nil
+		},
+	}
+	a := newAgent(o)
+	a.p = &fakePresenter{}
+	a.refresh(context.Background())
+	a.action(context.Background(), ActionQueueToggle)
+	a.action(context.Background(), ActionQueueToggle)
+	if len(calls) != 2 || calls[0] != true || calls[1] != false {
+		t.Fatalf("toggle calls = %v, want [true false]", calls)
+	}
+}
+
+// Every state has an icon that stays distinct from idle at small sizes.
+func TestEveryStateIconIsReadableAt16px(t *testing.T) {
+	idle, err := drawIcon(StateIdle, 0, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range AllStates {
+		img, err := drawIcon(st, 0, 16)
+		if err != nil {
+			t.Fatalf("%s: %v", st, err)
+		}
+		if st == StateIdle {
+			continue
+		}
+		if string(img.Pix) == string(idle.Pix) {
+			t.Errorf("%s icon is identical to idle at 16px", st)
+		}
 	}
 }
 
@@ -560,7 +730,7 @@ func TestAgentRefreshAndActions(t *testing.T) {
 	if online || view.State != StateOffline {
 		t.Fatalf("offline view = %+v", view)
 	}
-	if len(view.Items[3].Children) == 0 || view.Items[3].Children[0].Hidden {
+	if menuRow(t, view, "job:0").Hidden {
 		t.Fatal("the last jobs were dropped while offline")
 	}
 
@@ -874,15 +1044,15 @@ func TestTrayDynamicLanguageChangeWithoutRestart(t *testing.T) {
 
 	ctx := t.Context()
 	view, _ := a.refresh(ctx)
-	if view.Items[1].Title != "Open TUI" {
-		t.Fatalf("expected English 'Open TUI', got %q", view.Items[1].Title)
+	if got := menuRow(t, view, ActionOpenTUI).Title; got != "Open 502Drive" {
+		t.Fatalf("expected English 'Open 502Drive', got %q", got)
 	}
 
 	// Dynamically change language preference to Vietnamese
 	currentLang = "vi"
 	view, _ = a.refresh(ctx)
-	if view.Items[1].Title != "Mở menu TUI" {
-		t.Fatalf("expected Vietnamese 'Mở menu TUI' after dynamic change, got %q", view.Items[1].Title)
+	if got := menuRow(t, view, ActionOpenTUI).Title; got != "Mở 502Drive" {
+		t.Fatalf("expected Vietnamese 'Mở 502Drive' after dynamic change, got %q", got)
 	}
 }
 

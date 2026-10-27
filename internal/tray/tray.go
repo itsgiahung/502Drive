@@ -6,6 +6,8 @@ package tray
 import (
 	"context"
 	"errors"
+	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"sync"
 	"time"
@@ -50,8 +52,11 @@ type Options struct {
 	Quiet func(ctx context.Context) (bool, error)
 	// AutostartToggle flips autostart. If nil, autostart.Toggle is used.
 	AutostartToggle func() (bool, error)
-	Log             *slog.Logger
-	Now             func() time.Time
+	// QueuePause pauses (true) or resumes (false) the whole job queue through
+	// the daemon API. Nil disables the item.
+	QueuePause func(ctx context.Context, paused bool) error
+	Log        *slog.Logger
+	Now        func() time.Time
 }
 
 func (o Options) now() time.Time {
@@ -101,6 +106,9 @@ type agent struct {
 	// click only arms it; the second one inside stopConfirmWindow stops.
 	stopArmed   bool
 	stopArmedAt time.Time
+	// sig is the signature of the last View shown. An unchanged view is not
+	// pushed to the desktop again, so an idle tray does no menu work.
+	sig uint64
 }
 
 // stopConfirmWindow is how long the armed confirmation stays valid. It is
@@ -190,8 +198,11 @@ func (a *agent) refresh(ctx context.Context) (View, bool) {
 			}
 		}
 	}
-	if showErr := a.p.show(view); showErr != nil {
-		a.o.log().Warn("tray: cannot update the menu", "err", showErr)
+	if s := viewSignature(view); s != a.sig {
+		a.sig = s
+		if showErr := a.p.show(view); showErr != nil {
+			a.o.log().Warn("tray: cannot update the menu", "err", showErr)
+		}
 	}
 	return view, online
 }
@@ -278,6 +289,8 @@ func (a *agent) action(ctx context.Context, id string) {
 		return
 	case ActionStopDaemon:
 		err = a.stopDaemonAction(ctx)
+	case ActionQueueToggle:
+		err = a.toggleQueue(ctx)
 	case ActionOpenTUI, ActionOpenTUI + ":jobs":
 		err = OpenTUI(a.o.Host, a.o.Exe)
 	case ActionPaste:
@@ -369,6 +382,26 @@ func (a *agent) stopDaemonAction(ctx context.Context) error {
 	return nil
 }
 
+// toggleQueue pauses the whole queue, or resumes it when it is paused. It
+// only calls the daemon; the next refresh shows the state the daemon reports.
+func (a *agent) toggleQueue(ctx context.Context) error {
+	if a.o.QueuePause == nil {
+		return errors.New("this tray cannot pause the queue")
+	}
+	a.mu.Lock()
+	paused := a.snap.Status.QueuePaused
+	a.mu.Unlock()
+	if err := a.o.QueuePause(ctx, !paused); err != nil {
+		return err
+	}
+	if paused {
+		a.setNote(i18n.T(a.language(), i18n.TrayResumeAll))
+	} else {
+		a.setNote(i18n.T(a.language(), i18n.TrayPauseAll))
+	}
+	return nil
+}
+
 // paste copies the Drive link found in the clipboard.
 func (a *agent) paste(ctx context.Context) error {
 	link, err := ReadDriveLink(ctx, a.o.Host)
@@ -381,4 +414,23 @@ func (a *agent) paste(ctx context.Context) error {
 	}
 	a.setNote("copied " + id)
 	return nil
+}
+
+// viewSignature hashes everything the desktop shows. Two equal signatures mean
+// the menu, tooltip and icon state would not change, so nothing is pushed.
+func viewSignature(v View) uint64 {
+	h := fnv.New64a()
+	write := func(parts ...any) { fmt.Fprintln(h, parts...) }
+	write("state", v.State, "title", v.Title, "tip", v.Tooltip)
+	for _, it := range v.Items {
+		writeItem(write, it)
+	}
+	return h.Sum64()
+}
+
+func writeItem(write func(...any), it Item) {
+	write("item", it.ID, it.Title, it.Enabled, it.Hidden, it.Separator)
+	for _, c := range it.Children {
+		writeItem(write, c)
+	}
 }

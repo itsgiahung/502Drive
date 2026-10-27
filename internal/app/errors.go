@@ -44,6 +44,8 @@ func Classify(err error) *Error {
 		return Fail(http.StatusConflict, "plan_expired", "Inspect the source again.")
 	case errors.Is(err, state.ErrPlanChanged):
 		return Fail(http.StatusConflict, "plan_changed", "The destination changed after the preview; inspect again.")
+	case errors.Is(err, state.ErrInvalidMove):
+		return Fail(http.StatusBadRequest, "invalid_request", "Give exactly one of before or after, or a priority between -5 and 5.")
 	case errors.Is(err, state.ErrTransition):
 		return Fail(http.StatusConflict, "invalid_transition", "That action is not available in the current state.")
 	case errors.Is(err, state.ErrNeedsAction):

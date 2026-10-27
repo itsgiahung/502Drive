@@ -100,6 +100,7 @@ type Status struct {
 	Blocked       int
 	Lifecycle     Lifecycle
 	Throttle      ThrottleStatus
+	QueuePaused   bool
 }
 
 func (s *Service) Status(ctx context.Context) (Status, error) {
@@ -123,13 +124,18 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 	if s.Lifecycle != nil {
 		life = s.Lifecycle()
 	}
+	paused, err := s.Store.QueuePaused(ctx)
+	if err != nil {
+		return Status{}, err
+	}
 	throttle := ThrottleStatus{WorkersNow: 4}
 	if s.Throttle != nil {
 		throttle = s.Throttle()
 	}
 	return Status{Version: s.Version, SchemaVersion: v, Ready: s.Store.Check(ctx) == nil, Account: acc, BotState: bot,
 		Running: counts[state.JobRunning] + counts[state.JobPausing] + counts[state.JobCancelling] + counts[state.JobReconciling],
-		Queued:  counts[state.JobQueued], Blocked: counts[state.JobBlocked], Lifecycle: life, Throttle: throttle}, nil
+		Queued:  counts[state.JobQueued], Blocked: counts[state.JobBlocked], Lifecycle: life, Throttle: throttle,
+		QueuePaused: paused}, nil
 }
 
 func (s *Service) Preferences(ctx context.Context, p Principal) (state.Preferences, error) {

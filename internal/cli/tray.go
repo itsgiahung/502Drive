@@ -75,6 +75,7 @@ func (a *App) runTray(ctx context.Context) error {
 		Jobs:        a.trayJobs,
 		Copy:        a.trayCopy,
 		Language:    a.trayLanguage,
+		QueuePause:  a.trayQueuePause,
 		Quiet:       a.trayQuiet,
 		StartDaemon: a.startDaemonAction,
 		StopDaemon:  a.stopDaemon,
@@ -108,16 +109,33 @@ func (a *App) trayStatus(ctx context.Context) (tray.Status, error) {
 			Status string  `json:"status"`
 			Label  *string `json:"label"`
 		} `json:"account"`
+		Queue struct {
+			Paused bool `json:"paused"`
+		} `json:"queue"`
+		Lifecycle struct {
+			State string `json:"state"`
+		} `json:"lifecycle"`
 	}
 	if err = r.Decode(&st); err != nil {
 		return out, err
 	}
 	out = tray.Status{Version: st.Version, Ready: st.Ready, Running: st.Running, Queued: st.Queued,
-		Blocked: st.Blocked, AccountStatus: st.Account.Status}
+		Blocked: st.Blocked, AccountStatus: st.Account.Status, QueuePaused: st.Queue.Paused, Lifecycle: st.Lifecycle.State}
 	if st.Account.Label != nil {
 		out.AccountLabel = *st.Account.Label
 	}
 	return out, nil
+}
+
+// trayQueuePause pauses or resumes the whole queue (S6). The tray only reports
+// the result; the daemon decides what happens to running jobs.
+func (a *App) trayQueuePause(ctx context.Context, paused bool) error {
+	verb := "resume"
+	if paused {
+		verb = "pause"
+	}
+	_, err := a.call(ctx, "POST", "/v1/queue/"+verb, nil, nil, "")
+	return err
 }
 
 func (a *App) trayJobs(ctx context.Context) ([]tray.Job, error) {

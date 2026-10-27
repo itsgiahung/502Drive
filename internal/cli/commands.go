@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -73,9 +72,10 @@ type planView struct {
 	Destination string `json:"destination_id"`
 	RootName    string `json:"root_name"`
 	Preview     struct {
-		Files    int  `json:"observed_files"`
-		Folders  int  `json:"observed_folders"`
-		Complete bool `json:"scan_complete"`
+		Files    int       `json:"observed_files"`
+		Folders  int       `json:"observed_folders"`
+		Complete bool      `json:"scan_complete"`
+		Deep     *deepView `json:"deep,omitempty"`
 	} `json:"preview"`
 	Warnings []string `json:"warnings"`
 }
@@ -162,11 +162,18 @@ func (a *App) inspectCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if opts.Deep && plan.Preview.Deep != nil && plan.Preview.Deep.State == "running" {
+			// Deep scans are read-only jobs on the daemon; follow until done or Ctrl-C (the scan keeps going).
+			if plan, r, err = a.waitDeepPlan(cmd.Context(), plan.ID); err != nil {
+				return err
+			}
+		}
 		a.emit(r, plan.ID, func() { a.printPlan(plan) })
 		return nil
 	}}
 	c.Flags().StringVar(&to, "to", "", "destination profile ID (default destination if empty)")
 	c.Flags().StringVar(&name, "name", "", "root folder name")
+	c.Flags().BoolVar(&opts.Deep, "deep", false, "scan the whole source read-only and report the exact totals, shortcuts, native files, and warnings")
 	opts.bind(c.Flags())
 	return c
 }
@@ -176,6 +183,7 @@ func (a *App) inspectCmd() *cobra.Command {
 type planOpts struct {
 	Shortcuts  string      // follow or skip
 	OnConflict string      // skip, rename or update
+	Deep       bool        // read-only scan of the whole source (inspect --deep)
 	Filter     filter.Spec // selective sync; filled by validate from the filter flags
 	ff         filterFlags
 }
@@ -219,6 +227,9 @@ func (a *App) makePlan(ctx context.Context, source, to, name, key string, o plan
 	if o.Filter.Active() || o.Filter.KeepEmptyFolders {
 		body["filter"] = o.Filter
 	}
+	if o.Deep {
+		body["deep"] = true
+	}
 	r, err := a.call(ctx, "POST", "/v1/plans", nil, body, key)
 	if err != nil {
 		return plan, nil, err
@@ -232,6 +243,9 @@ func (a *App) printPlan(p planView) {
 		count += " seen so far (preview is not a full scan)"
 	}
 	printKV(a.out(), a.style, []kv{{"plan", p.ID}, {"source", Sanitize(p.SourceName) + "  (" + p.SourceKind + ")"}, {"target", Sanitize(p.RootName)}, {"preview", count}, {"expires", p.ExpiresAt}})
+	if d := p.Preview.Deep; d != nil {
+		printDeep(a, d)
+	}
 }
 
 // pendingStore keeps idempotency keys for copy requests that may have been
@@ -316,49 +330,50 @@ func requestID(parts ...string) string {
 	return hex.EncodeToString(h[:12])
 }
 
-func readStdinRef(r io.Reader) (string, error) {
-	sc := bufio.NewScanner(io.LimitReader(r, 64<<10))
-	var lines []string
-	for sc.Scan() {
-		if t := strings.TrimSpace(sc.Text()); t != "" {
-			lines = append(lines, t)
-		}
-	}
-	if len(lines) != 1 {
-		return "", usage("--stdin expects exactly one Drive reference, got %d", len(lines))
-	}
-	return lines[0], nil
-}
-
 func (a *App) copyCmd() *cobra.Command {
 	var to, name, key string
 	var opts planOpts
 	var wait, useStdin, dry, autoName, update, newCopy bool
 	var waitTimeout time.Duration
-	c := &cobra.Command{Use: "copy [SOURCE]", Short: "Plan and durably submit a server-side copy", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	c := &cobra.Command{Use: "copy [SOURCE...]", Short: "Plan and durably submit one or more server-side copies", Args: cobra.ArbitraryArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		if update && newCopy {
 			return usage("give --update or --new, not both")
 		}
 		if err := opts.validate(); err != nil {
 			return err
 		}
-		var source string
+		var sources []string
 		switch {
-		case useStdin && len(args) == 1:
+		case useStdin && len(args) > 0:
 			return usage("give SOURCE or --stdin, not both")
 		case useStdin:
 			var err error
-			if source, err = readStdinRef(a.io.In); err != nil {
+			if sources, err = readStdinRefs(a.io.In); err != nil {
 				return err
 			}
-		case len(args) == 1:
-			source = strings.TrimSpace(args[0])
+			if len(sources) == 0 {
+				return usage("--stdin expects at least one Drive reference")
+			}
+		case len(args) > 0:
+			for _, arg := range args {
+				if t := strings.TrimSpace(arg); t != "" {
+					sources = append(sources, t)
+				}
+			}
+			if len(sources) == 0 {
+				return usage("a Drive link or ID is required (or --stdin)")
+			}
 		default:
 			return usage("a Drive link or ID is required (or --stdin)")
 		}
 		if autoName && name != "" {
 			return usage("give --name or --auto-name, not both")
 		}
+		if len(sources) > 1 {
+			// Several links: one job each, under one batch id. A batch never prompts.
+			return a.copyBatch(cmd.Context(), sources, to, name, key, opts, copyMode(update, newCopy, false), autoName, dry, wait, waitTimeout)
+		}
+		source := sources[0]
 		if autoName {
 			plan, _, err := a.makePlan(cmd.Context(), source, to, "", NewKey(), opts)
 			if err != nil {
@@ -406,7 +421,7 @@ func (a *App) copyCmd() *cobra.Command {
 	opts.bind(f)
 	f.BoolVar(&autoName, "auto-name", false, "name the root \"<source> (copy YYYY-MM-DD)\"")
 	f.BoolVar(&wait, "wait", false, "follow the job; exit 0 only when it succeeds")
-	f.BoolVar(&useStdin, "stdin", false, "read exactly one reference from stdin")
+	f.BoolVar(&useStdin, "stdin", false, "read Drive references from stdin, one per line (several make a batch)")
 	f.BoolVar(&dry, "dry-run", false, "preview only (same as inspect)")
 	f.BoolVar(&update, "update", false, "if this source is already copied to this destination, refresh that copy (default in scripts)")
 	f.BoolVar(&newCopy, "new", false, "always create another copy, even when one exists")
@@ -541,7 +556,7 @@ func (a *App) jobsCmd() *cobra.Command {
 	events.Flags().Int64Var(&after, "after-sequence", 0, "resume after this sequence")
 	events.Flags().BoolVar(&follow, "follow", false, "keep polling until the job is finished")
 
-	jobs.AddCommand(list, get, wait, events, a.cancelCmd())
+	jobs.AddCommand(list, get, wait, events, a.cancelCmd(), a.jobsMoveCmd())
 	for _, act := range []string{"pause", "resume", "retry"} {
 		act := act
 		jobs.AddCommand(&cobra.Command{Use: act + " JOB_ID", Short: strings.ToUpper(act[:1]) + act[1:] + " a job", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {

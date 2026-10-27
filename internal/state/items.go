@@ -30,37 +30,6 @@ func scanItem(r interface{ Scan(...any) error }) (Item, error) {
 
 // ---- job lifecycle for the engine ----
 
-// ClaimQueued moves the oldest queued job to running. Returns ErrNotFound when
-// there is nothing to do.
-func (s *Store) ClaimQueued(ctx context.Context) (Job, error) {
-	var out Job
-	err := s.tx(ctx, func(tx *sql.Tx) error {
-		var id string
-		e := tx.QueryRowContext(ctx, "SELECT id FROM jobs WHERE state='queued' ORDER BY rowid LIMIT 1").Scan(&id)
-		if errors.Is(e, sql.ErrNoRows) {
-			return ErrNotFound
-		}
-		if e != nil {
-			return e
-		}
-		j, e := readJob(ctx, tx, "", id)
-		if e != nil {
-			return e
-		}
-		phase := "discovering"
-		j.State, j.Phase, j.Revision, j.UpdatedAt = JobRunning, &phase, j.Revision+1, time.Now().UTC()
-		if e = saveJob(ctx, tx, j); e != nil {
-			return e
-		}
-		if e = appendEvent(ctx, tx, j, "started", nil); e != nil {
-			return e
-		}
-		out = j
-		return nil
-	})
-	return out, err
-}
-
 // ActiveJobs lists jobs a previous process left in a working state. Items that
 // were mid-write become reconciling so no write is blindly repeated.
 func (s *Store) ActiveJobs(ctx context.Context) ([]Job, error) {

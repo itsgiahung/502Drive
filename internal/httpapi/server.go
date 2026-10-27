@@ -86,6 +86,8 @@ func (s *Server) Handler() http.Handler {
 	route("POST /v1/shutdown", s.shutdown)
 	route("GET /v1/status", s.status)
 	route("POST /v1/plans", s.createPlan)
+	route("GET /v1/plans/{plan_id}", s.getPlan)
+	route("POST /v1/plans/{plan_id}/preflight/cancel", s.cancelPreflight)
 	route("GET /v1/jobs", s.listJobs)
 	route("POST /v1/jobs", s.createJob)
 	route("GET /v1/jobs/{id}", s.getJob)
@@ -93,6 +95,10 @@ func (s *Server) Handler() http.Handler {
 	for _, a := range []string{"pause", "resume", "cancel", "retry"} {
 		route("POST /v1/jobs/{id}/"+a, s.jobAction(a))
 	}
+	route("POST /v1/jobs/{id}/move", s.moveJob)
+	route("GET /v1/batches/{batch_id}", s.getBatch)
+	route("POST /v1/queue/pause", s.queuePause(true))
+	route("POST /v1/queue/resume", s.queuePause(false))
 	route("GET /v1/drive/folders/{id}", s.browseFolder)
 	route("GET /v1/drive/files/{id}", s.driveFile)
 	route("POST /v1/drive/folders", s.mkdir)
@@ -299,7 +305,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request, p app.Principal)
 	}
 	return 200, map[string]any{"version": st.Version, "schema_version": st.SchemaVersion, "ready": st.Ready, "account": accountDTO(st.Account),
 		"bot_state": st.BotState, "running_jobs": st.Running, "queued_jobs": st.Queued, "blocked_jobs": st.Blocked,
-		"lifecycle": st.Lifecycle, "throttle": st.Throttle}, nil
+		"lifecycle": st.Lifecycle, "throttle": st.Throttle, "queue": map[string]any{"paused": st.QueuePaused}}, nil
 }
 
 // ---- plans & jobs ----
@@ -332,6 +338,8 @@ type jobInput struct {
 	// Mode answers an existing copy of the same source and destination (L2):
 	// "update", "new", or omitted (refuse with 409 already_copied).
 	Mode string `json:"mode,omitempty"`
+	// BatchID groups this job with the other links of one "copy many" request.
+	BatchID string `json:"batch_id,omitempty"`
 }
 
 func (s *Server) createJob(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
@@ -348,7 +356,7 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request, p app.Princip
 	if in.PlanID == "" || in.ExpectedRevision == nil {
 		return 0, nil, app.Fail(400, "invalid_request", "plan_id and expected_revision are required.")
 	}
-	res, err := s.Svc.SubmitMode(r.Context(), p, idemKey(r), in.PlanID, *in.ExpectedRevision, in.Mode)
+	res, err := s.Svc.SubmitModeInBatch(r.Context(), p, idemKey(r), in.PlanID, *in.ExpectedRevision, in.Mode, in.BatchID)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -658,3 +666,80 @@ func (s *Server) getCollection(w http.ResponseWriter, r *http.Request, p app.Pri
 var _ = errors.New
 var _ = context.Background
 var _ state.Job
+
+// ---- queue & batches (S6) ----
+
+type moveInput struct {
+	ExpectedRevision *int   `json:"expected_revision"`
+	Before           string `json:"before,omitempty"`
+	After            string `json:"after,omitempty"`
+	Priority         *int   `json:"priority,omitempty"`
+}
+
+// moveJob places a queued job before or after another queued job and/or sets
+// its priority. Revision-guarded: a job that started or changed meanwhile is
+// refused with stale_revision.
+func (s *Server) moveJob(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
+	var in moveInput
+	if err := decode(r, &in); err != nil {
+		return 0, nil, err
+	}
+	if in.ExpectedRevision == nil {
+		return 0, nil, app.Fail(400, "invalid_request", "expected_revision is required.")
+	}
+	res, err := s.Svc.MoveJob(r.Context(), p, r.PathValue("id"), *in.ExpectedRevision, state.Move{Before: in.Before, After: in.After, Priority: in.Priority})
+	if err != nil {
+		return 0, nil, err
+	}
+	return 200, jobDTO(res.Job), nil
+}
+
+// getBatch summarises one batch: its jobs and counts by state.
+func (s *Server) getBatch(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
+	jobs, err := s.Svc.Batch(r.Context(), p, r.PathValue("batch_id"))
+	if err != nil {
+		return 0, nil, err
+	}
+	byState := map[string]int{}
+	items := make([]any, 0, len(jobs))
+	completed := 0
+	for _, j := range jobs {
+		byState[j.State]++
+		if j.State == state.JobSucceeded {
+			completed++
+		}
+		items = append(items, jobDTO(j))
+	}
+	return 200, map[string]any{"batch_id": r.PathValue("batch_id"), "total": len(jobs), "completed_jobs": completed,
+		"by_state": byState, "items": items}, nil
+}
+
+// queuePause pauses (paused=true) or resumes the whole queue. Owner only.
+func (s *Server) queuePause(paused bool) handler {
+	return func(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
+		out, err := s.Svc.QueuePause(r.Context(), p, paused)
+		if err != nil {
+			return 0, nil, err
+		}
+		return 200, map[string]any{"paused": out.Paused, "changed": out.Changed, "affected_jobs": out.Affected}, nil
+	}
+}
+
+// getPlan returns a stored plan, with its deep scan state when one was asked for.
+func (s *Server) getPlan(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
+	view, err := s.Svc.Plan(r.Context(), p, r.PathValue("plan_id"))
+	if err != nil {
+		return 0, nil, err
+	}
+	return 200, planDTO(view), nil
+}
+
+// cancelPreflight stops a running deep scan; the plan stays usable as a
+// shallow preview, but its deep result is never reported complete.
+func (s *Server) cancelPreflight(w http.ResponseWriter, r *http.Request, p app.Principal) (int, any, error) {
+	view, err := s.Svc.CancelPreflight(r.Context(), p, r.PathValue("plan_id"))
+	if err != nil {
+		return 0, nil, err
+	}
+	return 200, planDTO(view), nil
+}

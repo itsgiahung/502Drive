@@ -152,6 +152,18 @@ func (c *Client) Account(ctx context.Context) (Account, error) {
 	return Account{Email: a.User.EmailAddress, Name: a.User.DisplayName}, nil
 }
 
+// StorageQuota reads the account's storage limit and usage (About.storageQuota).
+func (c *Client) StorageQuota(ctx context.Context) (int64, int64, error) {
+	a, err := c.svc.About.Get().Fields("storageQuota(limit,usage)").Context(ctx).Do()
+	if err != nil {
+		return 0, 0, wrap(err)
+	}
+	if a.StorageQuota == nil {
+		return 0, 0, nil
+	}
+	return a.StorageQuota.Limit, a.StorageQuota.Usage, nil
+}
+
 func (c *Client) GetFile(ctx context.Context, id, resourceKey string) (File, error) {
 	call := c.svc.Files.Get(id).SupportsAllDrives(true).Fields(fileFields).Context(ctx)
 	keyHeader(call.Header(), id, resourceKey)
