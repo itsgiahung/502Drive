@@ -364,8 +364,8 @@ Test: [batch_it_test.go](../../internal/tui/batch_it_test.go), [batch_it2_test.g
 
 ## First-run guide (U1)
 
-`502drive onboard` guides a TTY through OAuth Desktop JSON (regular file, Unix
-0600), detached daemon startup, Google login and a default destination. Existing
+`502drive onboard` guides a TTY through OAuth Desktop JSON (a regular file,
+validated, copied into the 0600 secrets folder; `~` and quotes accepted), detached daemon startup, Google login and a default destination. Existing
 `setup` flags retain their provisioning behavior. Without a TTY, with `--json`
 or `--no-input`, onboard never reads input or starts processes: it emits a JSON
 envelope with `ready` and ordered `checks`, exit **9** when incomplete. An older

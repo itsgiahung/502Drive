@@ -6,7 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"runtime"
+	"path/filepath"
+	"strings"
 
 	"github.com/itsgiahung/502Drive/internal/app"
 	"github.com/itsgiahung/502Drive/internal/config"
@@ -63,10 +64,19 @@ func (a *App) onboardCmd() *cobra.Command {
 				fmt.Fprintln(a.errw(), present.SetupStep("oauth_client", lang))
 				_ = openBrowser("https://console.cloud.google.com/apis/credentials")
 				rd := bufio.NewReader(a.io.In)
-				path := a.promptLine(rd, i18n.T(lang, i18n.SetupOAuthPrompt))
+				path := cleanPromptPath(a.promptLine(rd, i18n.T(lang, i18n.SetupOAuthPrompt)))
+				// The file is validated and copied into the private secrets
+				// folder by setup, so a freshly downloaded 0644 file is fine.
 				st, err := os.Lstat(path)
-				if err != nil || !st.Mode().IsRegular() || (runtime.GOOS != "windows" && st.Mode().Perm() != 0600) {
-					return usage("OAuth client must be a regular file with permissions 0600")
+				if err != nil || !st.Mode().IsRegular() {
+					return usage("the OAuth client must be a regular file: %s", path)
+				}
+				raw, err := readSmallFile(path)
+				if err != nil {
+					return usage("cannot read the OAuth client file: %v", err)
+				}
+				if err = validateOAuthClient(raw); err != nil {
+					return usage("the OAuth client file is not a Google Desktop client JSON: %v", err)
 				}
 				if err = a.runSetup(&setupInput{oauthClientFile: path, noEnv: true}, false); err != nil {
 					return err
@@ -123,4 +133,19 @@ func (a *App) onboardCmd() *cobra.Command {
 		}
 		return nil
 	}}
+}
+
+// cleanPromptPath turns a typed or drag-and-dropped path into a plain one:
+// surrounding whitespace and quotes are dropped and a leading ~ is expanded.
+func cleanPromptPath(p string) string {
+	p = strings.TrimSpace(p)
+	if len(p) >= 2 && (p[0] == '\'' || p[0] == '"') && p[len(p)-1] == p[0] {
+		p = p[1 : len(p)-1]
+	}
+	if p == "~" || strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`) {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = filepath.Join(home, p[1:])
+		}
+	}
+	return p
 }
