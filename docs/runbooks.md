@@ -170,3 +170,26 @@ Checklist (đánh dấu khi có log):
 Ghi lại: OS + phiên bản, thời điểm, đoạn log `power:` + `lifecycle`, kết quả
 `jobs get`, ảnh/`ls` đích nếu có nghi ngờ trùng. Không dùng dữ liệu thật để thử
 "xóa/ghi đè"; chỉ copy trong thư mục test.
+
+## Chạy live acceptance
+
+Harness kiểm thử trực tiếp trên Google Drive thật (`internal/live`) được bảo vệ bằng build tag `live` và cờ môi trường `DRIVE502_LIVE=1`.
+
+### 1. Nguyên tắc an toàn
+- **Cô lập hoàn toàn**: Test tự tạo thư mục gốc duy nhất theo định dạng `502drive-live-test-<unix>` trong My Drive.
+- **Tự động dọn dẹp**: Mọi thao tác copy/tạo mới chỉ diễn ra trong thư mục này. Khi test kết thúc (`t.Cleanup`), thư mục test được tự động chuyển vào thùng rác Google Drive (`TrashFile`). Tuyệt đối không đụng chạm đến bất kỳ dữ liệu nào ngoài thư mục test.
+- **Mô phỏng lỗi kết nối**: Sử dụng `drive.FaultInjector` (bọc `http.RoundTripper`) để mô phỏng mất phản hồi sau ghi hoặc chèn HTTP 429 mà không can thiệp logic của engine.
+
+### 2. Biến môi trường
+- `DRIVE502_LIVE=1`: Bắt buộc để chạy test live.
+- Khóa xác thực (chọn một trong các cách):
+  - `DRIVE502_LIVE_ACCESS_TOKEN`: Bearer token Google OAuth còn hạn.
+  - `DRIVE502_LIVE_CLIENT_SECRET` và `DRIVE502_LIVE_TOKEN_DATA`: Đường dẫn hoặc JSON client_secret và token (tự làm mới khi hết hạn).
+- `DRIVE502_LIVE_TELEGRAM_TOKEN`: (Tuỳ chọn) Bot token để kiểm tra API getMe của Telegram.
+
+### 3. Lệnh chạy
+```bash
+export DRIVE502_LIVE=1
+export DRIVE502_LIVE_ACCESS_TOKEN="<access-token>"
+go test -v -tags=live -timeout 600s ./internal/live
+```
