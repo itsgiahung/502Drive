@@ -25,7 +25,8 @@ Store: [state/telegram.go](../../internal/state/telegram.go), migration
 
 - Home: trạng thái Google/queue + nút Copy · Jobs · Library & sync · Destination ·
   Settings · Account. Không cần gõ lệnh.
-- Dán link (hoặc `/copy`) → `Inspect` → thẻ xem trước đã có mặc định hợp lý:
+- Dán link (hoặc `/copy`) → `Inspect` → thẻ xem trước đã có mặc định hợp lý (**nhiều link trong một tin**
+  thành một lô, xem [Đợt IG](#lô-hàng-đợi-quét-kỹ-đồng-bộ-sau-copy-báo-cáo-lỗi-đợt-ig)):
   **giữ tên gốc** của nguồn và **lưu vào My Drive** khi chưa có thư mục đích nào;
   không cần setup trước lần copy đầu. Nút: Copy ngay · Đổi tên · Chọn nơi lưu ·
   Huỷ. Trong ngăn chọn nơi lưu: Lên / Trang sau / **Lưu vào đây** / **Thư mục mới**
@@ -97,28 +98,80 @@ Trang Cài đặt có: công tắc `🔔 Xong / Lỗi / Cần xử lý` (ghi `no
 - **Báo cáo hằng ngày**: mặc định **tắt** (phải bật). Gửi đúng một lần mỗi ngày dương lịch ở múi giờ preferences
   (qua DST: giờ không tồn tại hay xảy ra hai lần vẫn chỉ một lần), nội dung 24 giờ gần nhất: job xong, lỗi/xong
   một phần, job cần xử lý, số lần đồng bộ có thay đổi, dung lượng và tốc độ trung bình. **Không có gì để nói thì
-  không gửi** (và không tính lại cho đến ngày sau). Lịch lưu ở bảng `settings` (`tg_report:<principal>`,
-  `tg_report_sent:<principal>`), tin đi qua outbox bền với khoá `report:<principal>:<ngày>` nên restart không gửi
-  lặp. Mỗi người chỉ thấy job của mình (operator không thấy job của owner). Chỉ quét 500 job gần nhất.
+  không gửi** (và không tính lại cho đến ngày sau). Giờ gửi là **preference** `daily_report` + `daily_report_at` của chính người đó (đặt bằng `PatchPreferences`,
+  cùng trường mà `PATCH /v1/preferences` và CLI dùng; chat không còn lưu lịch riêng). Chỉ "ngày đã gửi gần nhất"
+  (`tg_report_sent:<principal>`) là trạng thái của bot, trong bảng `settings`; tin đi qua outbox bền với khoá
+  `report:<principal>:<ngày>` nên restart không gửi lặp. Số liệu đọc bằng truy vấn phía server (lịch sử theo
+  `updated_at` từ đầu cửa sổ, và `state=blocked` bằng cursor), nên job cũ không bị che bởi hàng trăm job mới. Mỗi người chỉ thấy job của mình (operator không thấy job của owner).
 - **Giờ yên tĩnh**: tin Telegram không do bạn vừa yêu cầu (job xong/lỗi do CLI, lỗi sync, báo cáo) **không bị bỏ**
   mà hoãn tới khi hết khung (`quietEnd`, theo múi giờ preferences, qua nửa đêm). Trả lời thao tác của bạn trong
   chat và panel tiến trình của job bạn tự bắt đầu ở chat không bị chặn. (Tray vẫn bỏ popup như trước.)
 
 ## Quản lý job và tìm trong Drive (S10)
 
-- Trang Công việc có **🗂 Quản lý**: lọc theo trạng thái (Tất cả, Đang chạy, Chờ, Tạm dừng, Cần xử lý, Lỗi, Xong),
+- Trang Công việc có **🗂 Quản lý**: lọc theo trạng thái **phía server** (`state=` + cursor, mỗi trạng thái của nhóm
+  một truy vấn, tối đa 1000 job mỗi trạng thái; `/cancelall` cũng vậy) thay vì quét 500 job mới nhất (Tất cả, Đang chạy, Chờ, Tạm dừng, Cần xử lý, Lỗi, Xong),
   6 job mỗi trang, và nút theo lô **⏸ Tạm dừng N / ▶️ Tiếp tục N / 🔁 Thử lại N / 🧹 Huỷ N** cho cả nhóm đang lọc.
   Mỗi job đi qua `JobAction` với revision hiện tại của nó; job đã đổi trạng thái thì **bỏ qua**, không ép; kết quả
   là số thật (`xong N, bỏ qua M, lỗi K`). Thử lại theo lô **không** đụng job đang chờ quota. Huỷ theo lô cần thẻ
   xác nhận (nút đỏ, 5 phút). Chỉ thấy/điều khiển job của chính mình. Mã:
   [jobs_manage.go](../../internal/telegram/jobs_manage.go).
-- `/find tên`: liệt kê (tối đa 8, thư mục trước) mục ở **cấp cao nhất của My Drive** có tên chứa chuỗi (không phân
-  biệt hoa thường), nút chọn mục làm nguồn mở thẻ xem trước copy. Chỉ owner (dùng `Browse` vốn chỉ cho owner);
-  operator nhận lỗi "không có quyền", không có lệnh nào gọi tới Drive. Tìm sâu cả cây cần API tìm kiếm (xem báo
-  cáo đợt G, "Cần backend"). Mã: [find.go](../../internal/telegram/find.go).
+- `/find tên`: tìm **cả Drive** bằng `Service.Search` (cùng lệnh với `GET /v1/drive/search`: tối đa 20, bỏ thùng
+  rác, không phân biệt hoa thường), liệt kê tối đa 10 (thư mục trước); nút chọn mục làm nguồn mở thẻ xem trước copy
+  (mục chia sẻ bằng link giữ `resourcekey`). Chỉ owner (Search chỉ cho owner); operator nhận lỗi "không có quyền",
+  không có lệnh nào gọi tới Drive. Mã: [find.go](../../internal/telegram/find.go).
 - **Lỗi có hướng xử lý**: thẻ lỗi luôn kèm dòng `💡` (bảng `errHint`, có mặc định), thẻ job lỗi/một phần cũng
   thêm gợi ý theo mã lỗi của job. Chuỗi đợt G nằm ở [texts_g.go](../../internal/telegram/texts_g.go) (vi + en, có
   test so khoá hai ngôn ngữ).
+
+## Lô, hàng đợi, quét kỹ, đồng bộ sau copy, báo cáo lỗi (đợt IG)
+
+Nối các API của đợt C2 (S6, S7) và H (S8, X1, tìm kiếm, lọc job) vào chat. Không có logic mới ở tầng dưới: mọi
+nút đi qua `app.Service` như CLI/HTTP. Mã: [ig.go](../../internal/telegram/ig.go) (bộ định tuyến action),
+[batch_paste.go](../../internal/telegram/batch_paste.go), [queue_ctl.go](../../internal/telegram/queue_ctl.go),
+[deep.go](../../internal/telegram/deep.go), [aftersync.go](../../internal/telegram/aftersync.go),
+[problem_report.go](../../internal/telegram/problem_report.go), chuỗi vi + en ở
+[texts_ig.go](../../internal/telegram/texts_ig.go). Test: [ig_batch_test.go](../../internal/telegram/ig_batch_test.go),
+[ig_deep_test.go](../../internal/telegram/ig_deep_test.go), [ig_sync_report_test.go](../../internal/telegram/ig_sync_report_test.go).
+
+- **Nhiều link trong một tin (S6)**: tối đa 20 link/tin (đúng trần 20 job đang mở mỗi người; link thứ 21 trở đi được
+  báo là bị bỏ qua). Mỗi link `Inspect` riêng, rồi một thẻ **📦 Lô N link** liệt kê tên, nơi lưu và các link không
+  đọc được (kèm lý do); một nút **Copy cả N link**. Bấm → mỗi link là một job qua
+  `SubmitModeInBatchWithSync` với chung một `batch_id` suy từ `update_id`, khoá idempotency `…:i:copy` riêng từng
+  link (bấm lại/replay chỉ nhận phần còn thiếu, một link lỗi không dừng các link khác). Nếu `auto_copy` còn gắn đúng
+  revision đích thì lô chạy ngay, không qua thẻ xem trước. Link đã copy tới đúng đích → **bỏ qua** (không nhân đôi);
+  lỗi khác (đầy hàng đợi, hết hạn…) → **lỗi**, đều có dòng riêng. Thẻ tổng kết **📦 Lô N link — đã nhận · bỏ qua ·
+  lỗi** đọc trạng thái thật từ `GET batch` (nút **🔄 Làm mới**), kèm dòng hàng đợi tạm dừng nếu có. Job của lô không
+  có panel chat riêng; xong/lỗi báo qua notifier như job từ CLI (một tin mỗi job).
+- **Hàng đợi (S6)**: trang Công việc và trang chủ nói "⏸ Hàng đợi đang tạm dừng" (`status.queue.paused`); **chỉ owner**
+  có nút **⏸ Tạm dừng / ▶️ Tiếp tục hàng đợi** (`QueuePause`, dịch vụ vẫn từ chối operator dù ai đó giả callback).
+  Thẻ một job đang chờ có "🔢 Vị trí trong hàng: i/n" (ưu tiên giảm dần → `queue_order` → thứ tự nhận; fair share
+  giữa các lô có thể xen kẽ nên đây là thứ tự để di chuyển, không hứa giờ chạy) và nút **⬆️ Lên đầu hàng / ⬇️ Xuống
+  cuối hàng / ⭐ Ưu tiên (priority 1) / Bỏ ưu tiên**. Mỗi nút gắn revision của job lúc hiển thị; thẻ cũ → không
+  di chuyển gì, hiện lại job thật. Operator chỉ di chuyển job của mình.
+- **Quét kỹ (S7)**: thẻ xem trước có **🔬 Quét kỹ** → `Inspect(deep=true)` (một plan thứ hai cùng lựa chọn). Bot đợi tối
+  đa 1,5 s để cây nhỏ xong ngay, rồi hiện thẻ quét: khi còn chạy *"Đang quét… đã thấy N mục. Chưa đủ để là tổng"* +
+  🔄 Làm mới / ⏹ Hủy quét; khi xong *"Tổng: N file · M thư mục · X GB"*, file Google-native, không copy được, thư
+  mục không đọc được, **ước thời gian** (từ tốc độ copy đo được, nếu chưa có thì nói chưa ước tính được) và cảnh báo
+  `destination_storage_short` / `may_hit_daily_limit` kèm dung lượng trống và hạn mức ngày còn lại. Quét bị hủy, hết
+  hạn, gián đoạn (daemon khởi động lại) hoặc lỗi **không bao giờ** hiện nhãn "Tổng", chỉ "Mới đếm được (chưa phải
+  tổng)". Quét chỉ đọc, không ghi Drive; cảnh báo không chặn: nút **Copy ngay** trên thẻ quét nhận chính plan đó.
+- **Công việc của một nguồn**: thẻ nguồn (Library) có **📋 Công việc của nguồn này** → 8 job mới nhất của nguồn đó, đọc
+  bằng `GET /v1/jobs?collection_id=` ([collection_jobs.go](../../internal/telegram/collection_jobs.go)); nguồn của
+  người khác trả "không tìm thấy".
+- **Đồng bộ sau copy (S8)**: nút trên thẻ xem trước **🔄 Sau khi copy: theo cài đặt (Tắt) → Tắt → Realtime → Mỗi giờ →
+  6 giờ → Hằng ngày** (xoay vòng như chính sách trùng tên, đi theo payload nên sống qua Đổi tên/preset). Lựa chọn
+  vào `after_copy_sync_mode` của job; để nguyên thì job dùng preference lúc copy xong. Trang Cài đặt có hàng chọn
+  **mặc định** (ghi `after_copy_sync_mode` bằng `PatchPreferences`, riêng từng người). Daemon (không phải chat) tạo
+  subscription sau khi job initial `succeeded`.
+- **Báo cáo lỗi (X1)**: job có mục lỗi/bị chặn/bỏ qua có nút **📄 Báo cáo lỗi** (cả trên thông báo job xong/lỗi). Bấm →
+  bot gửi file `report-<job>.csv` cùng cột với `502drive jobs report --format csv`
+  (`state,code,reason,path,attempts,source_id,destination_id`, ô công thức bị chặn bằng dấu `'`), đọc qua
+  `Service.JobItems` nên người gọi chỉ thấy job của mình (owner thấy mọi job; callback vẫn one-shot, chỉ chat riêng,
+  chỉ owner/operator trong allowlist). Trần 5000 dòng và 2 MiB, vượt thì nói *"Đã cắt ở N dòng"*. Chú thích file nêu
+  số mục và **cách xử lý** cho tối đa 3 mã phổ biến nhất (bảng `itemHint`, rơi về `errHint`, rồi lời khuyên chung). File
+  không chứa đường dẫn trên máy daemon, token hay thông điệp lỗi của server, chỉ id Drive, đường dẫn tương đối trong
+  cây nguồn và mã ổn định.
 
 ## Thông báo (job không tạo từ chat)
 
@@ -146,9 +199,12 @@ syncer trong daemon:
   CLI/preferences API).
 - Đăng nhập Google qua chat (chỉ hướng dẫn chạy CLI trên máy daemon).
 - Quản lý allowlist operator bằng chat (owner dùng `POST /v1/operators`).
-- `/find` tìm sâu cả cây Drive (cần `GET /v1/drive/search`), và cho operator.
+- `/find` cho operator (`GET /v1/drive/search` chỉ cho owner: "Cần backend" nếu muốn mở).
 - Ảnh/sticker mascot, dedupe UX khi paste cùng link đang có job, group chat (mặc định bỏ qua).
 - Notification desktop; `/help` đầy đủ mọi lệnh (chỉ menu).
+- Tóm tắt một tin cho cả lô khi mọi job xong (mỗi job vẫn báo riêng); vị trí hàng đợi chính xác khi có fair share (API
+  chưa trả vị trí); quét kỹ tự làm mới (hiện có nút Làm mới); lọc job theo nhiều trạng thái trong một truy vấn
+  (`state=` chỉ nhận một giá trị, nhóm "Đang chạy"/"Lỗi" dùng một truy vấn mỗi trạng thái): "Cần backend".
 - Chưa chạy với bot Telegram thật và Drive thật: mọi test dùng bot giả (httptest) và `drivetest.Fake`.
 
 ## Menu (màu mè)

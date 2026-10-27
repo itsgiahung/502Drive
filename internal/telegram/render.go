@@ -22,7 +22,7 @@ const (
 type texts struct {
 	home, copy, jobs, library, destination, account, settings string
 	details, back, pause, resume, cancel, retry               string
-	pasteHint, copyHint, oneLink, invalidLink                 string
+	pasteHint, copyHint, invalidLink                          string
 	google, destLabel, running, queued, needAction            string
 	connected, disconnected, reconnect                        string
 	expired, cancelled, noDestination, jobsEmpty              string
@@ -85,8 +85,7 @@ var vietnamese = texts{
 	details: "Chi tiết", back: "Về menu", pause: "Tạm dừng", resume: "Tiếp tục",
 	cancel: "Huỷ", retry: "Thử lại",
 	pasteHint:   "Dán link Drive hoặc chọn bên dưới.",
-	copyHint:    "Gửi một link Drive (thư mục hoặc file) vào chat này. Một link mỗi lần.",
-	oneLink:     "Mỗi lần chỉ một link. Gửi lại link bạn muốn sao chép.",
+	copyHint:    "Gửi link Drive (thư mục hoặc file) vào chat này. Nhiều link trong một tin sẽ thành một lô.",
 	invalidLink: "Link không hợp lệ. Chỉ nhận link Drive/Docs HTTPS hoặc ID Drive.",
 	google:      "Google", destLabel: "Thư mục đích", running: "Đang chạy", queued: "Chờ", needAction: "Cần xử lý",
 	connected: "Đã kết nối", disconnected: "Chưa kết nối", reconnect: "Cần kết nối lại",
@@ -177,8 +176,7 @@ var english = texts{
 	details: "Details", back: "Home", pause: "Pause", resume: "Resume",
 	cancel: "Cancel", retry: "Retry",
 	pasteHint:   "Paste a Drive link or pick below.",
-	copyHint:    "Send one Drive link (folder or file) to this chat. One link at a time.",
-	oneLink:     "One link at a time. Send the link you want to copy again.",
+	copyHint:    "Send Drive links (folders or files) to this chat. Several links in one message become one batch.",
 	invalidLink: "That is not a Drive link. Only HTTPS Drive/Docs links or Drive IDs are accepted.",
 	google:      "Google", destLabel: "Destination", running: "Running", queued: "Queued", needAction: "Needs action",
 	connected: "Connected", disconnected: "Not connected", reconnect: "Reconnect required",

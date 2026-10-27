@@ -20,8 +20,9 @@ import (
 
 const (
 	reportNotePrefix = "report:"
-	reportScanPages  = 5
-	defaultWindow    = 24 * time.Hour
+	// reportMaxJobs bounds the jobs one report reads.
+	reportMaxJobs = 5000
+	defaultWindow = 24 * time.Hour
 )
 
 // reportConfig is one person's report schedule.
@@ -51,16 +52,17 @@ func (t *Telegram) loadReportConfig(ctx context.Context, principal string) repor
 	return reportConfig{Enabled: p.DailyReport, At: p.DailyReportAt}
 }
 
+// saveReportConfig stores the schedule through the preferences command (the
+// same one the CLI and the HTTP API use), so the report time lives in
+// daily_report / daily_report_at and nowhere else.
 func (t *Telegram) saveReportConfig(ctx context.Context, principal string, cfg reportConfig) error {
 	if _, _, ok := validClock(cfg.At); !ok {
 		return errors.New("the report time must be HH:MM")
 	}
-	p, err := t.store.Preferences(ctx, principal)
-	if err != nil {
-		return err
-	}
-	p.DailyReport, p.DailyReportAt = cfg.Enabled, cfg.At
-	return t.store.SavePreferences(ctx, principal, p)
+	enabled, at := cfg.Enabled, cfg.At
+	_, err := t.svc.PatchPreferences(ctx, principalByID(principal), "tg-report:"+state.ID("rep"),
+		app.PreferencePatch{DailyReport: &enabled, DailyReportAt: &at})
+	return err
 }
 
 // reportDue decides whether today's report should go out now. day is the local
@@ -175,8 +177,10 @@ func (t *Telegram) reportFor(ctx context.Context, target reportTarget) {
 	}
 }
 
-// reportStats summarises what happened for one person in [start, end]. It
-// reads the 500 most recent jobs, so the cost does not grow with history.
+// reportStats summarises what happened for one person in [start, end]. The
+// window comes from the server-side history query (jobs updated since start)
+// and the blocked count from the state filter, so the cost follows the window,
+// not the size of the history.
 type reportStats struct {
 	Done, Failed, Blocked, Sync int
 	Bytes                       int64
@@ -187,18 +191,24 @@ func (s reportStats) empty() bool { return s.Done+s.Failed+s.Blocked+s.Sync == 0
 
 func (t *Telegram) reportStats(ctx context.Context, p app.Principal, start, end time.Time) (reportStats, error) {
 	var s reportStats
-	cursor := int64(0)
-	for page := 0; page < reportScanPages; page++ {
-		jobs, next, err := t.svc.Jobs(ctx, p, false, "", "", 100, cursor)
+	blocked, _, err := t.jobsWhere(ctx, p, false, state.JobBlocked, "", reportMaxJobs)
+	if err != nil {
+		return s, err
+	}
+	for _, j := range blocked {
+		if j.Kind == "" { // audits, repairs and cleanups are not copy work
+			s.Blocked++
+		}
+	}
+	var cur state.HistoryCursor
+	for seen := 0; seen < reportMaxJobs; {
+		jobs, next, err := t.svc.History(ctx, p, false, start, igPageSize, cur)
 		if err != nil {
 			return s, err
 		}
 		for _, j := range jobs {
-			if j.Kind != "" { // audits, repairs and cleanups are not copy work
-				continue
-			}
-			if j.State == state.JobBlocked {
-				s.Blocked++
+			seen++
+			if j.Kind != "" || j.State == state.JobBlocked {
 				continue
 			}
 			if !state.IsTerminal(j.State) || j.UpdatedAt.Before(start) || j.UpdatedAt.After(end) {
@@ -227,10 +237,10 @@ func (t *Telegram) reportStats(ctx context.Context, p app.Principal, start, end 
 				s.Seconds += secs
 			}
 		}
-		if next <= cursor {
+		if next.RowID == 0 {
 			break
 		}
-		cursor = next
+		cur = next
 	}
 	return s, nil
 }

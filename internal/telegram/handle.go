@@ -56,6 +56,9 @@ func (t *Telegram) onMessage(ctx context.Context, updateID int64, m *models.Mess
 		if rest == "" {
 			return t.page(ctx, p, m.Chat.ID, 0, "copy")
 		}
+		if refs := driveRefs(rest); len(refs) > 1 {
+			return t.pasteMany(ctx, p, m.Chat.ID, 0, refs, t.attemptKey(updateID))
+		}
 		return t.paste(ctx, p, m.Chat.ID, 0, rest, t.attemptKey(updateID))
 	}
 	if cmd != "" { // unknown commands land on the menu; nothing to memorise
@@ -69,7 +72,7 @@ func (t *Telegram) onMessage(ctx context.Context, updateID int64, m *models.Mess
 	case 1:
 		return t.paste(ctx, p, m.Chat.ID, 0, refs[0], t.attemptKey(updateID))
 	}
-	return t.showCard(ctx, p, m.Chat.ID, 0, tx.oneLink, []button{nav(tx.back, "home")})
+	return t.pasteMany(ctx, p, m.Chat.ID, 0, refs, t.attemptKey(updateID))
 }
 
 // attemptKey is the idempotency base for one update. A redelivered update
@@ -140,7 +143,7 @@ func (t *Telegram) paste(ctx context.Context, p app.Principal, chatID int64, mes
 		if !previewOnSubmitError(err) {
 			return t.showError(ctx, p, chatID, messageID, err)
 		}
-		return t.previewCard(ctx, p, chatID, messageID, view, submitNote(err, tx), "")
+		return t.previewCard(ctx, p, chatID, messageID, view, submitNote(err, tx), planPayload{})
 	}
 	note := ""
 	if prefs.AutoCopy {
@@ -148,7 +151,7 @@ func (t *Telegram) paste(ctx context.Context, p app.Principal, chatID int64, mes
 		// destination is set: never copy to a target the user did not confirm.
 		note = tx.confirmDest
 	}
-	return t.previewCard(ctx, p, chatID, messageID, view, note, "")
+	return t.previewCard(ctx, p, chatID, messageID, view, note, planPayload{})
 }
 
 // previewOnSubmitError reports admission failures that belong on a fresh
@@ -309,12 +312,12 @@ func (t *Telegram) act(ctx context.Context, p app.Principal, st state.Callback, 
 	case "audit_repair":
 		return t.auditRepair(ctx, p, st)
 	}
-	return nil
+	return t.actIG(ctx, p, st, tx)
 }
 
 func (t *Telegram) actCopy(ctx context.Context, p app.Principal, st state.Callback, tx texts) error {
 	// An unanswered copy of a source that is already there asks first (L2).
-	res, err := t.svc.SubmitMode(ctx, p, "tg-cb:"+st.ID, st.Object, st.Revision, "")
+	res, err := t.submitCopy(ctx, p, "tg-cb:"+st.ID, st.Object, st.Revision, "", st.Payload)
 	if err == nil {
 		return t.submitted(ctx, p, st.ChatID, st.MessageID, res.Job)
 	}
@@ -342,7 +345,9 @@ func (t *Telegram) actChooseDest(ctx context.Context, p app.Principal, st state.
 	}
 	rows := make([][]button, 0, len(dests)+1)
 	for _, d := range dests {
-		pl, _ := json.Marshal(planPayload{Source: payload.Source, Root: payload.Root, Destination: d.ID})
+		next := payload
+		next.Destination = d.ID
+		pl, _ := json.Marshal(next)
 		label := short(d.Name, 40)
 		if d.IsDefault {
 			label += " ✓"
@@ -362,7 +367,7 @@ func (t *Telegram) actUseDest(ctx context.Context, p app.Principal, st state.Cal
 	if err != nil {
 		return t.showError(ctx, p, st.ChatID, st.MessageID, err)
 	}
-	return t.previewCard(ctx, p, st.ChatID, st.MessageID, view, "", pl.Root)
+	return t.previewCard(ctx, p, st.ChatID, st.MessageID, view, "", pl)
 }
 
 func (t *Telegram) actJob(ctx context.Context, p app.Principal, st state.Callback) error {

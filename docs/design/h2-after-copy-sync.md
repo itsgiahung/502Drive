@@ -39,6 +39,6 @@ Ngày: 2026-10-27. Migration: `023_after_copy_sync.sql`.
 
 ## Chưa làm
 
-- Chưa có UI đặt mode (TUI/Telegram); API + CLI đã có. Móc ở `PROGRESS.md`.
+- Telegram đã có nút chọn mode trên thẻ xem trước và mặc định trong Cài đặt (đợt IG); TUI chưa; API + CLI đã có. Móc ở `PROGRESS.md`.
 - `daily` cố định 02:00; chưa có preference riêng cho giờ này.
 - Chưa chạy Drive thật; `StartPageToken` dùng `drivetest.Fake`.

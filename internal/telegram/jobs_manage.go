@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/itsgiahung/502Drive/internal/app"
@@ -18,7 +19,8 @@ import (
 
 const (
 	manageJobsPerPage = 6
-	manageScanPages   = 5
+	// manageMax bounds the jobs read for one group (per state).
+	manageMax = 1000
 )
 
 var manageFilters = []string{"all", "running", "queued", "paused", "blocked", "failed", "done"}
@@ -45,22 +47,16 @@ func decodeManage(payload string) managePayload {
 	return mp
 }
 
-func inGroup(group string, j state.Job) bool {
-	switch group {
-	case "running":
-		return j.State == state.JobRunning || j.State == state.JobReconciling || j.State == state.JobPausing || j.State == state.JobCancelling
-	case "queued":
-		return j.State == state.JobQueued
-	case "paused":
-		return j.State == state.JobPaused
-	case "blocked":
-		return j.State == state.JobBlocked
-	case "failed":
-		return j.State == state.JobFailed || j.State == state.JobPartial
-	case "done":
-		return j.State == state.JobSucceeded
-	}
-	return true
+// groupStates are the job states of each group. The server filters by state, so
+// a group is read with a cursor per state instead of scanning the newest jobs
+// and discarding most of them.
+var groupStates = map[string][]string{
+	"running": {state.JobRunning, state.JobReconciling, state.JobPausing, state.JobCancelling},
+	"queued":  {state.JobQueued},
+	"paused":  {state.JobPaused},
+	"blocked": {state.JobBlocked},
+	"failed":  {state.JobFailed, state.JobPartial},
+	"done":    {state.JobSucceeded},
 }
 
 // batchEligible says which jobs a batch action may try. Quota waits are never
@@ -79,24 +75,23 @@ func batchEligible(action string, j state.Job) bool {
 	return false
 }
 
-// manageJobs lists the caller's jobs of one group (the newest 500 at most).
+// manageJobs lists the caller's jobs of one group, newest first, through the
+// server-side state filter (cursor paging). manageMax bounds one group.
 func (t *Telegram) manageJobs(ctx context.Context, p app.Principal, group string) ([]state.Job, error) {
+	states, filtered := groupStates[group]
+	if !filtered {
+		states = []string{""} // "all": no state filter
+	}
 	var out []state.Job
-	cursor := int64(0)
-	for page := 0; page < manageScanPages; page++ {
-		jobs, next, err := t.svc.Jobs(ctx, p, false, "", "", 100, cursor)
+	for _, st := range states {
+		jobs, _, err := t.jobsWhere(ctx, p, false, st, "", manageMax)
 		if err != nil {
 			return nil, err
 		}
-		for _, j := range jobs {
-			if inGroup(group, j) {
-				out = append(out, j)
-			}
-		}
-		if next <= cursor {
-			break
-		}
-		cursor = next
+		out = append(out, jobs...)
+	}
+	if len(states) > 1 {
+		sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	}
 	return out, nil
 }
