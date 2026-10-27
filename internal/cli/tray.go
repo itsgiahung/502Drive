@@ -67,20 +67,21 @@ func (a *App) runTray(ctx context.Context) error {
 	// same environment as the rest of the CLI.
 	host.Getenv = a.env
 	opts := tray.Options{
-		Version:     Version,
-		Motion:      !a.g.noMotion,
-		NoNotify:    a.env("DRIVE502_NO_NOTIFY") == "1",
-		Exe:         exe,
-		Host:        host,
-		Status:      a.trayStatus,
-		Jobs:        a.trayJobs,
-		Copy:        a.trayCopy,
-		Language:    a.trayLanguage,
-		QueuePause:  a.trayQueuePause,
-		Quiet:       a.trayQuiet,
-		StartDaemon: a.startDaemonAction,
-		StopDaemon:  a.stopDaemon,
-		Log:         slog.New(slog.NewTextHandler(a.errw(), &slog.HandlerOptions{Level: slog.LevelWarn})),
+		Version:       Version,
+		Motion:        !a.g.noMotion,
+		NoNotify:      a.env("DRIVE502_NO_NOTIFY") == "1",
+		Exe:           exe,
+		Host:          host,
+		Status:        a.trayStatus,
+		Jobs:          a.trayJobs,
+		Copy:          a.trayCopy,
+		Language:      a.trayLanguage,
+		QueuePause:    a.trayQueuePause,
+		Quiet:         a.trayQuiet,
+		NotifyEnabled: a.trayNotifyEnabled,
+		StartDaemon:   a.startDaemonAction,
+		StopDaemon:    a.stopDaemon,
+		Log:           slog.New(slog.NewTextHandler(a.errw(), &slog.HandlerOptions{Level: slog.LevelWarn})),
 	}
 	if cfg, cerr := a.loadConfig(); cerr == nil {
 		opts.QuitStopsDaemon = cfg.TrayQuitStopsDaemon
@@ -223,4 +224,23 @@ func (a *App) trayLanguage(ctx context.Context) (string, error) {
 		return "vi", nil
 	}
 	return prefs.Language, nil
+}
+
+func (a *App) trayNotifyEnabled(ctx context.Context, kind string) (bool, error) {
+	r, err := a.call(ctx, "GET", "/v1/preferences", nil, nil, "")
+	if err != nil {
+		return false, err
+	}
+	var p state.Preferences
+	if err = r.Decode(&p); err != nil {
+		return false, err
+	}
+	switch kind {
+	case "completed":
+		return p.NotifyCompleted, nil
+	case "failed":
+		return p.NotifyFailed, nil
+	default:
+		return p.NotifyActionRequired, nil
+	}
 }

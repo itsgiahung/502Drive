@@ -530,3 +530,4 @@ probe chạy riêng không `-race`:
 | U9 unknown limit, quota scope, user timezone | `TestStatusQuotaDoesNotInventALimit`, `TestQuotaResumeOnlyUsesPrincipalQuotaJobs`, `TestQuotaLineUsesReaderTimezoneAndNoUnknownLimit` | local |
 | U10 admission seal, terminal barrier, restart/outbox dedup, stale callbacks, uncertain-send fence | `TestBatchSealIsScopedAndIdempotent`, `TestBatchSummaryWaitsForAllJobsAndSurvivesBotRestart`, `TestBatchNoticeSealAndOutboxSurviveRestart` | local; remote exactly-once not established |
 | U11 owner/operator/stranger/group scope, cursor paging, no operator Drive search | `TestOperatorFindIsPagedScopedAndReadOnly`, existing `/find` authorization tests | local |
+| U12 cause coalescing, action target, disabled/quiet suppression | `TestNeedsActionNoticesCoalesceAndHonorPreferences`, `TestNotifySkippedDuringQuietHours` | local fakes; no live desktop |

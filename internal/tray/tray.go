@@ -22,7 +22,9 @@ var ErrUnsupported = errors.New("the tray needs a Linux or Windows desktop sessi
 
 // Options is what the tray needs from the CLI layer.
 type Options struct {
-	Version string
+	OpenJob       func(id string) error
+	NotifyEnabled func(ctx context.Context, kind string) (bool, error)
+	Version       string
 	// Motion enables the 4 fps busy icon; --no-motion turns it off.
 	Motion bool
 	// Exe is the 502drive binary used to open the TUI and start the daemon.
@@ -94,13 +96,14 @@ func Run(ctx context.Context, o Options) error {
 
 // agent owns the poll loop, the icon animation and the fixed actions.
 type agent struct {
-	o    Options
-	mu   sync.Mutex
-	snap Snapshot
-	on   bool
-	note string
-	lang string
-	p    presenter
+	lastNotice map[string]time.Time
+	o          Options
+	mu         sync.Mutex
+	snap       Snapshot
+	on         bool
+	note       string
+	lang       string
+	p          presenter
 	// primed is set after the first successful poll (the notification baseline).
 	primed bool
 	// stopArmed is the two-step confirmation of "Stop 502Drive…": the first
@@ -176,6 +179,7 @@ func (a *agent) refresh(ctx context.Context) (View, bool) {
 	online := err == nil
 	if err == nil {
 		a.mu.Lock()
+		previousStatus := a.snap.Status
 		prev, primed := a.snap.Jobs, a.primed
 		for i := range snap.Jobs {
 			j := &snap.Jobs[i]
@@ -194,7 +198,11 @@ func (a *agent) refresh(ctx context.Context) (View, bool) {
 		lang := a.lang
 		a.mu.Unlock()
 		if primed {
-			a.notify(ctx, jobTransitions(prev, snap.Jobs, lang))
+			notices := jobTransitions(prev, snap.Jobs, lang)
+			if previousStatus.AccountStatus != "reconnect_required" && snap.Status.AccountStatus == "reconnect_required" {
+				notices = append(notices, Notice{Kind: "action_required", Reason: "account_reconnect_required", Title: present.StateLabel("reconnect_required", lang), Body: present.Advice("account_reconnect_required", lang)})
+			}
+			a.notify(ctx, notices)
 		}
 	}
 	a.mu.Lock()

@@ -145,3 +145,10 @@ Partial scans explicitly show unknown total; completion updates without a keypre
 U9: Home and tray tooltip show Q1 copied bytes over the last 24 hours and the
 actual resume time of a quota-blocked job, in the user's timezone. Unknown Google
 limits stay unknown. Old servers without quota retain the existing display.
+
+U12: Linux tray notifies on blocked/quota/reconnect transitions, coalesced by cause
+for 60 seconds, with user notification settings and quiet hours. Unknown settings
+suppress notifications. A Freedesktop notification action uses fixed `open` and the
+captured job ID (wired to `menu --job` in U13). notify-send is the plain fallback.
+Windows notification delivery and actual desktop action clicks remain unverified;
+the existing Windows backend has no native notification implementation.

@@ -11,6 +11,7 @@ import (
 // Host is every OS side effect the tray needs. Tests provide fakes; the tray
 // never shells out with user text, only with fixed argv it builds itself.
 type Host struct {
+	Notify   func(ctx context.Context, n Notice, open func()) error
 	GOOS     string
 	Getenv   func(string) string
 	LookPath func(string) (string, error)
@@ -23,7 +24,7 @@ type Host struct {
 // DefaultHost returns the real host: exec with a bounded timeout.
 func DefaultHost() Host {
 	return Host{
-		GOOS:     goos(),
+		Notify: notifyDesktop, GOOS: goos(),
 		Getenv:   os.Getenv,
 		LookPath: exec.LookPath,
 		Run: func(ctx context.Context, argv []string) (string, error) {

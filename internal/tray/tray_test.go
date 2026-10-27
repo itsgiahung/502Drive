@@ -1067,7 +1067,7 @@ func TestNotifySkippedDuringQuietHours(t *testing.T) {
 		{"nil quiet sends", nil, 1},
 		{"not quiet sends", func(context.Context) (bool, error) { return false, nil }, 1},
 		{"quiet suppresses", func(context.Context) (bool, error) { return true, nil }, 0},
-		{"lookup error sends", func(context.Context) (bool, error) { return true, errors.New("down") }, 1},
+		{"lookup error suppresses", func(context.Context) (bool, error) { return true, errors.New("down") }, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := &fakeHost{goos: "linux", have: map[string]bool{"notify-send": true}}
