@@ -55,7 +55,22 @@ navigation/documentation change.
 | Telegram start/status, paste-to-copy and progress/final cards | Successful small flow; retry-final-notification regression found and fixed |
 
 This is a smoke record, not exhaustive acceptance. It does not cover the newly
-added mirror/snapshot paths, every file type, operator action or Google error reason.
+the mirror/snapshot paths (recorded separately below), every file type, operator
+action or Google error reason.
+
+## Live mirror, snapshot and restore — 2026-10-28
+
+Daemon `e3e7ee4`, same personal account; source shared by another account with
+viewer access (`keep.txt`, `gone.txt`, `sub/nested-gone.txt`); isolated destination.
+
+| Scenario | Recorded outcome |
+| --- | --- |
+| Enable snapshots, capture one | Ready snapshot with 5 items |
+| Enable mirror; delete `gone.txt` and `sub/` at the source; sync | Both left the copy; snapshot-referenced copies moved to `.502drive-versions-<collection>` (children before the emptied folder); a new source file was copied |
+| Restore preview | Plan of 5 restores and 1 removal; nothing changed |
+| Restore apply | 6/6; tree restored exactly, nested file back in its folder; a newer file moved to the archive because a later automatic snapshot referenced it |
+| Mirror of a file no snapshot references | Its copy went to the Drive trash |
+| Cleanup with retained snapshots | Real run blocked `snapshot_protected`; the dry run had promised the trash move — fixed |
 
 ## Other recorded local evidence
 
@@ -70,7 +85,7 @@ added mirror/snapshot paths, every file type, operator action or Google error re
 
 ## Not established
 
-- Live mirror/snapshot capture/restore and large/deep Shared Drive trees.
+- Large/deep trees and Shared Drives (a personal account cannot create one).
 - Actual daily quota reset, storage exhaustion or sustained rate-limit storms.
 - Windows 10/11 runtime, Inno installer install/uninstall, SmartScreen and macOS runtime.
 - Complete KDE/GNOME/session-restart and native notification-action behavior.
