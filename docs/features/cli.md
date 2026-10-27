@@ -382,3 +382,7 @@ JSON counters and exit codes retain their existing meaning.
 U7: `jobs list --state queued,blocked,failed` accepts a comma-separated set.
 Invalid/empty members return HTTP 400 `invalid_request`; missing `state` means all.
 TUI keeps **f** for single-state cycling; **F**, Space, Enter selects several.
+
+U13: `502drive tui --job ID` (alias of `menu --job ID`) opens that job directly,
+resolving aliases and fetching jobs outside the first page. In a plain TTY it
+prints the target job's details. Non-TTY/`--no-input` still never opens an input UI.

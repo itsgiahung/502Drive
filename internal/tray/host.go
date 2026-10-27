@@ -10,11 +10,14 @@ import (
 
 // Host is every OS side effect the tray needs. Tests provide fakes; the tray
 // never shells out with user text, only with fixed argv it builds itself.
+var consoleStarter func([]string) error
+
 type Host struct {
-	Notify   func(ctx context.Context, n Notice, open func()) error
-	GOOS     string
-	Getenv   func(string) string
-	LookPath func(string) (string, error)
+	StartConsole func(argv []string) error
+	Notify       func(ctx context.Context, n Notice, open func()) error
+	GOOS         string
+	Getenv       func(string) string
+	LookPath     func(string) (string, error)
 	// Run executes argv and returns its stdout.
 	Run func(ctx context.Context, argv []string) (string, error)
 	// Start launches a detached process and returns immediately.
@@ -23,7 +26,7 @@ type Host struct {
 
 // DefaultHost returns the real host: exec with a bounded timeout.
 func DefaultHost() Host {
-	return Host{
+	return Host{StartConsole: consoleStarter,
 		Notify: notifyDesktop, GOOS: goos(),
 		Getenv:   os.Getenv,
 		LookPath: exec.LookPath,

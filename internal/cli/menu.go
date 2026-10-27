@@ -102,9 +102,9 @@ func (p *huhPrompter) Input(title string) (string, error) {
 }
 
 func (a *App) menuCmd() *cobra.Command {
-	return &cobra.Command{Use: "menu", Short: "Guided menu (needs a terminal)", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		return a.openUI(cmd.Context())
-	}}
+	c := &cobra.Command{Use: "menu", Aliases: []string{"tui"}, Short: "Guided menu (needs a terminal)", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return a.openUI(cmd.Context()) }}
+	c.Flags().StringVar(&a.focusJob, "job", "", "open the detail of this job (ID or alias)")
+	return c
 }
 
 // openUI opens the full-screen TUI, or the line menu for plain terminals.
@@ -112,10 +112,32 @@ func (a *App) openUI(ctx context.Context) error {
 	if !a.io.StdinTTY || !a.io.StdoutTTY || a.g.json || a.g.noInput {
 		return usage("menu needs an interactive terminal; use subcommands in scripts (try `502drive --help`)")
 	}
+	if a.focusJob != "" {
+		resolved, err := a.resolveJobID(ctx, a.focusJob)
+		if err != nil {
+			return err
+		}
+		a.focusJob = resolved
+		if _, err = a.tuiGetJob(ctx, resolved); err != nil {
+			return err
+		}
+		if a.useLineMenu() {
+			r, err := a.call(ctx, "GET", "/v1/jobs/"+url.PathEscape(resolved), nil, nil, "")
+			if err != nil {
+				return err
+			}
+			var j jobView
+			if err = r.Decode(&j); err != nil {
+				return err
+			}
+			a.printJob(ctx, j)
+			return nil
+		}
+	}
 	if a.useLineMenu() {
 		return a.runLineMenu(ctx)
 	}
-	return tui.Run(ctx, a.tuiActions(), tui.Options{
+	return tui.Run(ctx, a.tuiActions(), tui.Options{JobID: a.focusJob,
 		NoMotion: a.g.noMotion,
 		ASCII:    a.g.ascii,
 		Color:    a.style.Color,

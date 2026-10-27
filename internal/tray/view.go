@@ -255,6 +255,7 @@ func jobItems(snap Snapshot, lang string, result string) []Item {
 		if i < len(snap.Jobs) {
 			j := snap.Jobs[i]
 			item.Title = truncate(jobLine(j, lang), minRowWidth+4)
+			item.Enabled = j.ID != ""
 			item.Hidden = false
 		}
 		items = append(items, item)

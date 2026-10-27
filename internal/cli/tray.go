@@ -67,6 +67,16 @@ func (a *App) runTray(ctx context.Context) error {
 	// same environment as the rest of the CLI.
 	host.Getenv = a.env
 	opts := tray.Options{
+		OpenJob: func(id string) error {
+			args := a.childArgv(exe)[1:]
+			if a.g.endpoint != "" {
+				args = append(args, "--endpoint", a.g.endpoint)
+			}
+			if a.g.tokenFile != "" {
+				args = append(args, "--token-file", a.g.tokenFile)
+			}
+			return tray.OpenTUIJob(host, exe, id, args...)
+		},
 		Version:       Version,
 		Motion:        !a.g.noMotion,
 		NoNotify:      a.env("DRIVE502_NO_NOTIFY") == "1",

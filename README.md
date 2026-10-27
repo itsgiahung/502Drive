@@ -229,3 +229,5 @@ Licensed under GPL-3.0-only, see [LICENSE](LICENSE) and
 
 First copy: `502drive onboard` (TTY guide). Scripts can use
 `502drive onboard --no-input` for a JSON readiness checklist (exit 9: incomplete).
+
+Open a specific job in the terminal UI: `502drive tui --job JOB_ID`.

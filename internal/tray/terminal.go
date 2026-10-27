@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // termSpec is one terminal emulator and the flag that starts a program.
@@ -131,4 +132,37 @@ func firstLine(s string) string {
 		}
 	}
 	return s
+}
+
+// OpenTUIJob preserves explicit client flags and treats the ID only as data.
+func OpenTUIJob(h Host, exe, id string, clientArgs ...string) error {
+	if id != "" {
+		if !strings.HasPrefix(id, "job_") || len(id) < 5 || len(id) > 128 {
+			return errors.New("invalid job ID")
+		}
+		for _, c := range id {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-') {
+				return errors.New("invalid job ID")
+			}
+		}
+	}
+	if exe == "" {
+		return errors.New("cannot locate the 502drive binary")
+	}
+	args := append(append([]string{}, clientArgs...), "menu")
+	if id != "" {
+		args = append(args, "--job", id)
+	}
+	if h.GOOS == "windows" && !commandExists(h, "wt.exe") {
+		if h.StartConsole == nil {
+			return errors.New("no terminal or native console available")
+		}
+		return h.StartConsole(append([]string{exe}, args...))
+	}
+	argv, err := TerminalCommand(h, exe)
+	if err != nil {
+		return err
+	}
+	argv = append(argv[:len(argv)-1], args...)
+	return h.Start(argv)
 }

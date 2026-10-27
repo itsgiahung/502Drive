@@ -53,7 +53,8 @@ type App struct {
 	cfg    config.Config
 	cfgSet bool
 	// uiLang is the resolved language for interactive menus (vi/en).
-	uiLang string
+	uiLang   string
+	focusJob string
 	// locLang/locZone cache the human-output locale for this command.
 	locLang   string
 	locZone   *time.Location

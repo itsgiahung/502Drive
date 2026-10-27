@@ -302,6 +302,22 @@ func (a *agent) setNote(note string) {
 
 // action runs one fixed menu action. The id is never user text.
 func (a *agent) action(ctx context.Context, id string) {
+	switch id {
+	case "job:0", "job:1", "job:2":
+		idx := int(id[len(id)-1] - '0')
+		a.mu.Lock()
+		jobID := ""
+		if idx < len(a.snap.Jobs) {
+			jobID = a.snap.Jobs[idx].ID
+		}
+		a.mu.Unlock()
+		if jobID != "" {
+			if err := a.openJob(jobID); err != nil {
+				a.setNote(err.Error())
+			}
+		}
+		return
+	}
 	var err error
 	switch id {
 	case ActionQuit:
@@ -321,7 +337,7 @@ func (a *agent) action(ctx context.Context, id string) {
 	case ActionQueueToggle:
 		err = a.toggleQueue(ctx)
 	case ActionOpenTUI, ActionOpenTUI + ":jobs":
-		err = OpenTUI(a.o.Host, a.o.Exe)
+		err = a.openJob("")
 	case ActionPaste:
 		err = a.paste(ctx)
 	case ActionOpenResult:
@@ -462,4 +478,14 @@ func writeItem(write func(...any), it Item) {
 	for _, c := range it.Children {
 		writeItem(write, c)
 	}
+}
+
+func (a *agent) openJob(id string) error {
+	if a.o.OpenJob != nil {
+		return a.o.OpenJob(id)
+	}
+	if id == "" {
+		return OpenTUI(a.o.Host, a.o.Exe)
+	}
+	return OpenTUIJob(a.o.Host, a.o.Exe, id)
 }

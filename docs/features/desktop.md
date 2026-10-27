@@ -152,3 +152,8 @@ suppress notifications. A Freedesktop notification action uses fixed `open` and 
 captured job ID (wired to `menu --job` in U13). notify-send is the plain fallback.
 Windows notification delivery and actual desktop action clicks remain unverified;
 the existing Windows backend has no native notification implementation.
+
+U13: fixed tray slots `job:0..2` are clickable. They open `menu --job ID` with the
+same explicit config/endpoint/token-file flags. Drive names remain display-only.
+Notification Open uses the same path. Windows launches through wt or a native
+new console without a command shell. Closing this terminal/TUI leaves daemon running.

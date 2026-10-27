@@ -48,6 +48,7 @@ const (
 
 // Options control rendering; they mirror the CLI style.
 type Options struct {
+	JobID    string
 	NoMotion bool
 	ASCII    bool
 	Color    bool
@@ -85,6 +86,7 @@ type Model struct {
 
 	width, height int
 	screen        screen
+	focusedJob    bool
 	cursor, top   int
 	lang          string
 	// tabFocus puts the cursor on the tab bar: ←/→ switch tabs, ↓ or Enter
@@ -396,8 +398,27 @@ func (m Model) onSnapshot(msg snapshotMsg) (tea.Model, tea.Cmd) {
 		m.online = false
 	} else {
 		m.online = true
+		jobID := ""
+		if m.screen == screenJob {
+			if j, ok := m.selectedJob(); ok {
+				jobID = j.ID
+			}
+		}
+		if !m.focusedJob && m.opt.JobID != "" {
+			jobID = m.opt.JobID
+		}
 		m.observe(msg.snap)
 		m.snap = msg.snap
+		if jobID != "" {
+			for i, j := range m.snap.Jobs {
+				if j.ID == jobID {
+					m.cursor = i
+					m.screen = screenJob
+					m.focusedJob = true
+					break
+				}
+			}
+		}
 		if m.opt.Language == "" && msg.snap.Prefs.Language != "" {
 			m.lang = i18n.Resolve(msg.snap.Prefs.Language)
 		}
@@ -892,9 +913,9 @@ func (m Model) listLen() int {
 		if m.ab != nil {
 			return len(m.ab.page.Items)
 		}
-	case screenJobs:
+	case screenJobs, screenJob:
 		return len(m.snap.Jobs)
-	case screenLibrary:
+	case screenLibrary, screenCollection, screenFilter:
 		return len(m.snap.Collections)
 	case screenDestination:
 		return len(m.snap.Destinations)

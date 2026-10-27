@@ -27,3 +27,16 @@ func startDetached(argv []string) error {
 	}
 	return cmd.Process.Release()
 }
+
+func init() { consoleStarter = startConsole }
+func startConsole(argv []string) error {
+	if len(argv) == 0 {
+		return errNoCommand
+	}
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
+}

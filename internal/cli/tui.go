@@ -309,6 +309,18 @@ func (a *App) tuiSnapshot(ctx context.Context) (tui.Snapshot, error) {
 		snap.Status.RetryAt = *st.Throttle.RetryAt
 	}
 	a.tuiJobs(ctx, &snap)
+	if a.focusJob != "" {
+		found := false
+		for _, j := range snap.Jobs {
+			found = found || j.ID == a.focusJob
+		}
+		q := a.tuiJobQuery()
+		if !found && q.State == "" && q.CollectionID == "" {
+			if j, e := a.tuiGetJob(ctx, a.focusJob); e == nil {
+				snap.Jobs = append([]tui.Job{j}, snap.Jobs...)
+			}
+		}
+	}
 	a.tuiCollections(ctx, &snap)
 	a.tuiSlowSections(ctx, &snap)
 	snap.At = time.Now()
