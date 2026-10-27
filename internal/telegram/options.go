@@ -180,7 +180,7 @@ func (t *Telegram) copyChoiceCard(ctx context.Context, p app.Principal, chatID i
 
 // actCopyMode submits with an explicit answer (update or new).
 func (t *Telegram) actCopyMode(ctx context.Context, p app.Principal, st state.Callback, mode string) error {
-	res, err := t.svc.SubmitMode(ctx, p, "tg-cb:"+st.ID, st.Object, st.Revision, mode)
+	res, err := t.submitCopy(ctx, p, "tg-cb:"+st.ID, st.Object, st.Revision, mode, st.Payload)
 	if err == nil {
 		return t.submitted(ctx, p, st.ChatID, st.MessageID, res.Job)
 	}

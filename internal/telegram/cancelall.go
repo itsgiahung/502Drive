@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/itsgiahung/502Drive/internal/app"
@@ -16,26 +17,23 @@ var bulkStates = map[string]bool{
 	state.JobReconciling: true, state.JobCancelling: true, state.JobBlocked: true,
 }
 
+// bulkOrder lists bulkStates in a fixed order, so equal timestamps sort the same way every time.
+var bulkOrder = []string{state.JobQueued, state.JobRunning, state.JobPausing, state.JobPaused,
+	state.JobReconciling, state.JobCancelling, state.JobBlocked}
+
 // openJobs lists the caller's own jobs in a state that can still be cancelled.
 // The principal scope is the caller's: an operator never sees the owner's jobs.
 func (t *Telegram) openJobs(ctx context.Context, p app.Principal) ([]state.Job, error) {
 	var out []state.Job
-	cursor := int64(0)
-	for page := 0; page < 5; page++ {
-		jobs, next, err := t.svc.Jobs(ctx, p, false, "", "", 100, cursor)
+	for _, st := range bulkOrder { // the server filters by state, one cursor per state
+		jobs, _, err := t.jobsWhere(ctx, p, false, st, "", manageMax)
 		if err != nil {
 			return nil, err
 		}
-		for _, j := range jobs {
-			if bulkStates[j.State] {
-				out = append(out, j)
-			}
-		}
-		if next <= cursor {
-			break
-		}
-		cursor = next
+		out = append(out, jobs...)
 	}
+	// Newest first; jobs created at the same instant keep the order of bulkOrder.
+	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	return out, nil
 }
 

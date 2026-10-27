@@ -90,7 +90,7 @@ func (t *Telegram) finishAwait(ctx context.Context, p app.Principal, chatID int6
 		if err != nil {
 			return t.showError(ctx, p, chatID, 0, err)
 		}
-		return t.previewCard(ctx, p, chatID, 0, view, "✏️ "+tx.renamed, name)
+		return t.previewCard(ctx, p, chatID, 0, view, "✏️ "+tx.renamed, pl)
 	case "mkdir":
 		made, _, err := t.svc.Mkdir(ctx, p, base+":mkdir", a.folder, name)
 		if err != nil {
@@ -141,7 +141,7 @@ func (t *Telegram) replay(ctx context.Context, p app.Principal, chatID int64, me
 	if err != nil {
 		return t.showError(ctx, p, chatID, messageID, err)
 	}
-	return t.previewCard(ctx, p, chatID, messageID, view, "", pl.Root)
+	return t.previewCard(ctx, p, chatID, messageID, view, "", pl)
 }
 
 // actPick opens the folder chooser at My Drive.

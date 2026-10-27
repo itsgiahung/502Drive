@@ -50,7 +50,7 @@ type gTexts struct {
 	reportBtnOff         string
 
 	// /find (S10).
-	findUsage, findTitle, findNone, findScope, findMore, findPartial string
+	findUsage, findTitle, findNone, findScope, findMore string
 
 	// Error advice.
 	busyMsg        string
@@ -148,10 +148,9 @@ var gVI = gTexts{
 		speed: "⚡ Tốc độ trung bình: %s/s", footer: "Mở Công việc để xử lý.",
 	},
 
-	findUsage: "Gửi <code>/find tên</code> để tìm trong My Drive, ví dụ <code>/find báo cáo</code>.",
+	findUsage: "Gửi <code>/find tên</code> để tìm trong Drive, ví dụ <code>/find báo cáo</code>.",
 	findTitle: "🔎 <b>Kết quả cho «%s»</b>", findNone: "Không thấy mục nào khớp.",
-	findScope: "Chỉ tìm ở cấp cao nhất của My Drive.", findMore: "+%d mục nữa, hãy gõ tên cụ thể hơn.",
-	findPartial: "Chưa quét hết My Drive; gõ tên cụ thể hơn.",
+	findScope: "Tìm trong toàn bộ Drive, tối đa 20 kết quả.", findMore: "+%d mục nữa, hãy gõ tên cụ thể hơn.",
 
 	busyMsg: "Đang có công việc chạy trên mục này (%s).",
 	errMsg: map[string]string{
@@ -259,10 +258,9 @@ var gEN = gTexts{
 		speed: "⚡ Average speed: %s/s", footer: "Open Jobs to deal with them.",
 	},
 
-	findUsage: "Send <code>/find name</code> to search My Drive, for example <code>/find report</code>.",
+	findUsage: "Send <code>/find name</code> to search Drive, for example <code>/find report</code>.",
 	findTitle: "🔎 <b>Results for «%s»</b>", findNone: "Nothing matched.",
-	findScope: "Searches the top level of My Drive only.", findMore: "+%d more, type a more specific name.",
-	findPartial: "My Drive was not fully scanned; type a more specific name.",
+	findScope: "Searches all of Drive, up to 20 results.", findMore: "+%d more, type a more specific name.",
 
 	busyMsg: "A job is running on this item (%s).",
 	errMsg: map[string]string{

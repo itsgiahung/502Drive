@@ -50,6 +50,9 @@ type planPayload struct {
 	// Presets and Conflict are the copy options picked on the preview (S5, N1).
 	Presets  []string `json:"pf,omitempty"`
 	Conflict string   `json:"oc,omitempty"`
+	// AfterSync is the sync-after-copy mode picked on the preview (S8); ""
+	// means the preference.
+	AfterSync string `json:"as,omitempty"`
 }
 
 // panel sends or edits one card and returns the message it lives in. An empty
@@ -175,6 +178,9 @@ func (t *Telegram) homePage(ctx context.Context, p app.Principal, chatID int64, 
 	}
 	fmt.Fprintf(&b, "📂 %s: <b>%s</b>\n", tx.destLabel, escape(short(dest, 50)))
 	fmt.Fprintf(&b, "⏳ %s %d · 🕒 %s %d · ⚠️ %s %d\n", tx.running, st.Running, tx.queued, st.Queued, tx.needAction, st.Blocked)
+	if st.QueuePaused {
+		b.WriteString(tx.ig().queuePaused + "\n")
+	}
 	fmt.Fprintf(&b, "🤖 %s: %s\n\n%s", tx.autoCopy, onOff(prefs.AutoCopy, tx), tx.welcomeTail)
 	return t.showCard(ctx, p, chatID, messageID, b.String(),
 		[]button{styled(nav(tx.kbCopy, "copy"), "primary")},
@@ -291,6 +297,14 @@ func (t *Telegram) jobsPage(ctx context.Context, p app.Principal, chatID int64, 
 			break
 		}
 	}
+	if line, queueRow := t.queueControls(ctx, p, tx, ""); line != "" || queueRow != nil {
+		if line != "" {
+			b.WriteString(line + "\n")
+		}
+		if queueRow != nil {
+			rows = append(rows, queueRow)
+		}
+	}
 	rows = append(rows, []button{act(tx.g().manageBtn, "jobs_mgmt", "", 0, ""), nav(tx.back, "home")})
 	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
 }
@@ -395,7 +409,7 @@ func (t *Telegram) collectionButtons(tx texts, id string, view app.SyncView, con
 	primary := []button{act(tx.runNow, "sync_run", id, 0, "")}
 	if !configured {
 		primary = append([]button{act(tx.enableSync, "sync_presets", id, 0, "")}, primary...)
-		return [][]button{primary, {act(tx.auditCheck, "audit", id, 0, "")}}
+		return [][]button{primary, {act(tx.auditCheck, "audit", id, 0, ""), act(tx.ig().colJobsBtn, "col_jobs", id, 0, "")}}
 	}
 	sub := view.Subscription
 	switch sub.State {
@@ -410,7 +424,7 @@ func (t *Telegram) collectionButtons(tx texts, id string, view app.SyncView, con
 		secondary = append(secondary, act(tx.stopSync, "sync_stop", id, sub.Revision, ""))
 	}
 	rows = append(rows, secondary)
-	return append(rows, []button{act(tx.auditCheck, "audit", id, 0, "")})
+	return append(rows, []button{act(tx.auditCheck, "audit", id, 0, ""), act(tx.ig().colJobsBtn, "col_jobs", id, 0, "")})
 }
 
 // syncPayload is the private intent of a preset button; revisions are read
@@ -534,17 +548,22 @@ func (t *Telegram) settingsPage(ctx context.Context, p app.Principal, chatID int
 	fmt.Fprintf(&b, "%s: %s\n", tx.language, escape(string(langOf(prefs.Language))))
 	fmt.Fprintf(&b, "%s: %s\n", tx.autoCopy, onOff(prefs.AutoCopy, tx))
 	block, extra := t.notifySettings(ctx, p, tx, prefs)
-	fmt.Fprintf(&b, "%s\n%s", block, tx.settingsHint)
+	syncBlock, syncRows := t.afterSyncSettings(tx, prefs)
+	fmt.Fprintf(&b, "%s%s\n%s", syncBlock, block, tx.settingsHint)
 	rows := [][]button{
 		{act("Tiếng Việt", "lang", string(langVI), 0, ""), act("English", "lang", string(langEN), 0, "")},
 		{act(tx.on, "auto", "on", 0, ""), act(tx.off, "auto", "off", 0, "")},
 	}
+	rows = append(rows, syncRows...)
 	rows = append(rows, extra...)
 	rows = append(rows, []button{nav(tx.back, "home")})
 	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
 }
 
-func (t *Telegram) previewCard(ctx context.Context, p app.Principal, chatID int64, messageID int, view app.PlanView, note, root string) error {
+// previewCard shows the preview of a plan. ext carries the choices that are not
+// part of the plan itself (the output name and the sync mode); the rest of the
+// payload is rebuilt from the plan so the buttons always show what will happen.
+func (t *Telegram) previewCard(ctx context.Context, p app.Principal, chatID int64, messageID int, view app.PlanView, note string, ext planPayload) error {
 	tx := t.text(ctx, p)
 	var b strings.Builder
 	fmt.Fprintf(&b, "📥 <b>%s</b>\n\n", escape(fmt.Sprintf(tx.previewTitle, short(view.SourceName, 60))))
@@ -564,14 +583,16 @@ func (t *Telegram) previewCard(ctx context.Context, p app.Principal, chatID int6
 	if block := filterPreview(tx, view); block != "" {
 		b.WriteString("\n" + block)
 	}
-	pl := planPayload{Source: refOf(view.Plan), Root: root, Destination: view.DestinationID,
-		Presets: presetsOf(view.Filter), Conflict: conflictOf(view.OnConflict)}
+	pl := planPayload{Source: refOf(view.Plan), Root: ext.Root, Destination: view.DestinationID,
+		Presets: presetsOf(view.Filter), Conflict: conflictOf(view.OnConflict), AfterSync: ext.AfterSync}
 	payload, _ := json.Marshal(pl)
 	rows := [][]button{
 		{styled(act(tx.copyNow, "copy", view.ID, view.Revision, string(payload)), "success")},
 		{act(tx.renameBtn, "rename", view.ID, view.Revision, string(payload)), act(tx.pickBtn, "pick", view.ID, view.Revision, string(payload))},
 	}
 	rows = append(rows, optionRows(tx, view, pl)...)
+	rows = append(rows, t.afterSyncRow(ctx, p, tx, view, pl),
+		[]button{act(tx.ig().deepBtn, "deep_start", view.ID, view.Revision, string(payload))})
 	rows = append(rows, []button{styled(act("✖ "+tx.cancel, "cancel_preview", view.ID, view.Revision, ""), "danger")})
 	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
 }
@@ -607,7 +628,13 @@ func (t *Telegram) jobCard(ctx context.Context, p app.Principal, chatID int64, m
 	if fresh {
 		text = tx.copyStarted + "\n" + text
 	}
-	return t.show(ctx, p, chatID, messageID, text, t.jobButtons(tx, j)...)
+	rows := t.jobButtons(tx, j)
+	if line, moves := t.queueInfo(ctx, p, tx, j); line != "" {
+		text += "\n" + line
+		last := rows[len(rows)-1]
+		rows = append(append(rows[:len(rows)-1:len(rows)-1], moves...), last)
+	}
+	return t.show(ctx, p, chatID, messageID, text, rows...)
 }
 
 // submitted shows the new job card and starts its durable progress panel. The
@@ -644,6 +671,9 @@ func (t *Telegram) jobButtons(tx texts, j state.Job) [][]button {
 			break
 		}
 		rows = append(rows, []button{styled(control(tx.retry, "retry"), "success")})
+	}
+	if hasProblems(j) {
+		rows = append(rows, []button{act(tx.ig().reportBtn, "job_report", j.ID, j.Revision, "")})
 	}
 	rows = append(rows, []button{act(tx.details, "job", j.ID, j.Revision, ""), nav(tx.jobs, "jobs")})
 	return rows

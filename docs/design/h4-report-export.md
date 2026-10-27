@@ -51,6 +51,5 @@ Ngày: 2026-10-27. Migration: `025_history.sql`.
 
 ## Chưa làm
 
-- Nút "📄 Báo cáo lỗi" của Telegram (file CSV chỉ cho owner/operator trong chat
-  riêng) — ghi móc UI, không sửa `flow.go` trong đợt này.
+- Nút "📄 Báo cáo lỗi" của Telegram đã có (đợt IG, [telegram.md](../features/telegram.md)); TUI chưa.
 - Chưa chạy Drive thật; báo cáo chỉ đọc DB.

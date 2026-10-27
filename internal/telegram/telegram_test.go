@@ -36,6 +36,14 @@ type fakeMessage struct {
 	Placeholder string
 }
 
+// fakeDocument is one file the bot uploaded with sendDocument.
+type fakeDocument struct {
+	ChatID   int64
+	Filename string
+	Content  []byte
+	Caption  string
+}
+
 type queued struct {
 	id   int64
 	body []byte
@@ -52,6 +60,7 @@ type fakeAPI struct {
 	edits     []fakeMessage
 	log       []fakeMessage
 	answers   []string
+	docs      []fakeDocument
 	nextID    int
 	polls     int
 	getMeCode int
@@ -89,6 +98,12 @@ func (f *fakeAPI) cards() []fakeMessage {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]fakeMessage(nil), f.log...)
+}
+
+func (f *fakeAPI) documents() []fakeDocument {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]fakeDocument(nil), f.docs...)
 }
 
 func (f *fakeAPI) answerTexts() []string {
@@ -221,6 +236,34 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 		f.write(w, map[string]any{"ok": true, "result": map[string]any{
 			"message_id": m.MessageID, "date": 1700000000,
 			"chat": map[string]any{"id": chatID, "type": "private"}, "text": m.Text}})
+	case "sendDocument":
+		if err := r.ParseMultipartForm(8 << 20); err != nil {
+			f.t.Errorf("cannot parse %s body: %v", method, err)
+		}
+		chatID, _ := strconv.ParseInt(r.FormValue("chat_id"), 10, 64)
+		doc := fakeDocument{ChatID: chatID, Caption: r.FormValue("caption")}
+		if r.MultipartForm != nil {
+			for _, headers := range r.MultipartForm.File {
+				for _, fh := range headers {
+					doc.Filename = fh.Filename
+					file, err := fh.Open()
+					if err != nil {
+						f.t.Errorf("cannot open the uploaded file: %v", err)
+						continue
+					}
+					doc.Content, _ = io.ReadAll(file)
+					file.Close()
+				}
+			}
+		}
+		f.mu.Lock()
+		f.nextID++
+		f.docs = append(f.docs, doc)
+		id := f.nextID
+		f.mu.Unlock()
+		f.write(w, map[string]any{"ok": true, "result": map[string]any{
+			"message_id": id, "date": 1700000000,
+			"chat": map[string]any{"id": chatID, "type": "private"}}})
 	case "answerCallbackQuery":
 		if err := r.ParseMultipartForm(1 << 20); err != nil && err != http.ErrNotMultipart {
 			f.t.Errorf("cannot parse %s body: %v", method, err)

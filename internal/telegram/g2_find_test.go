@@ -9,7 +9,8 @@ import (
 	"github.com/itsgiahung/502Drive/internal/app"
 )
 
-// Batch G, slice 2c: /find NAME (search My Drive, pick a result as the source).
+// Batch G, slice 2c: /find NAME (search Drive, pick a result as the source). Since
+// batch IG it uses the Drive search API (see ig_sync_report_test.go for the deep search).
 
 func TestFindListsMatchesAndPickingOneOpensTheCopyPreview(t *testing.T) {
 	h := newHarness(t, 100)
@@ -27,7 +28,7 @@ func TestFindListsMatchesAndPickingOneOpensTheCopyPreview(t *testing.T) {
 		t.Fatalf("a non-matching file was listed: %v", card.ButtonTexts)
 	}
 	if !strings.Contains(card.Text, g.findScope) {
-		t.Fatalf("the card must say it only searches the top level:\n%s", card.Text)
+		t.Fatalf("the card must say what is searched:\n%s", card.Text)
 	}
 
 	h.tap(card, "Quarterly Report")

@@ -37,5 +37,5 @@ Ngày: 2026-10-27. Phạm vi: chỉ thêm khóa/đường dẫn, không đổi h
 
 ## Chưa làm
 
-- UI (TUI/Telegram) chưa dùng search/last-audit; ghi móc ở `PROGRESS.md`.
+- Telegram đã dùng search (`/find`), lọc job phía server và preference báo cáo (đợt IG); search/last-audit trong TUI chưa; móc ở `PROGRESS.md`.
 - Chưa chạy với Drive thật; `Search` mới kiểm bằng `drivetest.Fake`.

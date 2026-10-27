@@ -451,7 +451,7 @@ Chạy: `go test -race ./internal/telegram`.
 | G-13 | S10: báo cáo hằng ngày đúng giờ địa phương, một lần/ngày (qua restart), tắt được, không gửi khi rỗng, đúng người | local | `TestDailyReportIsSentOnceAtTheConfiguredLocalTime`, `TestDailyReportIsSkippedWhenThereIsNothingToSay`, `TestDailyReportCanBeTurnedOff`, `TestDailyReportCountsOnlyThatPersonsJobs`, `TestReportButtonsStoreTheLocalTimeAndCanTurnItOff`, `TestReportShowsTheAverageSpeedAndOmitsEmptyLines` |
 | G-14 | S10: giờ báo cáo đúng một lần mỗi ngày qua DST (New York, Berlin: giờ không tồn tại / lặp) và theo giờ địa phương, không theo UTC | local | `TestDailyReportDueIsExactlyOncePerLocalDayAcrossDST`, `TestReportDueWaitsForTheLocalClockNotUTC` |
 | G-15 | S10: trang Quản lý job lọc theo trạng thái, phân trang, pause/resume/retry/cancel theo lô (cancel cần xác nhận hết hạn), bỏ qua job đã đổi, không retry job chờ quota, one-shot, chỉ job của mình | local | [g2_jobs_test.go](../internal/telegram/g2_jobs_test.go) (9 test) |
-| G-16 | S10: `/find tên` ở cấp cao nhất My Drive, chọn làm nguồn, escape, giới hạn 8, chỉ owner, người lạ/operator không chạm Drive | local | [g2_find_test.go](../internal/telegram/g2_find_test.go) (6 test) |
+| G-16 | S10: `/find tên` chọn làm nguồn, escape, giới hạn, chỉ owner, người lạ/operator không chạm Drive (từ đợt IG tìm cả Drive bằng Search API, xem IG-9) | local | [g2_find_test.go](../internal/telegram/g2_find_test.go) (6 test) |
 | G-17 | Lỗi có hướng xử lý (vi/en), job lỗi kèm gợi ý theo mã; mọi chuỗi đợt G có đủ vi + en | local | `TestErrorCardsExplainWhatToDoInBothLanguages`, `TestFailedJobNoticeSaysWhatToDoNext`, `TestBatchGStringsExistInBothLanguages` |
 | G-18 | Toàn bộ trên bot Telegram thật, Drive thật, múi giờ/DST thật của máy, quota thật | chưa chạy | cần bot + tài khoản thật |
 
@@ -485,6 +485,31 @@ Chạy: `go test -race ./internal/telegram`.
 | H5-3 | `doctor` failed khi unit cài nhưng chưa enable; passed khi không có/enabled | local | [app/doctor_test.go](../internal/app/doctor_test.go) `TestDoctorSystemdUserUnitIsActionable` |
 | H5-4 | Prune giữ job còn audit/outbox pending tham chiếu, xóa job không tham chiếu, FK sạch | local | [state/prune_test.go](../internal/state/prune_test.go) `TestPruneKeepsJobsReferencedByAuditOrPendingOutbox` |
 | H6-1 | `staticcheck ./...` không còn cảnh báo (kể cả U1000/SA4023/ST1005/S1039 và SA4006 trong test) | local | `staticcheck ./...` (xem `BATCH-H-REPORT.md`) |
+
+## Telegram — đợt IG (nối API đợt C2 và H)
+
+Bot giả (`httptest`, có `sendDocument`), `drivetest.Fake`, đồng hồ giả, các vai owner / operator / người lạ / group chat;
+**không** chạy với Telegram hay Drive thật. Chạy: `go test -race ./internal/telegram`.
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| IG-1 | S6: nhiều link trong một tin → một thẻ xem trước, không tạo job trước khi bấm; bấm → mỗi link một job chung `batch_id`, đúng thứ tự gửi; thẻ tổng kết đọc trạng thái thật; nút one-shot | local | [ig_batch_test.go](../internal/telegram/ig_batch_test.go) `TestSeveralLinksInOneMessageAreOneBatchWithOneConfirmation`, `TestCopyCommandAlsoTakesSeveralLinks` |
+| IG-2 | S6: `auto_copy` gắn revision → lô chạy ngay; update gửi lại / replay sau crash không tạo thêm job | local | `TestBatchOfPastedLinksStartsAtOnceWhenPasteToCopyIsBound` |
+| IG-3 | S6: link lỗi hoặc đã copy không dừng các link khác, mỗi link một dòng lý do; quá 20 link được báo; toàn link lỗi không tạo gì | local | `TestBatchReportsBadAndAlreadyCopiedLinksWithoutStoppingTheRest`, `TestBatchTakesTheFirstTwentyLinksAndSaysSo`, `TestBatchOfOnlyBadLinksCreatesNothing` |
+| IG-4 | S6: người lạ và group chat không được trả lời; lô của operator thuộc operator; owner không bấm được nút của operator | local | `TestBatchRespectsAllowlistPrivateChatAndPrincipal` |
+| IG-5 | S6: owner tạm dừng/tiếp tục hàng đợi bằng nút (trang Công việc, trang chủ, thẻ lô); operator thấy "tạm dừng" nhưng không có nút và callback giả bị dịch vụ từ chối; job của lô vẫn `queued` khi hàng đợi dừng | local | `TestOwnerPausesAndResumesTheQueueFromTheJobsPage`, `TestOperatorSeesThePausedQueueButCannotChangeIt`, `TestPausedQueueKeepsBatchJobsWaiting` |
+| IG-6 | S6: thứ tự hàng đợi: vị trí i/n, lên đầu, xuống cuối, ưu tiên, bỏ ưu tiên; nút cũ (revision đổi) không di chuyển gì; operator không di chuyển job của owner | local | `TestWaitingJobCanMoveToTheFrontAndBackAndGetPriority`, `TestStaleMoveButtonShowsTheTruthAndMovesNothing`, `TestOperatorCannotMoveSomeoneElsesJob` |
+| IG-7 | S7: nút Quét kỹ → tổng file/thư mục/byte, file native/không copy được, ước thời gian (chưa có số đo → nói chưa ước tính được; có số đo → có ước tính), cảnh báo dung lượng và giới hạn ngày; không ghi Drive, không tạo job; Copy từ thẻ quét | local | [ig_deep_test.go](../internal/telegram/ig_deep_test.go) `TestDeepScanShowsTotalsEstimateUnknownAndQuotaWarnings`, `TestDeepScanShowsAMeasuredEstimateWhenThereIsHistory` |
+| IG-8 | S7: quét đang chạy / hủy / hết hạn / gián đoạn / lỗi không bao giờ hiện nhãn "Tổng" (chỉ "chưa phải tổng"), tên nguồn được escape; nút one-shot, của đúng người | local | `TestRunningDeepScanIsNotATotalAndCanBeCancelled`, `TestInterruptedDeepScanSaysSoAfterARestart`, `TestDeepTextNeverCallsAPartialCountATotal`, `TestDeepScanButtonsAreOneShotAndBelongToTheirOwner` |
+| IG-9 | `/find` dùng `GET /v1/drive/search` (cả Drive, không duyệt thư mục), chọn làm nguồn; operator bị dịch vụ từ chối, không có lệnh search | local | [ig_sync_report_test.go](../internal/telegram/ig_sync_report_test.go) `TestFindSearchesTheWholeDriveNotJustTheTopLevel`, `TestFindForAnOperatorIsRefusedByTheServiceWithoutASearch` |
+| IG-10 | S8: nút xoay vòng trên thẻ xem trước vào `after_copy_sync_mode` của job, sống qua Đổi tên/preset; "off" tường minh thắng mặc định daily; mode lạ coi như theo preference | local | `TestPreviewCyclesTheSyncAfterCopyModeAndSubmitsIt`, `TestSyncChoiceSurvivesRenameAndOtherOptions`, `TestExplicitOffOverridesADailyDefault`, `TestForgedSyncModeIsIgnored` |
+| IG-11 | S8: Cài đặt đặt mặc định bằng `PatchPreferences`, riêng từng người; job không đổi lựa chọn dùng preference và daemon tạo subscription sau khi copy xong | local | `TestSettingsSetTheDefaultSyncAfterCopyThroughThePreferences` |
+| IG-12 | X1: nút Báo cáo lỗi gửi CSV cùng cột với CLI kèm cách xử lý; chặn công thức; không lộ đường dẫn máy chủ, token hay thông điệp lỗi; không nút khi không có lỗi, job không lỗi trả lời lịch sự | local | `TestProblemReportSendsACSVWithReasonsAndAdvice`, `TestProblemReportButtonOnlyAppearsWhenThereAreProblems` |
+| IG-13 | X1: trần 5000 dòng và nói rõ; operator chỉ nhận báo cáo job của mình, người lạ/group không nhận gì, nút one-shot | local | `TestProblemReportIsCappedAndSaysSo`, `TestProblemReportIsScopedToTheCaller` |
+| IG-14 | Trang Quản lý và `/cancelall` đọc job bằng lọc `state=` + cursor phía server: job cũ không bị che bởi hàng trăm job mới, không lộ job của người khác | local | `TestManageGroupFindsOldJobsBeyondTheNewestHundreds`, `TestManageGroupNeverShowsAnotherPersonsJobs`, `TestBulkOrderCoversExactlyTheBulkStates`; thẻ nguồn có **📋 Công việc của nguồn này** (`collection_id=`): `TestSourceCardListsOnlyThatSourcesJobs` |
+| IG-15 | Báo cáo hằng ngày dùng `daily_report`/`daily_report_at` của preferences (không còn khoá riêng trong `settings`), đọc cửa sổ bằng lịch sử phía server | local | `TestDailyReportTimeIsStoredOnlyInThePreferences`, `TestDailyReportReadsOldFinishedJobsThroughTheHistoryWindow` |
+| IG-16 | Chuỗi đợt IG có đủ vi + en, cùng số động từ định dạng; mọi cảnh báo quét và mode có chữ | local | `TestBatchIGStringsExistInBothLanguages`, `TestEveryDeepWarningAndSyncModeHasAText` |
+| IG-17 | Toàn bộ với bot Telegram thật (gửi file thật, giới hạn kích thước thật, edit bị rate limit khi lô lớn), Drive thật (quét cây lớn, search thật, lô 20 link thật) | chưa chạy | cần bot + tài khoản thật |
 
 ## Cách chạy
 

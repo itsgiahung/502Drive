@@ -68,6 +68,9 @@ type Telegram struct {
 	now         func() time.Time
 	// reportWindow is how far back the daily report looks (24h when zero).
 	reportWindow time.Duration
+	// deepWait is how long a deep scan card waits for a small tree (0 = default,
+	// negative = do not wait).
+	deepWait time.Duration
 
 	state atomic.Value // string
 	proc  sync.Mutex
