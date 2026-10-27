@@ -286,6 +286,9 @@ func (r *run) executeRepair(ctx context.Context, job state.Job) {
 		r.block("audit_missing", "The collection for this repair is missing.")
 		return
 	}
+	if !r.destinationRootReady(ctx, col) {
+		return
+	}
 	// A previous repair may have died between a remote write and the mapping
 	// commit. Resolve those items first: preparing a new generation would
 	// forget the intent that can still find the copy it made.

@@ -168,6 +168,9 @@ func (r *run) runOnce(ctx context.Context) {
 	if job.Trigger == "initial" {
 		ok = r.discover(ctx)
 	} else {
+		if coll, err := r.e.Store.GetCollection(r.db, "", r.collection); err == nil && !r.destinationRootReady(ctx, coll) {
+			return
+		}
 		ok = r.discoverDelta(ctx)
 	}
 	if !ok {
@@ -1274,6 +1277,39 @@ func (r *run) discoverDelta(ctx context.Context) bool {
 		if total >= massRemovalFloor && removed*100 > total*massRemovalPercent {
 			r.massRemoval, r.massRemoved, r.massTotal = true, removed, total
 		}
+	}
+	return true
+}
+
+// destinationRootReady checks, before a sync or repair writes into an existing
+// copy, that the copy's root folder still exists and is not in the trash.
+// Copies made into a trashed folder would disappear with it, and a deleted
+// root cannot take any. Either case blocks the job with a reason the user can
+// act on (restore it from the Drive trash, then retry; or retire the copy).
+// A read that fails for another reason does not block: the scan that follows
+// meets the same error and handles it the usual way.
+func (r *run) destinationRootReady(ctx context.Context, col state.Collection) bool {
+	if col.RootID == nil || *col.RootID == "" {
+		return true
+	}
+	if r.e.acquire(ctx) != nil {
+		return true // shutting down; nothing is written
+	}
+	f, err := r.p.GetFile(ctx, *col.RootID, "")
+	r.e.release()
+	switch {
+	case err == nil && !f.Trashed:
+		return true
+	case err == nil:
+		r.block("destination_root_trashed", "The folder this copy lives in is in the Drive trash. Restore it from the trash and retry, or retire this copy.")
+		return false
+	case drive.KindOf(err) == drive.KindNotFound:
+		r.block("destination_root_missing", "The folder this copy lives in was deleted or is no longer accessible. Retire this copy, or copy the source again.")
+		return false
+	case drive.KindOf(err) == drive.KindAuth:
+		r.setReconnect()
+		r.block("account_reconnect_required", "The Google account must be connected again.")
+		return false
 	}
 	return true
 }

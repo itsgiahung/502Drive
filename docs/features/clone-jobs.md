@@ -107,6 +107,9 @@ original decision.
 - `retire`: stop future sync, cancel eligible queued/paused work and mark retired;
   no Drive writes. Running work returns `collection_busy`.
 - `resume`: return the collection to ready.
+- If the copy's root folder is in the Drive trash or deleted, sync and repair stop
+  with `destination_root_trashed` / `destination_root_missing` instead of writing
+  into it. Restore the folder and retry, or retire the copy.
 - `forget`: only after retirement; remove local metadata/history, retain Drive files.
 - `collections cleanup`: preview by default in the CLI; apply requires the actual
   root name and ownership tag. It only trashes the app-created output root.

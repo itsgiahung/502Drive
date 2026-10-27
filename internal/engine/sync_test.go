@@ -505,3 +505,41 @@ func TestSingleFilePureRenameRenamesTheCopy(t *testing.T) {
 		t.Fatalf("pure rename of a single file: copies +%d", e.fake.Calls["copy"]-copies)
 	}
 }
+
+// A copy whose root folder the user moved to the trash or deleted is not
+// synced into: the run blocks with a reason, copies nothing, and continues
+// normally once the folder is restored and the job retried.
+func TestSyncBlocksWhenTheCopyFolderIsTrashedOrDeleted(t *testing.T) {
+	e := newEnv(t)
+	e.fake.TrashedVisible = true // Google returns trashed folders with trashed=true
+	src := e.fake.Folder("Src", "root")
+	e.fake.File("a.txt", src.ID, 3)
+	base, root := e.baseline(src)
+	e.fake.File("b.txt", src.ID, 4)
+	copies := e.fake.Calls["copy"]
+
+	e.fake.Mutate(root, func(x *drive.File) { x.Trashed = true })
+	j := e.runUntil(e.runNow(base.CollectionID).ID, terminal)
+	if j.State != state.JobBlocked || j.LastError == nil || j.LastError.Code != "destination_root_trashed" {
+		t.Fatalf("trashed root: %s %+v", j.State, j.LastError)
+	}
+	if e.fake.Calls["copy"] != copies {
+		t.Fatal("copied into a folder in the trash")
+	}
+
+	e.fake.Mutate(root, func(x *drive.File) { x.Trashed = false }) // the user restores it
+	r, err := e.store.Action(context.Background(), "owner", "retry-root", j.ID, "retry", j.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j = e.runUntil(r.Job.ID, terminal); j.State != state.JobSucceeded || len(find(e.fake, root, "b.txt")) != 1 {
+		t.Fatalf("after restoring the folder: %s, b.txt copies %d", j.State, len(find(e.fake, root, "b.txt")))
+	}
+
+	e.fake.TrashedVisible = false // now gone for good: Drive answers 404
+	e.fake.Mutate(root, func(x *drive.File) { x.Trashed = true })
+	j = e.runUntil(e.runNow(base.CollectionID).ID, terminal)
+	if j.State != state.JobBlocked || j.LastError == nil || j.LastError.Code != "destination_root_missing" {
+		t.Fatalf("deleted root: %s %+v", j.State, j.LastError)
+	}
+}
