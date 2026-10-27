@@ -160,8 +160,17 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 	if !online {
 		toggleTitle += " " + i18n.T(lang, i18n.TrayReasonDaemon)
 	}
-	items := []Item{
-		{ID: "status", Title: line},
+	// The status is a column of short rows, not one long line.
+	statusRows := []Item{{ID: "status", Title: line}, {ID: "status:work", Hidden: true}, {ID: "status:attention", Hidden: true}}
+	if online {
+		statusRows[0].Title = i18n.Tf(lang, i18n.TrayGoogleRow, plain(account))
+		statusRows[1] = Item{ID: "status:work", Title: i18n.Tf(lang, i18n.TrayWorkRow, status.Running, status.Queued)}
+		if status.QueuePaused {
+			statusRows[1].Title = i18n.T(lang, i18n.TrayPausedRow)
+		}
+		statusRows[2] = Item{ID: "status:attention", Title: i18n.Tf(lang, i18n.TrayBlockedRow, status.Blocked), Hidden: status.Blocked == 0}
+	}
+	items := append(statusRows, []Item{
 		{Separator: true},
 		{ID: ActionDaemon, Title: i18n.T(lang, i18n.TrayStartApp), Enabled: !online, Hidden: online},
 		{ID: ActionPaste, Title: cloneTitle, Enabled: googleOK},
@@ -175,7 +184,7 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 		{Separator: true},
 		{ID: ActionQuit, Title: i18n.T(lang, i18n.Quit), Enabled: true},
 		{ID: ActionStopDaemon, Title: i18n.T(lang, i18n.StopApp), Enabled: online},
-	}
+	}...)
 	return View{State: state, Title: title, StatusLine: line, Tooltip: tooltip(title, line, status, online, lang), Items: items}
 }
 

@@ -264,7 +264,7 @@ func TestBuildViewKeepsAStableStructure(t *testing.T) {
 		}
 	}
 	// Grouped: status, clone/open, jobs, queue pause, settings, quit and stop.
-	want := []string{"status", ActionDaemon, ActionPaste, ActionOpenTUI, "jobs", "job:0", "job:1", "job:2",
+	want := []string{"status", "status:work", "status:attention", ActionDaemon, ActionPaste, ActionOpenTUI, "jobs", "job:0", "job:1", "job:2",
 		ActionOpenAll, ActionOpenResult, ActionQueueToggle, "settings", ActionAutostart, ActionQuit, ActionStopDaemon}
 	if strings.Join(ids, ",") != strings.Join(want, ",") {
 		t.Fatalf("ids = %v, want %v", ids, want)
@@ -356,7 +356,7 @@ func TestVietnameseMenuLabelsFitTheRow(t *testing.T) {
 	for _, v := range []View{offline, notConnected} {
 		for _, it := range v.Items {
 			for _, row := range append([]Item{it}, it.Children...) {
-				if n := utf8.RuneCountInString(row.Title); n > 48 && row.ID != "status" && !strings.HasPrefix(row.ID, jobSlotID) {
+				if n := utf8.RuneCountInString(row.Title); n > 48 && !strings.HasPrefix(row.ID, "status") && !strings.HasPrefix(row.ID, jobSlotID) {
 					t.Errorf("row %q is %d characters: %q", row.ID, n, row.Title)
 				}
 			}

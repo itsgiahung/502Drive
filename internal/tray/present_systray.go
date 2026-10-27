@@ -88,7 +88,7 @@ func (p *systrayPresenter) build(a *agent) {
 
 // watch dispatches one fixed action id; info rows have no click handler.
 func (p *systrayPresenter) watch(id string, item *systray.MenuItem) {
-	if id == "status" || strings.HasPrefix(id, jobSlotID+":") {
+	if strings.HasPrefix(id, "status") || strings.HasPrefix(id, jobSlotID+":") {
 		return
 	}
 	go func() {

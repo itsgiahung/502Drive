@@ -211,6 +211,10 @@ const (
 	StateFailed      Key = "state_failed"
 	StatePaused      Key = "state_paused"
 	StatusLine       Key = "status_line"
+	TrayGoogleRow    Key = "tray_google_row"
+	TrayWorkRow      Key = "tray_work_row"
+	TrayPausedRow    Key = "tray_paused_row"
+	TrayBlockedRow   Key = "tray_blocked_row"
 	OfflineLine      Key = "offline_line"
 	JobLine          Key = "job_line"
 	NoJobsTray       Key = "no_jobs_tray"
@@ -385,7 +389,8 @@ var VI = map[Key]string{
 	StateIdle:      "rảnh", StateBusy: "đang sao chép", StateNeeds: "cần xử lý", StateError: "lỗi", StateOffline: "ngoại tuyến",
 	StateQueued: "đang chờ", StateRunning: "đang chạy", StateDone: "xong", StatePartial: "xong một phần",
 	StateFailed: "thất bại", StatePaused: "tạm dừng",
-	StatusLine:  "Google: %s · %d đang chạy · %d đang chờ · %d cần xử lý",
+	StatusLine:    "Google: %s · %d đang chạy · %d đang chờ · %d cần xử lý",
+	TrayGoogleRow: "Google: %s", TrayWorkRow: "%d đang chạy · %d đang chờ", TrayPausedRow: "Hàng đợi đang tạm dừng", TrayBlockedRow: "%d cần xử lý",
 	OfflineLine: "Daemon không chạy — bật lên để copy hoặc đồng bộ",
 	JobLine:     "%s · %s · %s", NoJobsTray: "Chưa có công việc nào",
 	MenuTitle: "Bạn muốn làm gì?", MenuCopy: "Copy link Drive", MenuJobs: "Công việc",
@@ -543,7 +548,8 @@ var EN = map[Key]string{
 	StateIdle:      "idle", StateBusy: "copying", StateNeeds: "needs action", StateError: "error", StateOffline: "offline",
 	StateQueued: "queued", StateRunning: "running", StateDone: "done", StatePartial: "partly done",
 	StateFailed: "failed", StatePaused: "paused",
-	StatusLine:  "Google: %s · %d running · %d queued · %d blocked",
+	StatusLine:    "Google: %s · %d running · %d queued · %d blocked",
+	TrayGoogleRow: "Google: %s", TrayWorkRow: "%d running · %d queued", TrayPausedRow: "Queue paused", TrayBlockedRow: "%d need action",
 	OfflineLine: "Daemon offline — start it to copy or sync",
 	JobLine:     "%s · %s · %s", NoJobsTray: "No jobs yet",
 	MenuTitle: "What would you like to do?", MenuCopy: "Copy a Drive link", MenuJobs: "Jobs",
