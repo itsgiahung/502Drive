@@ -143,6 +143,7 @@ func (a *App) tuiSubmitBatch(ctx context.Context, req tui.BatchRequest) (tui.Bat
 		}
 		res.Jobs = append(res.Jobs, item)
 	}
+	a.sealBatch(ctx, bid)
 	return res, nil
 }
 

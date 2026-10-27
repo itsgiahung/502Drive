@@ -47,6 +47,15 @@ func (n *Notifier) JobFinished(ctx context.Context, jobID string) error {
 	if err != nil {
 		return err
 	}
+	if job.BatchID != "" {
+		known, e := n.store.BatchNoticeKnown(ctx, job.Principal, job.BatchID)
+		if e != nil {
+			return e
+		}
+		if known {
+			return nil
+		}
+	}
 	kind, ok := notificationKind(job.State)
 	if !ok {
 		return nil

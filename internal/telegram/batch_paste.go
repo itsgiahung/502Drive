@@ -176,6 +176,9 @@ func (t *Telegram) admitBatch(ctx context.Context, p app.Principal, chatID int64
 			bp.Failed = append(bp.Failed, batchMiss{Name: it.Name, Code: codeOf(err)})
 		}
 	}
+	if err := t.svc.SealBatch(ctx, p, bp.ID); err != nil && !notFound(err) {
+		return err
+	}
 	return t.batchCard(ctx, p, chatID, messageID, bp)
 }
 

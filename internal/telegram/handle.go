@@ -220,6 +220,8 @@ func (t *Telegram) onCallback(ctx context.Context, cq *models.CallbackQuery) err
 
 func (t *Telegram) act(ctx context.Context, p app.Principal, st state.Callback, tx texts) error {
 	switch st.Action {
+	case "batch_issues", "batch_retry_failed":
+		return t.batchNoticeAction(ctx, p, st)
 	case "copy":
 		return t.actCopy(ctx, p, st, tx)
 	case "choose_dest":

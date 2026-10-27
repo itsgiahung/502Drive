@@ -162,3 +162,8 @@ sync sau copy; dấu còn sót (crash giữa hai bước) được phát lại l
   ([cleanup.go](../internal/maintenance/cleanup.go)).
 - Backup dùng `VACUUM INTO` + key + token + config ([maintenance.go](../internal/maintenance/maintenance.go));
   restore kiểm sha256, `integrity_check`, `foreign_key_check`, schema ≤ binary.
+
+U10 uses the existing `settings` key space: `batch_notice_open:<principal>:<batch>`
+stores a JSON seal/time, `batch_notice_done:<principal>:<batch>` is a durable
+notification marker. Outbox coalesce key `batch-final:<principal>:<batch>` is unique.
+No migration. `delivery_unknown` fences uncertain first-summary sends across restart.

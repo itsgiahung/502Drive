@@ -2769,6 +2769,41 @@
      }
     }
    }
+  },
+  "/v1/batches/{batch_id}/seal": {
+   "post": {
+    "summary": "Seal this principal batch admission for a durable Telegram summary",
+    "description": "Principal-scoped. Lists the jobs admitted with this batch_id and counts them by state.",
+    "parameters": [
+     {
+      "name": "batch_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_-]{8,64}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Batch summary",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BatchSealResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error404"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
   }
  },
  "components": {
@@ -5891,6 +5926,34 @@
       "format": "date-time"
      }
     }
+   },
+   "BatchSeal": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "sealed": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "sealed"
+    ]
+   },
+   "BatchSealResponse": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "data": {
+      "$ref": "#/components/schemas/BatchSeal"
+     },
+     "request_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "data",
+     "request_id"
+    ]
    }
   },
   "responses": {

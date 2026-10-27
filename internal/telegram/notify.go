@@ -36,6 +36,7 @@ func (t *Telegram) notifyLoop(ctx context.Context) {
 }
 
 func (t *Telegram) flush(ctx context.Context) {
+	t.queueBatchNotices(ctx)
 	due, err := t.store.DueOutbox(ctx, t.now(), 10)
 	if err != nil {
 		t.log.Error("telegram: cannot read the outbox", "err", err)
@@ -111,6 +112,12 @@ func (t *Telegram) deliver(ctx context.Context, m state.Outbox) {
 // deliverFinal sends one notification about work the user did not start in a
 // chat. It never edits a panel and never touches the job.
 func (t *Telegram) deliverFinal(ctx context.Context, m state.Outbox) {
+	if strings.HasPrefix(m.Note, state.BatchNoticePrefix) {
+		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		t.deliverBatchNotice(callCtx, m)
+		return
+	}
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if t.holdForQuiet(callCtx, m) { // quiet hours: keep it for the morning

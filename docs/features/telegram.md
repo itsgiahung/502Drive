@@ -226,3 +226,11 @@ catalogue. CSV keeps stable codes and English reasons for interchange.
 
 U9: `/status` includes this principal's Q1 copied bytes (rolling hourly 24-hour
 window) and actual quota resume time in their saved timezone; no guessed cap.
+
+U10: new clients seal batch admission, then the outbox emits one final summary
+three seconds after the seal once all jobs have ended (blocked counts as needs
+action; paused keeps waiting). Summary buttons show problems or retry only that
+batch, with revision-bound one-shot callbacks. Preferences/quiet hours apply.
+Old clients keep per-job notices. A durable send-attempt fence prevents blind
+resends after an unknown Telegram outcome; a crash in that window may lose the
+summary. Exactly-once remote delivery is not claimed.

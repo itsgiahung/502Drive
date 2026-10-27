@@ -149,3 +149,7 @@ hook dừng. Đây là thứ **Quit trên tray** gọi; TUI/CLI không bao giờ
 - U9: status adds `quota:{used_24h_bytes,limit_known,resume_after}` for the
   requesting principal. `limit_known=false`: the ledger does not establish the
   actual Google limit. Resume is nullable, taken from quota-blocked jobs.
+
+- U10: `POST /v1/batches/{batch_id}/seal` marks this principal's admission pass
+  complete for notifications; idempotent, `{sealed:true}`. Missing route on old
+  daemons is tolerated. It changes no copy job and does not stop later retries.

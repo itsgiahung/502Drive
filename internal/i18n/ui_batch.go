@@ -1,6 +1,10 @@
 package i18n
 
 const (
+	BatchSummary           Key = "batch_summary"
+	BatchViewIssues        Key = "batch_view_issues"
+	BatchRetryFailed       Key = "batch_retry_failed"
+	BatchRetryAccepted     Key = "batch_retry_accepted"
 	QuotaCopied24h         Key = "quota_copied_24h"
 	QuotaResumeAt          Key = "quota_resume_at"
 	DeepTotalUnknown       Key = "deep_total_unknown"
@@ -31,6 +35,7 @@ const (
 
 func init() {
 	vi := map[Key]string{
+		BatchSummary: "Lô %s: xong %d/%d; %d cần xử lý", BatchViewIssues: "Xem vấn đề", BatchRetryFailed: "Thử lại các job lỗi", BatchRetryAccepted: "Đã nhận yêu cầu thử lại các job lỗi.",
 		QuotaCopied24h: "24 giờ qua đã copy %s", QuotaResumeAt: "tiếp tục lúc %s",
 		DeepTotalUnknown: "chưa biết tổng",
 		JobStatesChoose:  "Chọn trạng thái · Space bật/tắt · Enter áp dụng · Esc hủy (không chọn = tất cả)",
@@ -52,6 +57,7 @@ func init() {
 		SetupIncomplete:        "Chưa đủ điều kiện; hoàn thành các bước trong checklist.",
 	}
 	en := map[Key]string{
+		BatchSummary: "Batch %s: done %d/%d; %d need action", BatchViewIssues: "View issues", BatchRetryFailed: "Retry failed jobs", BatchRetryAccepted: "Retry requests accepted for failed jobs.",
 		QuotaCopied24h: "Copied %s in the last 24 hours", QuotaResumeAt: "resumes at %s",
 		DeepTotalUnknown: "total unknown",
 		JobStatesChoose:  "Choose states · Space toggle · Enter apply · Esc cancel (none = all)",

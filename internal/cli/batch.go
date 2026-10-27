@@ -119,6 +119,7 @@ func (a *App) copyBatch(ctx context.Context, sources []string, to, name, explici
 			}{code, msg}
 		}
 	}
+	a.sealBatch(ctx, bid)
 	accepted, failed := 0, 0
 	for _, r := range results {
 		if r.JobID != "" {

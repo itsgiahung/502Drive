@@ -195,6 +195,10 @@ func TestTUISubmitBatchAdmitsEachLinkUnderOneBatchAndReportsTheRefusedOne(t *tes
 			mu.Unlock()
 			reply(w, 202, map[string]any{"id": "job_" + body["plan_id"].(string), "counts": map[string]any{}})
 		default:
+			if strings.HasSuffix(r.URL.Path, "/seal") {
+				replyError(w, 404, "not_found", "older server")
+				return
+			}
 			t.Errorf("unexpected %s", r.URL.Path)
 		}
 	})

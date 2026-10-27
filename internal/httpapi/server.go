@@ -100,6 +100,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	route("POST /v1/jobs/{id}/move", s.moveJob)
 	route("GET /v1/batches/{batch_id}", s.getBatch)
+	route("POST /v1/batches/{batch_id}/seal", s.sealBatch)
 	route("POST /v1/queue/pause", s.queuePause(true))
 	route("POST /v1/queue/resume", s.queuePause(false))
 	route("GET /v1/drive/folders/{id}", s.browseFolder)
