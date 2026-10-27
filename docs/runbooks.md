@@ -70,10 +70,10 @@ events, expired plans and notification state. Offline cleanup only removes eligi
 old app-created temporary files; it never follows symlinks or removes database/WAL,
 master keys or mappings. Vacuum checkpoints and compacts the database offline.
 
-The daemon also has a daily history-prune path in its maintenance loop, using
-the daemon-default retention settings (90 days when unset). It currently reads the
-`default` settings namespace rather than each user's preferences; do not rely on a
-TUI per-user retention change as a daemon-wide disable switch. Keep verified backups.
+The daemon also prunes history on its own, at most once a day: it uses the
+owner's **retention days** setting (Settings in the app; 90 by default, 0 keeps
+everything) and records the last run in the database, so restarts neither skip
+nor repeat it. Keep verified backups.
 Let the service/container runtime rotate logs. Snapshot metadata retention
 and physical Drive archive storage are separate; see [protection](features/protection.md).
 

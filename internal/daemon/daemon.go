@@ -350,7 +350,6 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 		defer close(maintDone)
 		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
-		lastDaily := time.Now()
 		for {
 			select {
 			case <-maintCtx.Done():
@@ -358,14 +357,10 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 			case <-ticker.C:
 				_ = store.CheckpointTruncate(maintCtx)
 				_ = store.Optimize(maintCtx)
-				if time.Since(lastDaily) >= 24*time.Hour {
-					lastDaily = time.Now()
-					if prefs, err := store.Preferences(maintCtx, "default"); err == nil && prefs.RetentionDays > 0 {
-						_, _ = store.Prune(maintCtx, state.PruneOptions{
-							OlderThan: time.Duration(prefs.RetentionDays) * 24 * time.Hour,
-							DryRun:    false,
-						})
-					}
+				if res, ran, err := pruneIfDue(maintCtx, store, time.Now()); err != nil {
+					log.Warn("retention: prune failed", "err", err)
+				} else if ran {
+					log.Info("retention: pruned old history", "jobs", res.JobsPruned, "events", res.EventsPruned)
 				}
 			}
 		}
@@ -437,3 +432,29 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 
 // EnsureDir makes sure the data directory exists privately.
 func EnsureDir(dir string) error { return os.MkdirAll(dir, 0o700) }
+
+// retentionKey records when history was last pruned, so the daily prune runs
+// once a day across restarts (a laptop rarely keeps the daemon up for 24h).
+const retentionKey = "retention:last_run"
+
+// pruneIfDue removes finished history older than the owner's retention_days
+// (Settings, `prefs:owner`; 0 keeps everything) at most once per 24 hours.
+// The owner's preference applies because history belongs to the whole daemon.
+func pruneIfDue(ctx context.Context, store *state.Store, now time.Time) (state.PruneReport, bool, error) {
+	prefs, err := store.Preferences(ctx, app.Owner.ID)
+	if err != nil || prefs.RetentionDays <= 0 {
+		return state.PruneReport{}, false, err
+	}
+	if last, ok, err := store.Setting(ctx, retentionKey); err != nil {
+		return state.PruneReport{}, false, err
+	} else if ok {
+		if t, perr := time.Parse(time.RFC3339, last); perr == nil && now.Sub(t) < 24*time.Hour {
+			return state.PruneReport{}, false, nil
+		}
+	}
+	res, err := store.Prune(ctx, state.PruneOptions{OlderThan: time.Duration(prefs.RetentionDays) * 24 * time.Hour})
+	if err != nil {
+		return res, false, err
+	}
+	return res, true, store.SetSetting(ctx, retentionKey, now.UTC().Format(time.RFC3339))
+}

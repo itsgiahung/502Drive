@@ -29,6 +29,12 @@ before 1.0 a minor version may change behaviour, and every such change is listed
 - `502drive onboard` prints a readable checklist in a terminal (JSON stays for
   scripts and `--json`), and Enter at the destination step means My Drive.
 - The README explains the project in plain words, with a four-step quick start.
+- A sync or repair no longer writes into a copy whose folder was moved to the
+  Drive trash or deleted: the job stops with `destination_root_trashed` or
+  `destination_root_missing` and says how to recover.
+- Daily history pruning now follows the retention setting saved in the app (it
+  read another settings slot) and runs once a day across restarts (it waited for
+  24 hours of uptime, which a laptop rarely reaches).
 - Left returns from nested views. Live refresh and returning from reports/filter
   editors preserve object identity instead of reusing a stale list position.
 - Public Markdown is English with one Vietnamese introduction, `README_VI.md`.

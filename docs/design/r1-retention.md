@@ -17,11 +17,11 @@ delete its intent: audit and repair still need that ownership evidence.
 compatibility fields such as `intents_pruned`, which stays zero for live mappings.
 Vacuum is a separate offline operation after pruning.
 
-The daemon maintenance loop checks for daily pruning after 24 hours of process
-uptime, on its ten-minute maintenance tick. It reads `Preferences("default")`,
-not the authenticated user's preference slot; unset values use 90 days. This
-namespace mismatch means a per-user retention setting is not a reliable global
-prune control. Keep that limitation explicit until the settings wiring is aligned.
+The daemon's ten-minute maintenance tick prunes at most once per 24 hours. It
+reads the owner's preferences (`prefs:owner`, what the app and Telegram save;
+90 days when unset, 0 disables it), because history belongs to the whole daemon,
+and stores the last run under `retention:last_run`, so a laptop that restarts
+every day still prunes and never prunes twice in a day.
 Snapshot metadata uses separate per-collection retention and never automatically
 deletes physical archives.
 
