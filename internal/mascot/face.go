@@ -22,16 +22,10 @@ func (s sprite) face(f face) {
 				s.pixel(x+1, 4, cEye)
 			}
 		default:
+			// One column, two pixels tall. Wide (2x2) eyes read as a big dark
+			// square at this size, so excitement shows elsewhere (ears, mouth).
 			s.pixel(x+look, 3, cEye)
 			s.pixel(x+look, 4, cEye)
-			if f.pupil > .8 {
-				dx := -1
-				if x == 9 {
-					dx = 1
-				}
-				s.pixel(x+look+dx, 3, cEye)
-				s.pixel(x+look+dx, 4, cEye)
-			}
 		}
 	}
 	s.pixel(6, 5, cEye)

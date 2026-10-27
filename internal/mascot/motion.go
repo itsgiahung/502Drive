@@ -93,13 +93,13 @@ func target(mood Mood, t, clock, sc float64, seed uint64) (pose, face) {
 			p.sy *= 1 - .08*u
 			p.droop, f.blink = u, max(f.blink, .6*u)
 		case 5: // a ball of yarn rolls in; watch it, bat it, watch it roll back
-			p.yarn = smooth(u * 3)
-			f.gx, f.gy, f.pupil = -1.6, .9, .9
+			p.yarn = toy(local, seed, bucket)
+			f.gx, f.gy = -1.6*p.yarn+f.gx*(1-p.yarn), .9*p.yarn
 			p.tilt = -.12 * p.yarn
 		case 6: // a butterfly drifts around the ears; the eyes follow it
-			p.fly = smooth(u * 3)
+			p.fly = toy(local, seed, bucket)
 			bx, by := butterfly(clock)
-			f.gx, f.gy, f.pupil = (bx-7)*.35, (by-1)*.5, .9
+			f.gx, f.gy = (bx-7)*.35*p.fly+f.gx*(1-p.fly), (by-1)*.5*p.fly
 			p.ear += .8 * p.fly * math.Sin(clock*6)
 		}
 	case Busy:
@@ -164,14 +164,22 @@ func moodAccent(m Mood) rgb {
 	}
 }
 
-// butterfly is the toy's path in sprite pixels, relative to the cat's head:
-// a lazy figure-eight beside the right ear.
+// butterfly is the toy's path in sprite pixels: a small figure-eight right of
+// the right ear (x 13-14), low enough that a folded wing above it stays in
+// the mini viewport and clear of the ear.
 func butterfly(t float64) (x, y float64) {
-	return 12.5 + 1.8*math.Sin(t*1.7), .6 + 1.2*math.Sin(t*3.4)
+	return 13.5 + .6*math.Sin(t*1.7), .9 + .8*math.Sin(t*3.4)
 }
 
 // yarnX is the ball's x on the ground, left of the cat: it rolls out after
 // each bat of the paw and drifts back.
 func yarnX(t float64) float64 {
 	return -.5 - 1.5*math.Max(0, math.Sin(t*2.6))
+}
+
+// toy is how present an idle toy is within its twelve-second slot: it eases in
+// over half a second, stays about seven seconds, then eases out.
+func toy(local float64, seed uint64, bucket int64) float64 {
+	start := 2.5 + noise(seed+5, bucket)
+	return smooth((local-start)/.5) * (1 - smooth((local-start-7)/.5))
 }

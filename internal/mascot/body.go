@@ -270,11 +270,12 @@ func (s sprite) yarn(t float64) {
 func (s sprite) butterfly(t float64) {
 	bx, by := butterfly(t)
 	x, y := int(math.Round(bx)), int(math.Round(by))
-	s.pixel(x, y, cEye)
-	if int(t*8)%2 == 0 {
+	s.pixel(x, y, cHi)   // a pale body stays visible on a dark terminal
+	if int(t*8)%2 == 0 { // wings open
 		s.pixel(x-1, y, cGold)
 		s.pixel(x+1, y, cBlush)
-	} else {
+	} else { // wings folded up over the body
 		s.pixel(x, y-1, cGold)
+		s.pixel(x+1, y-1, cBlush)
 	}
 }
