@@ -26,6 +26,20 @@ không dùng harness `internal/live` (không cần đưa token ra ngoài daemon)
 | Telegram thật: `/start`, `/status`, dán link, `/find crash` | đều `processed`; dán link → job 10/10 vào đích mặc định; thẻ tiến độ được sửa tới trạng thái cuối |
 | Telegram sau `retry` | **lỗi** → sửa: job báo `blocked` rồi `retry` thành công không có tin thứ hai (`6c87102`) |
 
+### Kiểm lại sau khi sửa (cùng ngày, daemon 0c32ecf)
+
+Nguồn mới: 8 file nhỏ, do tài khoản khác tạo và chia sẻ Viewer.
+
+| Kịch bản | Kết quả |
+| --- | --- |
+| Đổi tên thuần `r01.txt` → `r01-renamed.txt` rồi sync | cùng ID file ở đích được đổi tên tại chỗ; vẫn 8 mục; job 1/1 |
+| `kill -9` daemon ở 1,0 / 1,8 / 2,2 s sau khi copy | lệnh ghi đã tới Drive: đối soát tìm thấy theo intent, 9/9, không chặn |
+| `kill -9` ở 1,4 s (kèm một crash chồng sau đó) | 4 mục `unknown_remote_outcome`; daemon tự kiểm lại sau 2 phút 14 giây, 9/9 mà không ai `retry`; `auto_retried=true` |
+| Thông báo Telegram cho job trên | không có tin "cần xử lý"; đúng một tin "đã xong" |
+| Bốn bản copy sau crash | mỗi bản 8 mục, không trùng tên |
+| `collections cleanup` (dry-run) | in "Would move "rename-test" … 9 copied items, 84 B" và lệnh chạy thật với `--confirm-name` |
+| Cleanup thật 5 bản copy | 5/5 vào thùng rác |
+
 Năm điểm UX ghi nhận trong phiên (tên xác nhận cleanup, dry-run cleanup không báo
 số mục, `--wait` không thống nhất, đổi tên thuần tạo bản mới, phải `retry` tay sau
 crash) đã được sửa sau phiên; xem `docs/acceptance.md` (dòng "Live 2026-10-28").
