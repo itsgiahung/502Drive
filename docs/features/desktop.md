@@ -130,3 +130,10 @@ apply. Apply requires a successful dry-run; its plan is shown. A missing or
 failed dry-run does not enable apply. Confirmation states only 502Drive-owned
 objects may change. Relative paths come from that collection's mapping; unmapped
 extra objects use detail/ID. Existing inline audit (`v`) remains available.
+
+U6: collection **B** edits the full S5 filter. Include/exclude accept path/name
+globs, `ext:` and `class:` rules separated by `;`; size fields accept byte counts
+or KB/MB/GB/TB. Modified-after and empty-folder settings are preserved. Syntax
+errors appear at the active field. **Ctrl+P** previews matching counts through
+inspect, explicitly top-level scope; **Ctrl+S** saves by collection revision.
+The three presets remain on **b**. Preview creates no copy job.

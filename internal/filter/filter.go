@@ -7,6 +7,7 @@ package filter
 import (
 	"errors"
 	"fmt"
+	"math"
 	"path"
 	"strconv"
 	"strings"
@@ -246,7 +247,7 @@ func ParseSize(s string) (int64, error) {
 		}
 	}
 	n, err := strconv.ParseInt(t, 10, 64)
-	if err != nil || n < 0 {
+	if err != nil || n < 0 || n > math.MaxInt64/mult {
 		return 0, fmt.Errorf("invalid size %q (use bytes or a KB, MB, GB, TB suffix)", s)
 	}
 	return n * mult, nil

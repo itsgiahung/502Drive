@@ -109,6 +109,8 @@ func (m Model) body() []string {
 
 func (m Model) screenBody() []string {
 	switch m.screen {
+	case screenFilter:
+		return m.filterEditorView()
 	case screenAudit:
 		return m.auditBrowserView()
 	case screenJobs:

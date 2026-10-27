@@ -87,6 +87,9 @@ func (m Model) presetLabel(p string) string {
 
 // presetOf recognises the presets in a stored rule; -1 means a custom rule.
 func presetOf(f FilterRules) int {
+	if f.ModifiedAfter != "" || f.KeepEmptyFolders {
+		return -1
+	}
 	switch {
 	case !f.Active():
 		return 0
@@ -157,6 +160,8 @@ func (m Model) collectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 	switch msg.String() {
+	case "B":
+		return m.openFilter(c), nil, true
 	case "A":
 		next, cmd := m.openAuditBrowser(c)
 		return next, cmd, true

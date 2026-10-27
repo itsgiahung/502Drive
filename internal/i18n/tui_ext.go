@@ -131,7 +131,7 @@ var tuiExtVI = map[Key]string{
 
 	LibRetiredTag: "đã ngừng theo dõi",
 	LibRetiredOn:  "đang hiện cả nguồn đã ngừng theo dõi (H để ẩn)",
-	CollKeysExt:   "A danh sách kiểm tra · a kiểm tra toàn vẹn · v kết quả · f lập kế hoạch sửa · F sửa · b bộ lọc · o ngừng theo dõi · u theo dõi lại · c dọn đích · w quên",
+	CollKeysExt:   "A danh sách kiểm tra · a kiểm tra toàn vẹn · v kết quả · f lập kế hoạch sửa · F sửa · b bộ lọc nhanh · B sửa bộ lọc · o ngừng theo dõi · u theo dõi lại · c dọn đích · w quên",
 	FooterCollExt: "A danh sách kiểm tra · a kiểm tra · v kết quả · f/F sửa · b lọc · o ngừng · u theo dõi lại · c dọn đích · w quên · esc",
 	FooterLibExt:  "space chọn · n chạy · p tạm dừng · x dừng · d/h/e/t lịch · H cả nguồn đã ngừng · enter mở · q",
 
@@ -239,8 +239,8 @@ var tuiExtEN = map[Key]string{
 
 	LibRetiredTag: "retired",
 	LibRetiredOn:  "showing retired sources too (H to hide)",
-	CollKeysExt:   "a integrity check · v result · f plan repair · F repair · b filter · o stop following · u follow again · c clean up destination · w forget",
-	FooterCollExt: "a check · v result · f/F repair · b filter · o retire · u resume · c clean up · w forget · esc",
+	CollKeysExt:   "a integrity check · v result · f plan repair · F repair · b filter preset · B edit filter · o stop following · u follow again · c clean up destination · w forget",
+	FooterCollExt: "a check · v result · f/F repair · b filter preset · B edit filter · o retire · u resume · c clean up · w forget · esc",
 	FooterLibExt:  "space select · n run · p pause · x stop · d/h/e/t schedule · H retired too · enter open · q",
 
 	AuditTitle:        "Integrity check",

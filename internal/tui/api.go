@@ -5,6 +5,7 @@ package tui
 
 import (
 	"context"
+	"github.com/itsgiahung/502Drive/internal/filter"
 	"time"
 )
 
@@ -79,27 +80,20 @@ type SyncState struct {
 
 // Collection is a copied source with its optional subscription.
 type Collection struct {
-	ID         string
-	SourceName string
-	State      string
-	Revision   int
-	ResultURL  string
-	Sync       *SyncState
-	RootName   string
-	Filter     FilterRules
-	OnConflict string
+	SourceID, DestinationID string
+	ID                      string
+	SourceName              string
+	State                   string
+	Revision                int
+	ResultURL               string
+	Sync                    *SyncState
+	RootName                string
+	Filter                  FilterRules
+	OnConflict              string
 }
 
 // FilterRules is the selective-sync rule of a collection (read-only here).
-type FilterRules struct {
-	Include, Exclude []string
-	MinSize, MaxSize int64
-}
-
-// Active reports whether any rule would drop something.
-func (f FilterRules) Active() bool {
-	return len(f.Include) > 0 || len(f.Exclude) > 0 || f.MinSize > 0 || f.MaxSize > 0
-}
+type FilterRules = filter.Spec
 
 // Destination is one saved target folder.
 type Destination struct {
@@ -274,16 +268,18 @@ type WatchEvent struct {
 // Actions is the API surface the model needs. The CLI implements it with
 // internal/cli.Client; tests implement it with fakes.
 type Actions struct {
-	AuditFindings         func(ctx context.Context, auditID, kind, cursor string) (FindingPage, error)
-	GetJob                func(ctx context.Context, id string) (Job, error)
-	Snapshot              func(ctx context.Context) (Snapshot, error)
-	JobAction             func(ctx context.Context, id, action string, revision int) error
-	SyncPreset            func(ctx context.Context, collectionID, preset string) error
-	SyncAction            func(ctx context.Context, collectionID, action string) error
-	RunNow                func(ctx context.Context, collectionID string) error
-	SetDefaultDestination func(ctx context.Context, id string, revision int) error
-	Doctor                func(ctx context.Context) ([]Check, error)
-	SetLanguage           func(ctx context.Context, lang string) error
+	SetCollectionFilter     func(ctx context.Context, id string, revision int, spec filter.Spec) error
+	PreviewCollectionFilter func(ctx context.Context, c Collection, spec filter.Spec) (*PlanFilter, error)
+	AuditFindings           func(ctx context.Context, auditID, kind, cursor string) (FindingPage, error)
+	GetJob                  func(ctx context.Context, id string) (Job, error)
+	Snapshot                func(ctx context.Context) (Snapshot, error)
+	JobAction               func(ctx context.Context, id, action string, revision int) error
+	SyncPreset              func(ctx context.Context, collectionID, preset string) error
+	SyncAction              func(ctx context.Context, collectionID, action string) error
+	RunNow                  func(ctx context.Context, collectionID string) error
+	SetDefaultDestination   func(ctx context.Context, id string, revision int) error
+	Doctor                  func(ctx context.Context) ([]Check, error)
+	SetLanguage             func(ctx context.Context, lang string) error
 	// Login starts a Google sign-in; LoginState reports pending, connected,
 	// failed or expired; OpenURL tries to open the browser (nil or an error
 	// just means the user opens the link by hand).

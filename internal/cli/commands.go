@@ -760,15 +760,16 @@ func (a *App) streamEvents(ctx context.Context, id string, after int64, follow b
 // ---- collections, sync ----
 
 type collectionView struct {
-	ID         string    `json:"id"`
-	SourceID   string    `json:"source_id"`
-	SourceName string    `json:"source_name"`
-	State      string    `json:"state"`
-	ResultURL  *string   `json:"result_url"`
-	Revision   int       `json:"revision"`
-	Baseline   string    `json:"baseline_job_id"`
-	Sync       *syncView `json:"sync"`
-	RootName   string    `json:"root_name"`
+	DestinationID string    `json:"destination_id"`
+	ID            string    `json:"id"`
+	SourceID      string    `json:"source_id"`
+	SourceName    string    `json:"source_name"`
+	State         string    `json:"state"`
+	ResultURL     *string   `json:"result_url"`
+	Revision      int       `json:"revision"`
+	Baseline      string    `json:"baseline_job_id"`
+	Sync          *syncView `json:"sync"`
+	RootName      string    `json:"root_name"`
 	// Filter and OnConflict are the rules later runs use (S5, N1).
 	Filter     filter.Spec `json:"filter"`
 	OnConflict string      `json:"on_conflict"`

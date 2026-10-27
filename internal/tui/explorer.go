@@ -269,6 +269,9 @@ func (m Model) onMkdir(msg mkdirMsg) (tea.Model, tea.Cmd) {
 
 // typing reports whether a text field has the keyboard.
 func (m Model) typing() bool {
+	if m.screen == screenFilter && m.fe != nil {
+		return true
+	}
 	switch {
 	case m.drv != nil && m.drv.prompt != nil && m.screen == screenDrive:
 		return true
@@ -286,6 +289,9 @@ func (m Model) typing() bool {
 
 // typingKey sends keys to the active text field; Enter and Esc finish it.
 func (m Model) typingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.screen == screenFilter && m.fe != nil {
+		return m.filterTyping(msg)
+	}
 	if m.exp != nil {
 		return m.exportTyping(msg)
 	}

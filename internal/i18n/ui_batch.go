@@ -1,6 +1,15 @@
 package i18n
 
 const (
+	FilterInclude          Key = "filter_include"
+	FilterExclude          Key = "filter_exclude"
+	FilterMin              Key = "filter_min"
+	FilterMax              Key = "filter_max"
+	FilterModified         Key = "filter_modified"
+	FilterKeep             Key = "filter_keep"
+	FilterEditorHelp       Key = "filter_editor_help"
+	FilterPreviewCounts    Key = "filter_preview_counts"
+	FilterPreviewScope     Key = "filter_preview_scope"
 	AuditBrowserKeys       Key = "audit_browser_keys"
 	AuditAllKinds          Key = "audit_all_kinds"
 	AuditPreviewInfo       Key = "audit_preview_info"
@@ -18,6 +27,9 @@ const (
 
 func init() {
 	vi := map[Key]string{
+		FilterInclude: "Bao gồm", FilterExclude: "Loại trừ", FilterMin: "Nhỏ nhất", FilterMax: "Lớn nhất", FilterModified: "Sửa sau (RFC3339)", FilterKeep: "Giữ thư mục rỗng (true/false)",
+		FilterEditorHelp:    "Tab đổi ô · luật cách nhau ; (đường dẫn/glob, ext:, class:) · Ctrl+P xem trước · Ctrl+S lưu · Esc về",
+		FilterPreviewCounts: "Khớp %d · loại %d", FilterPreviewScope: "Phạm vi xem trước (không phải tổng cây):",
 		AuditBrowserKeys:       "t lọc loại · n/p trang sau/trước · f xem trước sửa · F áp dụng · esc về nguồn",
 		AuditAllKinds:          "Tất cả loại",
 		AuditPreviewInfo:       "Bản xem trước dry-run: %d thao tác; chỉ mục của 502Drive.",
@@ -33,6 +45,9 @@ func init() {
 		SetupIncomplete:        "Chưa đủ điều kiện; hoàn thành các bước trong checklist.",
 	}
 	en := map[Key]string{
+		FilterInclude: "Include", FilterExclude: "Exclude", FilterMin: "Minimum size", FilterMax: "Maximum size", FilterModified: "Modified after (RFC3339)", FilterKeep: "Keep empty folders (true/false)",
+		FilterEditorHelp:    "Tab next field · separate rules by ; (path/name glob, ext:, class:) · Ctrl+P preview · Ctrl+S save · Esc back",
+		FilterPreviewCounts: "Matched %d · excluded %d", FilterPreviewScope: "Preview scope (not a whole-tree total):",
 		AuditBrowserKeys:       "t filter kind · n/p next/previous · f preview repair · F apply · esc back",
 		AuditAllKinds:          "All kinds",
 		AuditPreviewInfo:       "Dry-run preview: %d actions; only 502Drive objects.",
