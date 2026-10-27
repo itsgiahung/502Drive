@@ -315,3 +315,25 @@ func TestMigration011BackfillsRelPathsAndPlansPruneWithIndexes(t *testing.T) {
 		t.Fatalf("prune plan does not use the indexes:\n%s", plan.String())
 	}
 }
+
+func TestSameSourceUpgradesLegacyFingerprintsOnce(t *testing.T) {
+	cases := []struct {
+		stored, current string
+		want            bool
+	}{
+		{"m|abc|a.txt", "m|abc|a.txt", true},
+		{"m|abc|a.txt", "m|def|a.txt", false},
+		{"v3|abc|a.txt", "m|abc|a.txt", true},      // legacy binary: md5 and name
+		{"v3|abc|a.txt", "m|def|a.txt", false},     // content changed
+		{"v3|abc|a.txt", "m|abc|b.txt", false},     // renamed
+		{"v3||note", "t1700000000000||note", true}, // legacy native: name only
+		{"v3||note", "t1700000000000||other", false},
+		{"v3|abc|a.txt", "v4|abc|a.txt", false}, // both legacy: exact only
+		{"t1||note", "t2||note", false},
+	}
+	for _, c := range cases {
+		if got := SameSource(c.stored, c.current); got != c.want {
+			t.Fatalf("SameSource(%q, %q) = %v, want %v", c.stored, c.current, got, c.want)
+		}
+	}
+}

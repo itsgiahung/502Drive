@@ -78,7 +78,7 @@ func (s *Store) SkipWithDecision(ctx context.Context, it Item, code, decision st
 }
 
 // ContentFingerprintMD5 extracts the md5 from an item fingerprint
-// ("v<version>|<md5>|<name>"). It returns "" when Drive gave no md5 (Google
+// ("<tag>|<md5>|<name>", see drive.File.Fingerprint). It returns "" when Drive gave no md5 (Google
 // native files), which must never count as "same content".
 func ContentFingerprintMD5(fp string) string {
 	parts := strings.SplitN(fp, "|", 3)
@@ -96,4 +96,26 @@ func SameContent(a, b Item) bool {
 	}
 	ma := ContentFingerprintMD5(a.Fingerprint)
 	return ma != "" && ma == ContentFingerprintMD5(b.Fingerprint)
+}
+
+// SameSource reports whether a stored fingerprint and the one just listed
+// describe the same source content and name. Fingerprints written before the
+// md5/modifiedTime format ("v<version>|<md5>|<name>") are compared once by md5
+// and name instead, so upgrading does not re-copy every file; the caller then
+// stores the new fingerprint.
+func SameSource(stored, current string) bool {
+	if stored == current {
+		return true
+	}
+	if !strings.HasPrefix(stored, "v") || strings.HasPrefix(current, "v") {
+		return false
+	}
+	sp, cp := strings.SplitN(stored, "|", 3), strings.SplitN(current, "|", 3)
+	if len(sp) != 3 || len(cp) != 3 || sp[2] != cp[2] {
+		return false
+	}
+	if sp[1] != "" {
+		return sp[1] == cp[1]
+	}
+	return cp[1] == ""
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -59,8 +60,18 @@ type File struct {
 func (f File) IsFolder() bool   { return f.MimeType == MimeFolder }
 func (f File) IsShortcut() bool { return f.MimeType == MimeShortcut }
 
-// Fingerprint changes when the content, name or version of a source changes.
+// Fingerprint changes when the content or the name of a source changes. It is
+// "<tag>|<md5>|<name>": binary files are compared by md5 ("m"), Google native
+// files (no md5) by modifiedTime ("t<ms>"). Drive's version number is only the
+// last resort ("v<version>"): Drive bumps it for server-side changes the user
+// never made (sharing, being copied), which would re-copy unchanged files.
 func (f File) Fingerprint() string {
+	switch {
+	case f.MD5 != "":
+		return "m|" + f.MD5 + "|" + f.Name
+	case !f.Modified.IsZero():
+		return "t" + strconv.FormatInt(f.Modified.UTC().UnixMilli(), 10) + "||" + f.Name
+	}
 	return fmt.Sprintf("v%s|%s|%s", f.Version, f.MD5, f.Name)
 }
 

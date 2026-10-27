@@ -948,13 +948,13 @@ func (s *Store) CommitDeltaPage(ctx context.Context, run string, folder Item, ch
 			if c.Kind == KindFolder {
 				renamed := ex.Name != c.Name
 				if (renamed || moved) && ex.State == ItemDone {
-					if _, e = tx.ExecContext(ctx, "UPDATE items SET name=?, parent_source_id=?, state='pending', op='align', job_id=?, seen_job=?, error_code='' WHERE collection_id=? AND source_id=?", c.Name, folder.SourceID, run, run, ex.CollectionID, ex.SourceID); e != nil {
+					if _, e = tx.ExecContext(ctx, "UPDATE items SET name=?, dest_name=CASE WHEN name<>? THEN '' ELSE dest_name END, conflict_action=CASE WHEN name<>? THEN '' ELSE conflict_action END, parent_source_id=?, state='pending', op='align', job_id=?, seen_job=?, error_code='' WHERE collection_id=? AND source_id=?", c.Name, c.Name, c.Name, folder.SourceID, run, run, ex.CollectionID, ex.SourceID); e != nil {
 						return e
 					}
 					st.Moved++
 					continue
 				}
-			} else if ex.Fingerprint != c.Fingerprint && ex.State != ItemExecuting && ex.State != ItemReconciling {
+			} else if !SameSource(ex.Fingerprint, c.Fingerprint) && ex.State != ItemExecuting && ex.State != ItemReconciling {
 				// New content (or a renamed file): a new generation is copied; the
 				// previous copy is kept (versioned_copy) or retired after success.
 				// A renamed source must be named again for the new generation; a
@@ -976,7 +976,8 @@ func (s *Store) CommitDeltaPage(ctx context.Context, run string, folder Item, ch
 				st.Moved++
 				continue
 			}
-			if _, e = tx.ExecContext(ctx, "UPDATE items SET seen_job=? WHERE collection_id=? AND source_id=?", run, ex.CollectionID, ex.SourceID); e != nil {
+			// Unchanged; a fingerprint in the old format is rewritten here.
+			if _, e = tx.ExecContext(ctx, "UPDATE items SET seen_job=?, fingerprint=CASE WHEN state IN ('executing','reconciling') THEN fingerprint ELSE ? END WHERE collection_id=? AND source_id=?", run, c.Fingerprint, ex.CollectionID, ex.SourceID); e != nil {
 				return e
 			}
 		}
@@ -1057,8 +1058,8 @@ func (s *Store) ApplySingleFile(ctx context.Context, run, collectionID string, c
 			_, e = tx.ExecContext(ctx, "UPDATE items SET error_code='source_removed' WHERE collection_id=? AND source_id=? AND state='done'", collectionID, c.SourceID)
 			return e
 		}
-		if ex.Fingerprint == c.Fingerprint {
-			_, e = tx.ExecContext(ctx, "UPDATE items SET error_code='' WHERE collection_id=? AND source_id=? AND error_code='source_removed'", collectionID, c.SourceID)
+		if SameSource(ex.Fingerprint, c.Fingerprint) {
+			_, e = tx.ExecContext(ctx, "UPDATE items SET error_code=CASE WHEN error_code='source_removed' THEN '' ELSE error_code END, fingerprint=CASE WHEN state IN ('executing','reconciling') THEN fingerprint ELSE ? END WHERE collection_id=? AND source_id=?", c.Fingerprint, collectionID, c.SourceID)
 			return e
 		}
 		size := sql.NullInt64{}

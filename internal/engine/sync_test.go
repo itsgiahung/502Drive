@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/itsgiahung/502Drive/internal/drive"
 	"github.com/itsgiahung/502Drive/internal/state"
@@ -432,5 +433,33 @@ func TestSettlingAUserPausePausesTheRun(t *testing.T) {
 	}
 	if got, _ := e.store.GetJob(ctx, "owner", job.ID); got.State != state.JobPaused {
 		t.Fatalf("user pause settled as %s", got.State)
+	}
+}
+
+// Drive bumps a file's version for changes the user never made (sharing the
+// parent, being copied). For a Google native file (no md5) only modifiedTime
+// says the content changed, so a version bump alone must not re-copy it.
+func TestDeltaRunIgnoresAVersionBumpWithoutAnEdit(t *testing.T) {
+	e := newEnv(t)
+	src := e.fake.Folder("Docs", "root")
+	doc := e.fake.File("note", src.ID, 0)
+	when := time.Date(2026, 10, 28, 1, 0, 0, 0, time.UTC)
+	e.fake.Mutate(doc.ID, func(x *drive.File) {
+		x.MimeType, x.MD5, x.Size, x.Modified = "application/vnd.google-apps.document", "", nil, when
+	})
+	base, root := e.baseline(src)
+	writes := e.fake.Writes
+
+	e.fake.Mutate(doc.ID, func(x *drive.File) { x.Version = "9" })
+	if j := e.runUntil(e.runNow(base.CollectionID).ID, terminal); j.State != state.JobSucceeded || e.fake.Writes != writes {
+		t.Fatalf("a version bump re-copied the doc: %s writes %d->%d", j.State, writes, e.fake.Writes)
+	}
+
+	e.fake.Mutate(doc.ID, func(x *drive.File) { x.Version, x.Modified = "10", when.Add(time.Minute) })
+	if j := e.runUntil(e.runNow(base.CollectionID).ID, terminal); j.State != state.JobSucceeded {
+		t.Fatalf("edit run %s", j.State)
+	}
+	if got := find(e.fake, root, "note"); len(got) != 2 {
+		t.Fatalf("an edited doc must get a new generation (versioned_copy keeps both), got %d", len(got))
 	}
 }
