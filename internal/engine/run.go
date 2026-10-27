@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -11,6 +12,15 @@ import (
 )
 
 const maxTransientAttempts = 6
+
+// The mass-removal guard: a delta scan that no longer finds more than 30% of
+// the source (with at least 10 mapped items, so tiny trees do not trip it)
+// stops before copying and asks for an integrity audit instead of syncing a
+// suspect tree silently.
+const (
+	massRemovalPercent = 30
+	massRemovalFloor   = 10
+)
 
 // run drives one job.
 type run struct {
@@ -23,10 +33,17 @@ type run struct {
 	collection string
 	mu         sync.Mutex
 	reconnect  bool // an auth failure was seen; stop claiming
+	// quota is set when an account-wide quota error blocked the job; workers
+	// stop instead of failing every remaining item.
+	quota bool
+	// massRemoval is set when the scan found that most of the source is gone.
+	massRemoval bool
+	massRemoved int
+	massTotal   int
 	// cleanupFailures counts superseded copies a repair could not trash.
 	cleanupFailures int
 	// superseded collects destination ids retired by this run's re-copies
-	// (RecordVersion returns them); a repair trashes them in its cleanup.
+	// (CompleteVersionedItem returns them); a repair trashes them in its cleanup.
 	superseded []string
 }
 
@@ -107,6 +124,11 @@ func (r *run) execute(ctx context.Context) {
 		r.settle(ctx)
 		return
 	}
+	if r.massRemoval {
+		// Never copy a tree that the scan says mostly disappeared.
+		r.settle(ctx)
+		return
+	}
 	r.setPhase("copying")
 	r.copyAll(ctx)
 	r.settle(ctx)
@@ -125,8 +147,15 @@ func (r *run) settle(ctx context.Context) {
 		r.finishPause()
 		return
 	}
+	if r.isQuota() {
+		return // the job is already blocked with resume_after
+	}
 	if r.isReconnect() {
 		r.block("account_reconnect_required", "The Google account must be connected again.")
+		return
+	}
+	if r.massRemoval {
+		r.finishMassRemoval()
 		return
 	}
 	r.finalize()
@@ -220,47 +249,247 @@ func (r *run) finalize() {
 	}
 }
 
+// finishMassRemoval records that the scan lost most of the source and stops
+// before copying. The removed items are only flagged (never deleted); the
+// partial run carries source_removed so the sync bookkeeping queues a
+// read-only integrity audit instead of syncing a suspect tree silently.
+func (r *run) finishMassRemoval() {
+	msg := fmt.Sprintf("The source scan no longer found %d of %d mapped items. The sync stopped before copying and an integrity audit was queued.", r.massRemoved, r.massTotal)
+	j, err := r.e.Store.UpdateJob(r.db, r.id, func(j *state.Job) (string, bool) {
+		j.State, j.Phase, j.LastError = state.JobPartial, nil, &state.Failure{Code: "source_mass_removal", Message: msg}
+		j.SourceRemoved = r.massRemoved
+		return "finished", true
+	})
+	if err == nil {
+		r.log("stopped: most of the source disappeared", "removed", r.massRemoved, "total", r.massTotal, "state", j.State)
+		r.afterRun()
+	}
+}
+
 // ---- discovery ----
+
+// pageCommit stores one folder's freshly read children and its next page
+// checkpoint. Initial discovery and delta scanning differ only here.
+type pageCommit func(folder state.Item, children []state.Item, next string) error
+
+// maxBatchFiles bounds one combined listing. A bigger batch falls back to
+// per-folder pages instead of holding an unbounded slice in memory.
+const maxBatchFiles = 20000
 
 // discover lists every folder page by page. It returns false when the job
 // should stop (control request, shutdown, fatal provider state).
 func (r *run) discover(ctx context.Context) bool {
+	return r.scanTree(ctx, func(folder state.Item, children []state.Item, next string) error {
+		return r.e.Store.CommitPage(r.db, folder, children, next)
+	})
+}
+
+// scanTree walks the folders that still need listing. Interrupted pages are
+// resumed one by one (their token belongs to one query); fresh folders are
+// combined into as few files.list calls as the provider allows.
+func (r *run) scanTree(ctx context.Context, commit pageCommit) bool {
+	bl, batch := r.p.(drive.BatchLister)
 	for {
 		if ctx.Err() != nil || r.control() != "run" {
 			return false
 		}
-		folder, err := r.e.Store.NextToList(r.db, r.id)
-		if errors.Is(err, state.ErrNotFound) {
-			return true
+		folder, err := r.e.Store.NextToListPartial(r.db, r.id)
+		if err == nil {
+			if !r.scanOne(ctx, folder, commit) {
+				return false
+			}
+			continue
 		}
+		if !errors.Is(err, state.ErrNotFound) {
+			r.log("list lookup failed", "err", err)
+			return false
+		}
+		if !batch {
+			folder, err = r.e.Store.NextToList(r.db, r.id)
+			if errors.Is(err, state.ErrNotFound) {
+				return true
+			}
+			if err != nil {
+				r.log("list lookup failed", "err", err)
+				return false
+			}
+			if !r.scanOne(ctx, folder, commit) {
+				return false
+			}
+			continue
+		}
+		folders, err := r.e.Store.NextToListBatch(r.db, r.id, drive.MaxBatchParents)
 		if err != nil {
 			r.log("list lookup failed", "err", err)
 			return false
 		}
-		files, next, err := r.listPage(ctx, folder)
+		if len(folders) == 0 {
+			return true
+		}
+		if len(folders) == 1 {
+			if !r.scanOne(ctx, folders[0], commit) {
+				return false
+			}
+			continue
+		}
+		ok, handled := r.scanBatch(ctx, bl, folders, commit)
+		if !ok {
+			return false
+		}
+		if handled {
+			continue
+		}
+		// The combined query failed or was too large: isolate folders one by
+		// one, so a permission error on one does not fail the whole batch.
+		for _, folder := range folders {
+			if !r.scanOne(ctx, folder, commit) {
+				return false
+			}
+		}
+	}
+}
+
+// scanOne reads and commits one folder, following its page checkpoint.
+func (r *run) scanOne(ctx context.Context, folder state.Item, commit pageCommit) bool {
+	files, next, err := r.listPage(ctx, folder)
+	if err != nil {
+		switch drive.KindOf(err) {
+		case drive.KindAuth:
+			r.setReconnect()
+			return false
+		case drive.KindCancelled:
+			return false
+		case drive.KindQuota:
+			r.blockQuota(nil, err)
+			return false
+		}
+		if ctx.Err() != nil {
+			return false
+		}
+		r.e.Store.FailListing(r.db, folder, codeFor(err))
+		return true
+	}
+	children := make([]state.Item, 0, len(files))
+	for _, f := range files {
+		children = append(children, toItem(f))
+	}
+	if err = commit(folder, children, next); err != nil {
+		r.log("commit page failed", "err", err)
+		return false
+	}
+	return true
+}
+
+// scanBatch drains one combined query and commits each folder in order. It
+// returns handled=false when the caller must fall back to per-folder listing.
+func (r *run) scanBatch(ctx context.Context, bl drive.BatchLister, folders []state.Item, commit pageCommit) (ok, handled bool) {
+	parents := make([]drive.Parent, len(folders))
+	wanted := make(map[string]bool, len(folders))
+	for i, f := range folders {
+		parents[i] = drive.Parent{ID: f.SourceID, ResourceKey: f.ResourceKey}
+		wanted[f.SourceID] = true
+	}
+	grouped := make(map[string][]state.Item, len(folders))
+	total, token := 0, ""
+	for {
+		files, next, err := r.listBatch(ctx, bl, parents, token)
 		if err != nil {
 			switch drive.KindOf(err) {
 			case drive.KindAuth:
 				r.setReconnect()
-				return false
+				return false, true
 			case drive.KindCancelled:
-				return false
+				return false, true
+			case drive.KindQuota:
+				r.blockQuota(nil, err)
+				return false, true
 			}
 			if ctx.Err() != nil {
-				return false
+				return false, true
 			}
-			r.e.Store.FailListing(r.db, folder, codeFor(err))
-			continue
+			r.log("batched list failed; falling back", "err", err, "folders", len(folders))
+			return true, false
 		}
-		children := make([]state.Item, 0, len(files))
 		for _, f := range files {
-			children = append(children, toItem(f))
+			for _, parent := range f.Parents {
+				if wanted[parent] {
+					grouped[parent] = append(grouped[parent], toItem(f))
+					total++
+					break
+				}
+			}
 		}
-		if err = r.e.Store.CommitPage(r.db, folder, children, next); err != nil {
+		if total > maxBatchFiles {
+			r.log("batched list too large; falling back", "files", total)
+			return true, false
+		}
+		if next == "" {
+			break
+		}
+		token = next
+	}
+	for _, folder := range folders {
+		if err := commit(folder, grouped[folder.SourceID], ""); err != nil {
 			r.log("commit page failed", "err", err)
-			return false
+			return false, true
 		}
 	}
+	return true, true
+}
+
+// listBatch reads one page of a combined query with the same transient-retry
+// rules as listPage: a throttle never spends an attempt.
+func (r *run) listBatch(ctx context.Context, bl drive.BatchLister, parents []drive.Parent, token string) ([]drive.File, string, error) {
+	var lastErr error
+	for attempt := 0; attempt < maxTransientAttempts; attempt++ {
+		if ctx.Err() != nil {
+			return nil, "", ctx.Err()
+		}
+		if r.control() != "run" {
+			// Stop, but never report an empty successful page: the caller
+			// would commit it as "folder fully listed".
+			return nil, "", context.Canceled
+		}
+		if !r.waitNetwork(ctx) {
+			return nil, "", ctx.Err()
+		}
+		if err := r.e.acquire(ctx); err != nil {
+			return nil, "", err
+		}
+		files, next, err := bl.ListChildrenBatch(ctx, parents, token)
+		r.e.release()
+		if err == nil {
+			r.e.throttleClear()
+			return files, next, nil
+		}
+		lastErr = err
+		switch drive.KindOf(err) {
+		case drive.KindUnreachable:
+			r.noteUnreachable(err)
+			if r.e.Network != nil && !r.e.Network.Online() {
+				if !r.waitNetwork(ctx) {
+					return nil, "", ctx.Err()
+				}
+				attempt--
+				continue
+			}
+			if !r.e.sleep(ctx, max(r.e.backoff(attempt), drive.RetryAfterOf(err))) {
+				return nil, "", ctx.Err()
+			}
+		case drive.KindThrottled:
+			if !r.e.sleep(ctx, max(r.e.throttleWait(), drive.RetryAfterOf(err))) {
+				return nil, "", ctx.Err()
+			}
+			attempt--
+		case drive.KindUnavailable, drive.KindServer:
+			if !r.e.sleep(ctx, max(r.e.backoff(attempt), drive.RetryAfterOf(err))) {
+				return nil, "", ctx.Err()
+			}
+		default:
+			return nil, "", err
+		}
+	}
+	return nil, "", lastErr
 }
 
 func toItem(f drive.File) state.Item {
@@ -279,6 +508,14 @@ func toItem(f drive.File) state.Item {
 func (r *run) listPage(ctx context.Context, folder state.Item) ([]drive.File, string, error) {
 	var lastErr error
 	for attempt := 0; attempt < maxTransientAttempts; attempt++ {
+		if ctx.Err() != nil {
+			return nil, "", ctx.Err()
+		}
+		if r.control() != "run" {
+			// Stop, but never report an empty successful page: the caller
+			// would commit it as "folder fully listed".
+			return nil, "", context.Canceled
+		}
 		if !r.waitNetwork(ctx) {
 			return nil, "", ctx.Err()
 		}
@@ -288,6 +525,7 @@ func (r *run) listPage(ctx context.Context, folder state.Item) ([]drive.File, st
 		files, next, err := r.p.ListChildren(ctx, folder.SourceID, folder.ResourceKey, folder.PageToken)
 		r.e.release()
 		if err == nil {
+			r.e.throttleClear()
 			return files, next, nil
 		}
 		lastErr = err
@@ -307,7 +545,15 @@ func (r *run) listPage(ctx context.Context, folder state.Item) ([]drive.File, st
 			if !r.e.sleep(ctx, max(r.e.backoff(attempt), drive.RetryAfterOf(err))) {
 				return nil, "", ctx.Err()
 			}
-		case drive.KindThrottled, drive.KindUnavailable:
+		case drive.KindThrottled:
+			// Not a failed page read: keep the attempt and grow the account-wide
+			// throttle backoff instead.
+			d := max(r.e.throttleWait(), drive.RetryAfterOf(err))
+			if !r.e.sleep(ctx, d) {
+				return nil, "", ctx.Err()
+			}
+			attempt--
+		case drive.KindUnavailable, drive.KindServer:
 			d := max(r.e.backoff(attempt), drive.RetryAfterOf(err))
 			if !r.e.sleep(ctx, d) {
 				return nil, "", ctx.Err()
@@ -341,7 +587,9 @@ func codeFor(err error) string {
 
 func (r *run) copyAll(ctx context.Context) {
 	var wg sync.WaitGroup
-	for range r.e.Workers {
+	// Spawn the AIMD ceiling; the shared throttle decides how many of these
+	// workers may hold a provider call at once (the account-wide limit).
+	for range r.e.MaxWorkers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -353,7 +601,7 @@ func (r *run) copyAll(ctx context.Context) {
 
 func (r *run) worker(ctx context.Context) {
 	for {
-		if ctx.Err() != nil || r.control() != "run" || r.isReconnect() {
+		if ctx.Err() != nil || r.control() != "run" || r.isReconnect() || r.isQuota() {
 			return
 		}
 		// Offline: stop claiming work. In-flight writes are never cancelled:
@@ -361,8 +609,20 @@ func (r *run) worker(ctx context.Context) {
 		if !r.waitNetwork(ctx) {
 			return
 		}
+		// The permit covers claim → provider call → result, so no more items
+		// are marked executing than the account-wide limit allows.
+		if err := r.e.acquire(ctx); err != nil {
+			return
+		}
+		// Re-check the gate after waiting: a worker queued behind a failing
+		// call must not send the next write into a network that just dropped.
+		if !r.waitNetwork(ctx) {
+			r.e.release()
+			return
+		}
 		it, err := r.e.Store.ClaimItem(r.db, r.id, r.e.Now().UnixMilli())
 		if errors.Is(err, state.ErrNotFound) {
+			r.e.release()
 			pr, perr := r.e.Store.JobProgress(r.db, r.id)
 			if perr != nil {
 				return
@@ -384,10 +644,12 @@ func (r *run) worker(ctx context.Context) {
 			continue
 		}
 		if err != nil {
+			r.e.release()
 			r.log("claim item failed", "err", err)
 			return
 		}
 		r.process(ctx, it)
+		r.e.release()
 	}
 }
 
@@ -399,11 +661,6 @@ func (r *run) process(ctx context.Context, it state.Item) {
 	src := drive.File{ID: it.SourceID, Name: it.Name, ResourceKey: it.ResourceKey, MimeType: it.MimeType}
 	var out drive.File
 	var err error
-	if err = r.e.acquire(ctx); err != nil {
-		// Shutdown before the request was sent: nothing to reconcile.
-		r.e.Store.SetItemState(r.db, it, state.ItemPending, "")
-		return
-	}
 	switch it.Kind {
 	case state.KindWrapper, state.KindFolder:
 		out, err = r.p.CreateFolder(ctx, it.Name, it.DestParentID, it.IntentKey)
@@ -414,8 +671,8 @@ func (r *run) process(ctx context.Context, it state.Item) {
 	default:
 		err = &drive.Error{Kind: drive.KindInvalid, Reason: "unsupported_kind"}
 	}
-	r.e.release()
 	if err == nil {
+		r.e.throttleClear()
 		r.complete(ctx, it, out.ID)
 		return
 	}
@@ -430,16 +687,16 @@ func (r *run) process(ctx context.Context, it state.Item) {
 		case drive.KindAuth:
 			r.setReconnect()
 			r.e.Store.ReleaseItem(r.db, it, "account_reconnect_required", 1)
-		case drive.KindThrottled, drive.KindQuota:
-			if it.Attempts >= maxTransientAttempts {
-				r.e.Store.ReleaseItem(r.db, it, "retry_exhausted", 0)
-				return
-			}
-			d := max(r.e.backoff(it.Attempts), drive.RetryAfterOf(err))
-			if k == drive.KindQuota {
-				d = max(d, 10*time.Minute)
-			}
-			r.e.Store.ReleaseItem(r.db, it, codeFor(err), r.e.Now().Add(d).UnixMilli())
+		case drive.KindThrottled:
+			// A throttle is not this item's failure: give the attempt back and
+			// wait with an account-wide, jittered backoff (plus Retry-After).
+			d := max(r.e.throttleWait(), drive.RetryAfterOf(err))
+			r.e.Store.ReleaseItemThrottled(r.db, it, codeFor(err), r.e.Now().Add(d).UnixMilli())
+		case drive.KindQuota:
+			// Account-wide: stop the run, give the attempt back, and let the
+			// engine continue after the documented reset.
+			item := it
+			r.blockQuota(&item, err)
 		default:
 			r.e.Store.ReleaseItem(r.db, it, codeFor(err), 0)
 		}
@@ -447,7 +704,7 @@ func (r *run) process(ctx context.Context, it state.Item) {
 		// The write may have happened. Never resend before checking.
 		r.e.Store.SetItemState(r.db, it, state.ItemReconciling, "")
 		if ctx.Err() == nil {
-			r.reconcile(ctx, it)
+			r.reconcile(ctx, it, true)
 		}
 	}
 }
@@ -465,7 +722,7 @@ func (r *run) reconcileAll(ctx context.Context) bool {
 		if ctx.Err() != nil || r.control() != "run" {
 			return false
 		}
-		r.reconcile(ctx, it)
+		r.reconcile(ctx, it, false)
 	}
 	return !r.isReconnect()
 }
@@ -475,13 +732,18 @@ const reconcileTries = 3
 // reconcile looks for our own tagged output. One match is adopted; several or
 // none-after-settling block the item for a human decision — except when the
 // user already confirmed a resend by retrying.
-func (r *run) reconcile(ctx context.Context, it state.Item) {
-	for try := 0; try < reconcileTries; try++ {
+func (r *run) reconcile(ctx context.Context, it state.Item, held bool) {
+	if !held {
 		if err := r.e.acquire(ctx); err != nil {
 			return
 		}
+		defer r.e.release()
+	}
+	for try := 0; try < reconcileTries; try++ {
+		if ctx.Err() != nil || r.control() != "run" {
+			return
+		}
 		found, err := r.p.FindByIntent(ctx, it.DestParentID, it.IntentKey)
-		r.e.release()
 		if err != nil {
 			switch drive.KindOf(err) {
 			case drive.KindAuth:
@@ -496,12 +758,16 @@ func (r *run) reconcile(ctx context.Context, it state.Item) {
 				}
 				try--
 				continue
+			case drive.KindThrottled:
+				// Not a failed reconciliation attempt.
+				try--
 			}
-			if !r.e.sleep(ctx, r.e.backoff(try)) {
+			if !r.e.sleep(ctx, max(r.e.throttleWait(), drive.RetryAfterOf(err))) {
 				return
 			}
 			continue
 		}
+		r.e.throttleClear()
 		switch len(found) {
 		case 1:
 			r.complete(ctx, it, found[0].ID)
@@ -528,16 +794,15 @@ func (r *run) reconcile(ctx context.Context, it state.Item) {
 // complete records the destination object, keeps the version history and, under
 // replace_copy, retires the superseded copy only after the new one is mapped.
 func (r *run) complete(ctx context.Context, it state.Item, destID string) {
-	if e := r.e.Store.CompleteItem(r.db, it, destID, RootURL); e != nil {
-		r.log("complete failed", "err", e)
-		return
-	}
 	if it.Kind == state.KindWrapper || it.Kind == state.KindFolder {
+		if e := r.e.Store.CompleteItem(r.db, it, destID, RootURL); e != nil {
+			r.log("complete failed", "err", e)
+		}
 		return
 	}
-	old, e := r.e.Store.RecordVersion(r.db, it, destID)
+	old, e := r.e.Store.CompleteVersionedItem(r.db, it, destID)
 	if e != nil {
-		r.log("record version failed", "err", e)
+		r.log("complete failed", "err", e)
 		return
 	}
 	if old != "" {
@@ -580,10 +845,25 @@ func (r *run) retireSuperseded(ctx context.Context) (failed int) {
 // Both steps are idempotent, so an unknown outcome is simply repeated later.
 func (r *run) align(ctx context.Context, it state.Item) {
 	retry := func(err error) {
-		if drive.KindOf(err) == drive.KindAuth {
+		k := drive.KindOf(err)
+		if k == drive.KindAuth {
 			r.setReconnect()
 		}
-		if drive.NotExecuted(err) && drive.KindOf(err) != drive.KindThrottled && drive.KindOf(err) != drive.KindUnreachable {
+		switch k {
+		case drive.KindQuota:
+			item := it
+			r.blockQuota(&item, err)
+			return
+		case drive.KindThrottled:
+			// A throttle is not this item's failure: no attempt is spent.
+			r.e.Store.ReleaseItemThrottled(r.db, it, codeFor(err), r.e.Now().Add(max(r.e.throttleWait(), drive.RetryAfterOf(err))).UnixMilli())
+			return
+		case drive.KindUnreachable:
+			// Neither is an offline machine; the worker gate handles the wait.
+			r.e.Store.ReleaseItemNoPenalty(r.db, it, "waiting_for_network")
+			return
+		}
+		if drive.NotExecuted(err) {
 			r.e.Store.ReleaseItem(r.db, it, codeFor(err), 0)
 			return
 		}
@@ -593,10 +873,6 @@ func (r *run) align(ctx context.Context, it state.Item) {
 		}
 		r.e.Store.ReleaseItem(r.db, it, codeFor(err), r.e.Now().Add(max(r.e.backoff(it.Attempts), drive.RetryAfterOf(err))).UnixMilli())
 	}
-	if err := r.e.acquire(ctx); err != nil {
-		r.e.Store.SetItemState(r.db, it, state.ItemPending, "")
-		return
-	}
 	cur, err := r.p.GetFile(ctx, it.DestID, "")
 	if err == nil && cur.Name != it.Name {
 		err = r.p.RenameFile(ctx, it.DestID, it.Name)
@@ -604,11 +880,11 @@ func (r *run) align(ctx context.Context, it state.Item) {
 	if err == nil && len(cur.Parents) > 0 && cur.Parents[0] != it.DestParentID {
 		err = r.p.MoveFile(ctx, it.DestID, cur.Parents[0], it.DestParentID)
 	}
-	r.e.release()
 	if err != nil {
 		retry(err)
 		return
 	}
+	r.e.throttleClear()
 	r.e.Store.CompleteItem(r.db, it, it.DestID, RootURL)
 }
 
@@ -629,7 +905,11 @@ func (r *run) discoverDelta(ctx context.Context) bool {
 	}
 	r.retireSuperseded(ctx)
 	if coll.SourceKind == state.KindFile {
+		if err := r.e.acquire(ctx); err != nil {
+			return false
+		}
 		f, err := r.p.GetFile(ctx, coll.SourceID, coll.ResourceKey)
+		r.e.release()
 		found := err == nil && !f.Trashed
 		if err != nil && drive.KindOf(err) != drive.KindNotFound {
 			if drive.KindOf(err) == drive.KindAuth {
@@ -642,42 +922,24 @@ func (r *run) discoverDelta(ctx context.Context) bool {
 		_, err = r.e.Store.ApplySingleFile(r.db, r.id, coll.ID, item, found)
 		return err == nil
 	}
-	for {
-		if ctx.Err() != nil || r.control() != "run" {
-			return false
-		}
-		folder, err := r.e.Store.NextToList(r.db, r.id)
-		if errors.Is(err, state.ErrNotFound) {
-			break
-		}
-		if err != nil {
-			return false
-		}
-		files, next, err := r.listPage(ctx, folder)
-		if err != nil {
-			switch drive.KindOf(err) {
-			case drive.KindAuth:
-				r.setReconnect()
-				return false
-			case drive.KindCancelled:
-				return false
-			}
-			if ctx.Err() != nil {
-				return false
-			}
-			r.e.Store.FailListing(r.db, folder, codeFor(err))
-			continue
-		}
-		children := make([]state.Item, 0, len(files))
-		for _, f := range files {
-			children = append(children, toItem(f))
-		}
-		if _, err = r.e.Store.CommitDeltaPage(r.db, r.id, folder, children, next); err != nil {
-			return false
-		}
+	if !r.scanTree(ctx, func(folder state.Item, children []state.Item, next string) error {
+		_, err := r.e.Store.CommitDeltaPage(r.db, r.id, folder, children, next)
+		return err
+	}) {
+		return false
 	}
 	if pr, err := r.e.Store.JobProgress(r.db, r.id); err == nil && pr.ListingFailed == 0 {
-		r.e.Store.FinishScan(r.db, r.id, r.collection)
+		total, _, terr := r.e.Store.ItemTotals(r.db, r.collection)
+		if terr != nil {
+			return false
+		}
+		removed, err := r.e.Store.FinishScan(r.db, r.id, r.collection)
+		if err != nil {
+			return false
+		}
+		if total >= massRemovalFloor && removed*100 > total*massRemovalPercent {
+			r.massRemoval, r.massRemoved, r.massTotal = true, removed, total
+		}
 	}
 	return true
 }

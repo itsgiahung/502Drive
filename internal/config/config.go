@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"time"
 )
 
 type Config struct {
@@ -35,6 +37,67 @@ type Config struct {
 	// also stops the daemon. Off by default: quitting the tray keeps
 	// 502Drive running; stop it with `502drive stop` or the tray's stop item.
 	TrayQuitStopsDaemon bool `json:"tray_quit_stops_daemon,omitempty"`
+	// FullReconcileEvery is how often a realtime subscription re-reads the
+	// whole source tree (Go duration, e.g. "168h"). Empty keeps the 7-day
+	// default; "0" or "off" disables the periodic reconcile.
+	FullReconcileEvery string `json:"full_reconcile_every,omitempty"`
+	// Workers is the starting account-wide concurrency (default 4).
+	Workers int `json:"workers,omitempty"`
+	// MaxWorkers is the AIMD ceiling (default 8, never below Workers).
+	MaxWorkers int `json:"max_workers,omitempty"`
+	// ReadRequestsPerSecond paces list/get/changes calls through one account
+	// token bucket (default 8; 0 keeps the default).
+	ReadRequestsPerSecond float64 `json:"read_requests_per_second,omitempty"`
+	// ThrottleSuccesses is how many consecutive successful calls grow the
+	// concurrency by one (default 8).
+	ThrottleSuccesses int `json:"throttle_successes,omitempty"`
+}
+
+// Concurrency returns the effective AIMD start/ceiling and success window.
+func (c Config) Concurrency() (start, maxWorkers, successes int) {
+	start, maxWorkers, successes = c.Workers, c.MaxWorkers, c.ThrottleSuccesses
+	if start == 0 {
+		start = 4
+	}
+	if maxWorkers == 0 {
+		maxWorkers = 8
+	}
+	if maxWorkers < start {
+		maxWorkers = start
+	}
+	if successes == 0 {
+		successes = 8
+	}
+	return
+}
+
+// ReadRate returns the read budget in requests per second (default 8).
+func (c Config) ReadRate() float64 {
+	if c.ReadRequestsPerSecond == 0 {
+		return 8
+	}
+	return c.ReadRequestsPerSecond
+}
+
+// DefaultFullReconcileEvery is the periodic full reconcile interval used when
+// the config does not name one.
+const DefaultFullReconcileEvery = 7 * 24 * time.Hour
+
+// FullReconcileEveryDuration parses the configured interval. Zero disables the
+// periodic reconcile; an empty value keeps the default.
+func (c Config) FullReconcileEveryDuration() (time.Duration, error) {
+	v := strings.TrimSpace(c.FullReconcileEvery)
+	switch v {
+	case "":
+		return DefaultFullReconcileEvery, nil
+	case "0", "off":
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, errors.New("full_reconcile_every must be a duration such as 168h, or 0 to disable it")
+	}
+	return d, nil
 }
 
 func DefaultPath() string {
@@ -193,6 +256,19 @@ func Save(path string, c Config) error {
 func (c Config) Validate() error {
 	if c.OAuthCallbackPort < 0 || c.OAuthCallbackPort > 65535 {
 		return errors.New("oauth_callback_port is out of range")
+	}
+	if _, err := c.FullReconcileEveryDuration(); err != nil {
+		return err
+	}
+	start, maxWorkers, successes := c.Concurrency()
+	if start < 1 || start > 64 || maxWorkers < 1 || maxWorkers > 64 {
+		return errors.New("workers and max_workers must be between 1 and 64")
+	}
+	if successes < 1 || successes > 1000 {
+		return errors.New("throttle_successes must be between 1 and 1000")
+	}
+	if r := c.ReadRequestsPerSecond; r < 0 || r > 1000 {
+		return errors.New("read_requests_per_second must be between 0 and 1000")
 	}
 	return validateListen(c.Listen, c.Container)
 }

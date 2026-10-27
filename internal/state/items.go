@@ -137,6 +137,41 @@ func (s *Store) NextToList(ctx context.Context, jobID string) (Item, error) {
 	return it, err
 }
 
+// NextToListPartial returns a folder whose listing has a page checkpoint. It
+// must be continued on its own: a batch query's page token is not per folder.
+func (s *Store) NextToListPartial(ctx context.Context, jobID string) (Item, error) {
+	it, err := scanItem(s.db.QueryRowContext(ctx, "SELECT "+itemCols+" FROM items WHERE kind='folder' AND list_state='partial' AND (job_id=? OR scan_job=?) ORDER BY rowid LIMIT 1", jobID, jobID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return it, ErrNotFound
+	}
+	return it, err
+}
+
+// NextToListBatch returns up to limit folders that have not been listed yet, in
+// creation order. The caller combines their children into one files.list.
+func (s *Store) NextToListBatch(ctx context.Context, jobID string, limit int) ([]Item, error) {
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, "SELECT "+itemCols+" FROM items WHERE kind='folder' AND list_state='none' AND (job_id=? OR scan_job=?) ORDER BY rowid LIMIT ?", jobID, jobID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Item
+	for rows.Next() {
+		it, e := scanItem(rows)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
 // CommitPage stores a page of children and the folder's next-page checkpoint
 // in one transaction, so replaying a page never duplicates items.
 func (s *Store) CommitPage(ctx context.Context, folder Item, children []Item, nextToken string) error {
@@ -227,10 +262,20 @@ func (s *Store) ItemsInState(ctx context.Context, jobID, state string) ([]Item, 
 // result URL on the job and collection in the same transaction.
 func (s *Store) CompleteItem(ctx context.Context, it Item, destID string, rootURL func(id string) string) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
-		if _, e := tx.ExecContext(ctx, "UPDATE items SET state='done', dest_id=?, error_code='' WHERE collection_id=? AND source_id=?", destID, it.CollectionID, it.SourceID); e != nil {
+		res, e := tx.ExecContext(ctx, "UPDATE items SET state='done', dest_id=?, error_code='' WHERE collection_id=? AND source_id=?", destID, it.CollectionID, it.SourceID)
+		if e != nil {
 			return e
 		}
+		done, _ := res.RowsAffected()
 		isRoot := it.ParentSourceID == "" && (it.Kind == KindFolder || it.Kind == KindWrapper)
+		// Q1: count bytes once, in the same transaction that marks the item
+		// done. A repeated completion (crash/reconcile of an already done item)
+		// does not inflate the ledger.
+		if done > 0 && !isRoot && it.Kind == KindFile && it.Size != nil && *it.Size > 0 {
+			if e = s.addCopiedBytes(ctx, tx, it.JobID, *it.Size); e != nil {
+				return e
+			}
+		}
 		if !isRoot {
 			return nil
 		}
@@ -258,6 +303,38 @@ func (s *Store) CompleteItem(ctx context.Context, it Item, destID string, rootUR
 	})
 }
 
+// CompleteVersionedItem marks a copied file done, records its generation and
+// the destination version in one transaction, and returns the destination of
+// the copy this one supersedes (empty when there is none). One transaction
+// halves the fsyncs per copied file, which keeps control reads responsive while
+// several workers finish items.
+func (s *Store) CompleteVersionedItem(ctx context.Context, it Item, destID string) (oldDest string, err error) {
+	err = s.tx(ctx, func(tx *sql.Tx) error {
+		res, e := tx.ExecContext(ctx, "UPDATE items SET state='done', dest_id=?, error_code='' WHERE collection_id=? AND source_id=?", destID, it.CollectionID, it.SourceID)
+		if e != nil {
+			return e
+		}
+		if done, _ := res.RowsAffected(); done > 0 && it.Kind == KindFile && it.Size != nil && *it.Size > 0 {
+			if e = s.addCopiedBytes(ctx, tx, it.JobID, *it.Size); e != nil {
+				return e
+			}
+		}
+		if _, e = tx.ExecContext(ctx, "INSERT OR REPLACE INTO item_versions(collection_id,source_id,generation,dest_id,fingerprint,state) VALUES(?,?,?,?,?,'current')", it.CollectionID, it.SourceID, it.Generation, destID, it.Fingerprint); e != nil {
+			return e
+		}
+		if it.OldDestID == "" {
+			return nil
+		}
+		oldDest = it.OldDestID
+		if _, e = tx.ExecContext(ctx, "UPDATE item_versions SET state='superseded' WHERE collection_id=? AND source_id=? AND generation<? AND state='current'", it.CollectionID, it.SourceID, it.Generation); e != nil {
+			return e
+		}
+		_, e = tx.ExecContext(ctx, "UPDATE items SET old_dest_id='' WHERE collection_id=? AND source_id=?", it.CollectionID, it.SourceID)
+		return e
+	})
+	return oldDest, err
+}
+
 // ReleaseItem puts an item back after an attempt that provably did not write.
 // retryAt (epoch ms) of 0 means a terminal failure.
 func (s *Store) ReleaseItem(ctx context.Context, it Item, code string, retryAt int64) error {
@@ -266,6 +343,16 @@ func (s *Store) ReleaseItem(ctx context.Context, it Item, code string, retryAt i
 		state = ItemPending
 	}
 	_, err := s.db.ExecContext(ctx, "UPDATE items SET state=?, error_code=?, next_attempt_at=? WHERE collection_id=? AND source_id=?", state, code, retryAt, it.CollectionID, it.SourceID)
+	return err
+}
+
+// ReleaseItemThrottled returns a throttled item to the pending queue without
+// spending an attempt: a 429 says nothing about the item, only about the
+// account's current request rate.
+func (s *Store) ReleaseItemThrottled(ctx context.Context, it Item, code string, retryAt int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE items SET state='pending', error_code=?, next_attempt_at=?,
+		attempts=CASE WHEN attempts>0 THEN attempts-1 ELSE 0 END
+		WHERE collection_id=? AND source_id=?`, code, retryAt, it.CollectionID, it.SourceID)
 	return err
 }
 

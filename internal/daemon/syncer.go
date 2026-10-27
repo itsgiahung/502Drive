@@ -67,8 +67,88 @@ func (s *syncer) tick(ctx context.Context) {
 	}
 	now := s.now().UTC()
 	s.claimSchedules(ctx, now)
+	s.claimFullReconciles(ctx, now)
+	s.replayPending(ctx, now)
 	s.pollFeeds(ctx, now)
 	s.reconcileFeeds(ctx)
+}
+
+// claimFullReconciles admits the periodic full reconciliation a realtime
+// subscription is due for. The next slot is stored before the run, so a slow
+// run never causes a second one.
+func (s *syncer) claimFullReconciles(ctx context.Context, now time.Time) {
+	jobs, err := s.store.ClaimDueFullReconciles(ctx, now)
+	if err != nil {
+		s.note(ctx, "full_reconcile", err)
+		return
+	}
+	if len(jobs) == 0 {
+		return
+	}
+	s.log.Info("sync: full reconciles admitted", "count", len(jobs))
+	s.wake()
+}
+
+// replayPending flushes the raw change pages stored while a baseline ran. It
+// runs before polling so a subscription is never polled past its own buffer.
+func (s *syncer) replayPending(ctx context.Context, now time.Time) {
+	collections, err := s.store.PendingCollections(ctx)
+	if err != nil {
+		s.note(ctx, "replay", err)
+		return
+	}
+	for _, id := range collections {
+		if ctx.Err() != nil {
+			return
+		}
+		sub, err := s.store.GetSubscription(ctx, id)
+		if err != nil {
+			continue
+		}
+		if sub.State != state.SyncActive {
+			continue // paused/stopped: the buffer waits, the cursor has not moved
+		}
+		changes, finalCursor, overflow, err := s.store.ReplayBatch(ctx, id, state.MaxReplayChanges)
+		if err != nil {
+			s.note(ctx, id, err)
+			continue
+		}
+		if overflow {
+			// The buffer is known to be incomplete: never replay part of it.
+			if err = s.store.DiscardReplay(ctx, id); err != nil {
+				s.note(ctx, id, err)
+				continue
+			}
+			prov, perr := s.provider(ctx)
+			if perr != nil {
+				s.note(ctx, id, perr)
+				continue
+			}
+			s.reconcileFeed(ctx, prov, sub, "replay_overflow")
+			continue
+		}
+		relevant := false
+		for _, ch := range changes {
+			hit, err := s.store.RelevantChange(ctx, id, ch.FileID, ch.Parents)
+			if err != nil {
+				s.note(ctx, id, err)
+				break
+			}
+			relevant = relevant || hit
+		}
+		run, err := s.store.FinishReplay(ctx, id, sub.Cursor, finalCursor, relevant, now.Add(s.nextPoll(id, relevant)))
+		switch {
+		case errors.Is(err, state.ErrTransition):
+			continue
+		case err != nil:
+			s.note(ctx, id, err)
+			continue
+		}
+		s.clear(ctx, id)
+		if run != nil {
+			s.wake()
+		}
+	}
 }
 
 // claimSchedules admits one catch-up run per due subscription. The store keeps
@@ -101,9 +181,16 @@ func (s *syncer) pollFeeds(ctx context.Context, now time.Time) {
 	}
 }
 
-// poll reads the change feed from the stored cursor and only advances the
-// cursor together with the run the changes need.
+// poll reads the change feed from the stored cursor. While the baseline runs
+// the pages are stored raw (the mapping is still being built, so relevance
+// cannot be decided yet) and replayed after it finishes. Once active, the
+// cursor only advances together with the run the changes need.
 func (s *syncer) poll(ctx context.Context, sub state.Subscription) {
+	if sub.State == state.SyncBootstrapping && sub.ReplayOverflow {
+		// The buffer is already known to be incomplete; polling further would
+		// only spend provider calls. RunFinished turns this into a reconcile.
+		return
+	}
 	prov, err := s.provider(ctx)
 	if err != nil {
 		s.deferPoll(ctx, sub, err)
@@ -114,7 +201,16 @@ func (s *syncer) poll(ctx context.Context, sub state.Subscription) {
 		return
 	}
 	cursor := sub.Cursor
+	// Resume behind the durable buffer, not behind the subscription cursor:
+	// a restart must not re-read (and duplicate) pages already stored.
+	if last, ok, err := s.store.LastPendingCursor(ctx, sub.CollectionID); err != nil {
+		s.deferPoll(ctx, sub, err)
+		return
+	} else if ok {
+		cursor = last
+	}
 	changed := false
+	var raw []state.ReplayChange
 	for page := 0; page < maxFeedPages; page++ {
 		changes, next, newStart, err := prov.ListChanges(ctx, cursor)
 		if err != nil {
@@ -125,12 +221,18 @@ func (s *syncer) poll(ctx context.Context, sub state.Subscription) {
 			s.deferPoll(ctx, sub, err)
 			return
 		}
-		relevant, err := s.anyRelevant(ctx, sub.CollectionID, changes)
-		if err != nil {
-			s.note(ctx, sub.CollectionID, err)
-			return
+		if sub.State == state.SyncBootstrapping {
+			for _, ch := range changes {
+				raw = append(raw, replayChange(ch))
+			}
+		} else {
+			relevant, err := s.anyRelevant(ctx, sub.CollectionID, changes)
+			if err != nil {
+				s.note(ctx, sub.CollectionID, err)
+				return
+			}
+			changed = changed || relevant
 		}
-		changed = changed || relevant
 		if next == "" {
 			// Drained: newStart is the token for this position. It may equal
 			// the cursor of an empty poll, which is not an error.
@@ -141,6 +243,12 @@ func (s *syncer) poll(ctx context.Context, sub state.Subscription) {
 	}
 	if cursor == "" {
 		s.deferPoll(ctx, sub, errors.New("the change feed returned no cursor"))
+		return
+	}
+	if sub.State == state.SyncBootstrapping {
+		if _, err := s.store.AppendPendingChanges(ctx, sub.CollectionID, raw, cursor, s.now().Add(app.SyncPollWarm)); err != nil {
+			s.deferPoll(ctx, sub, err)
+		}
 		return
 	}
 	run, err := s.store.AdvancePoll(ctx, sub.CollectionID, sub.Cursor, cursor, changed, s.now().Add(s.nextPoll(sub.CollectionID, changed)))
@@ -157,6 +265,16 @@ func (s *syncer) poll(ctx context.Context, sub state.Subscription) {
 	if run != nil {
 		s.wake()
 	}
+}
+
+func replayChange(ch drive.Change) state.ReplayChange {
+	out := state.ReplayChange{FileID: ch.FileID, Removed: ch.Removed}
+	if ch.File != nil {
+		out.Parents = ch.File.Parents
+		out.Trashed = ch.File.Trashed
+		out.Removed = out.Removed || ch.File.Trashed
+	}
+	return out
 }
 
 func (s *syncer) anyRelevant(ctx context.Context, collectionID string, changes []drive.Change) (bool, error) {

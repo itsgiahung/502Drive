@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math/rand/v2"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +21,7 @@ import (
 // syncer, with a settable clock instead of a ticker.
 type syncRig struct {
 	t     *testing.T
+	dir   string
 	store *state.Store
 	fake  *drivetest.Fake
 	svc   *app.Service
@@ -26,9 +29,11 @@ type syncRig struct {
 	clock *fakeClock
 	dest  string
 
-	mu       sync.Mutex
-	wakes    int
-	provider error
+	providerFn func(context.Context) (drive.Provider, error)
+	wakeFn     func()
+	mu         sync.Mutex
+	wakes      int
+	provider   error
 }
 
 type fakeClock struct {
@@ -50,14 +55,9 @@ func (c *fakeClock) set(t time.Time) {
 
 func newSyncRig(t *testing.T, now time.Time) *syncRig {
 	t.Helper()
-	store, err := state.Open(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { store.Close() })
-	rig := &syncRig{t: t, store: store, fake: drivetest.New(), clock: &fakeClock{t: now}}
+	rig := &syncRig{t: t, dir: t.TempDir(), fake: drivetest.New(), clock: &fakeClock{t: now}}
 	rig.dest = rig.fake.Folder("Archive", "root").ID
-	provider := func(context.Context) (drive.Provider, error) {
+	rig.providerFn = func(context.Context) (drive.Provider, error) {
 		rig.mu.Lock()
 		defer rig.mu.Unlock()
 		if rig.provider != nil {
@@ -65,14 +65,41 @@ func newSyncRig(t *testing.T, now time.Time) *syncRig {
 		}
 		return rig.fake, nil
 	}
-	rig.svc = &app.Service{Store: store, Version: "test", Now: rig.clock.now, Provider: provider}
-	rig.sy = newSyncer(store, provider, func() {
+	rig.wakeFn = func() {
 		rig.mu.Lock()
 		rig.wakes++
 		rig.mu.Unlock()
-	}, slog.New(slog.DiscardHandler))
-	rig.sy.now = rig.clock.now
+	}
+	store, err := state.Open(rig.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	rig.attach(store)
 	return rig
+}
+
+// attach rebinds the store after a restart (or the initial open).
+func (r *syncRig) attach(store *state.Store) {
+	r.store = store
+	r.svc = &app.Service{Store: store, Version: "test", Now: r.clock.now, Provider: r.providerFn}
+	r.sy = newSyncer(store, r.providerFn, r.wakeFn, slog.New(slog.DiscardHandler))
+	r.sy.now = r.clock.now
+}
+
+// restart closes and reopens the data directory, as a daemon restart would. The
+// sync cursor and the pending replay buffer must survive it.
+func (r *syncRig) restart() {
+	r.t.Helper()
+	if err := r.store.Close(); err != nil {
+		r.t.Fatal(err)
+	}
+	store, err := state.Open(r.dir)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	r.t.Cleanup(func() { store.Close() })
+	r.attach(store)
 }
 
 func (r *syncRig) setProvider(err error) {
@@ -524,5 +551,342 @@ func TestSyncerStopsCleanlyOnCancel(t *testing.T) {
 	}
 	if err := ctx.Err(); !errors.Is(err, context.Canceled) {
 		t.Fatalf("ctx = %v", err)
+	}
+}
+
+// bootstrapping attaches realtime sync but leaves the baseline reconcile
+// running, the state in which feed pages must be stored for replay.
+func (r *syncRig) bootstrapping(c state.Collection) (state.Subscription, string) {
+	r.t.Helper()
+	ctx := context.Background()
+	view, _, err := r.svc.ConfigureSync(ctx, app.Owner, state.ID("boot"), c.ID, app.SyncRequest{
+		Mode: state.ModeRealtime, ContentPolicy: state.PolicyVersioned, ExpectedCollection: c.Revision,
+	})
+	if err != nil {
+		r.t.Fatalf("configure bootstrapping: %v", err)
+	}
+	if view.ActiveJobID == "" {
+		r.t.Fatal("no baseline reconcile run")
+	}
+	sub, err := r.store.GetSubscription(ctx, c.ID)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	if sub.State != state.SyncBootstrapping {
+		r.t.Fatalf("state = %q", sub.State)
+	}
+	return sub, view.ActiveJobID
+}
+
+// pending counts the durable replay rows of one collection.
+func (r *syncRig) pending(collectionID string) int {
+	r.t.Helper()
+	collections, err := r.store.PendingCollections(context.Background())
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	for _, id := range collections {
+		if id == collectionID {
+			// ReplayBatch is the only reader that exposes the buffer size.
+			changes, _, _, err := r.store.ReplayBatch(context.Background(), collectionID, state.MaxReplayChanges)
+			if err != nil {
+				r.t.Fatal(err)
+			}
+			return len(changes)
+		}
+	}
+	return 0
+}
+
+func (r *syncRig) feedCursor() string {
+	r.t.Helper()
+	token, err := r.fake.StartPageToken(context.Background())
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	return token
+}
+
+// While the baseline runs, feed pages are stored raw and the subscription
+// cursor does not move. Finishing the baseline replays them exactly once.
+func TestPollStoresChangesDuringBaselineAndReplaysAfterIt(t *testing.T) {
+	t0 := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	rig := newSyncRig(t, t0)
+	c := rig.ready("Replay")
+	sub, job := rig.bootstrapping(c)
+	oldCursor := sub.Cursor
+
+	rig.fake.File("late.txt", c.SourceID, 3)
+	rig.tick(t0.Add(time.Second))
+	sub = rig.subscription(c.ID)
+	if sub.Cursor != oldCursor {
+		t.Fatalf("the cursor moved during the baseline: %q -> %q", oldCursor, sub.Cursor)
+	}
+	if n := rig.pending(c.ID); n != 1 {
+		t.Fatalf("pending changes = %d", n)
+	}
+	if runs := rig.runs(c.ID, "realtime"); len(runs) != 0 {
+		t.Fatalf("a change was applied before the baseline ended: %d runs", len(runs))
+	}
+	want := rig.feedCursor()
+
+	rig.finish(job)
+	if sub = rig.subscription(c.ID); sub.State != state.SyncActive {
+		t.Fatalf("state after baseline = %q", sub.State)
+	}
+	rig.tick(t0.Add(2 * time.Second))
+
+	sub = rig.subscription(c.ID)
+	if sub.Cursor != want {
+		t.Fatalf("cursor after replay = %q, want %q", sub.Cursor, want)
+	}
+	if n := rig.pending(c.ID); n != 0 {
+		t.Fatalf("replay left %d rows", n)
+	}
+	if runs := rig.runs(c.ID, "realtime"); len(runs) != 1 {
+		t.Fatalf("replay admitted %d runs", len(runs))
+	}
+	if rig.wakeCount() == 0 {
+		t.Fatal("a replayed change did not wake the engine")
+	}
+}
+
+func TestReplayDoesNotRepeatPagesAfterRestart(t *testing.T) {
+	t0 := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	rig := newSyncRig(t, t0)
+	c := rig.ready("Restart")
+	_, job := rig.bootstrapping(c)
+
+	rig.fake.File("one.txt", c.SourceID, 1)
+	rig.fake.File("two.txt", c.SourceID, 2)
+	rig.tick(t0.Add(time.Second))
+	if n := rig.pending(c.ID); n != 2 {
+		t.Fatalf("pending after first poll = %d", n)
+	}
+
+	// The daemon dies before the baseline finishes and is restarted.
+	rig.restart()
+	due := time.UnixMilli(rig.subscription(c.ID).NextPollAt).UTC()
+	rig.tick(due)
+	if n := rig.pending(c.ID); n != 2 {
+		t.Fatalf("restart duplicated pages: %d rows", n)
+	}
+
+	rig.fake.File("three.txt", c.SourceID, 3)
+	due = time.UnixMilli(rig.subscription(c.ID).NextPollAt).UTC()
+	rig.tick(due)
+	if n := rig.pending(c.ID); n != 3 {
+		t.Fatalf("after restart the poll did not resume behind the buffer: %d rows", n)
+	}
+
+	rig.finish(job)
+	rig.tick(due.Add(time.Second))
+	if sub := rig.subscription(c.ID); sub.Cursor != rig.feedCursor() {
+		t.Fatalf("cursor after replay = %q", sub.Cursor)
+	}
+	if n := rig.pending(c.ID); n != 0 {
+		t.Fatalf("replay left %d rows", n)
+	}
+	if runs := rig.runs(c.ID, "realtime"); len(runs) != 1 {
+		t.Fatalf("replay admitted %d runs", len(runs))
+	}
+}
+
+func TestReplayAdvancesTheCursorWithoutARunForUnrelatedChanges(t *testing.T) {
+	t0 := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	rig := newSyncRig(t, t0)
+	c := rig.ready("Unrelated")
+	_, job := rig.bootstrapping(c)
+
+	rig.fake.Folder("Elsewhere", "root")
+	rig.tick(t0.Add(time.Second))
+	want := rig.feedCursor()
+	rig.finish(job)
+	rig.tick(t0.Add(2 * time.Second))
+
+	if sub := rig.subscription(c.ID); sub.Cursor != want {
+		t.Fatalf("cursor = %q, want %q", sub.Cursor, want)
+	}
+	if n := rig.pending(c.ID); n != 0 {
+		t.Fatalf("pending rows = %d", n)
+	}
+	if runs := rig.runs(c.ID, "realtime"); len(runs) != 0 {
+		t.Fatalf("an unrelated change admitted %d runs", len(runs))
+	}
+}
+
+func TestPauseKeepsTheReplayBufferForResume(t *testing.T) {
+	t0 := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	rig := newSyncRig(t, t0)
+	c := rig.ready("Paused replay")
+	sub, job := rig.bootstrapping(c)
+	rig.fake.File("during.txt", c.SourceID, 1)
+	rig.tick(t0.Add(time.Second))
+	oldCursor := rig.subscription(c.ID).Cursor
+
+	rev := rig.subscription(c.ID).Revision
+	if _, _, err := rig.svc.SyncAction(context.Background(), app.Owner, "pause-1", c.ID, "pause", rev); err != nil {
+		t.Fatal(err)
+	}
+	rig.tick(t0.Add(2 * time.Second))
+	if sub = rig.subscription(c.ID); sub.State != state.SyncPaused {
+		t.Fatalf("state = %q", sub.State)
+	}
+	if sub.Cursor != oldCursor {
+		t.Fatal("pause advanced the cursor")
+	}
+	if n := rig.pending(c.ID); n != 1 {
+		t.Fatalf("pause dropped the buffer: %d rows", n)
+	}
+
+	if _, _, err := rig.svc.SyncAction(context.Background(), app.Owner, "resume-1", c.ID, "resume", sub.Revision); err != nil {
+		t.Fatal(err)
+	}
+	rig.finish(job)
+	rig.tick(t0.Add(3 * time.Second))
+	if sub = rig.subscription(c.ID); sub.State != state.SyncActive {
+		t.Fatalf("state after resume = %q", sub.State)
+	}
+	if n := rig.pending(c.ID); n != 0 {
+		t.Fatalf("resumed replay left %d rows", n)
+	}
+	if runs := rig.runs(c.ID, "realtime"); len(runs) != 1 {
+		t.Fatalf("resumed replay admitted %d runs", len(runs))
+	}
+}
+
+// A baseline that overflowed its replay buffer never activates silently: the
+// syncer takes a fresh cursor and runs a full reconcile instead.
+func TestAnOverflowedReplayQueuesAFullReconcile(t *testing.T) {
+	t0 := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	rig := newSyncRig(t, t0)
+	c := rig.ready("Overflow")
+	_, job := rig.bootstrapping(c)
+	ctx := context.Background()
+	batch := make([]state.ReplayChange, state.MaxReplayChanges)
+	for i := range batch {
+		batch[i] = state.ReplayChange{FileID: "f" + strconv.Itoa(i), Parents: []string{c.SourceID}}
+	}
+	if overflow, err := rig.store.AppendPendingChanges(ctx, c.ID, batch, "100", t0); err != nil || overflow {
+		t.Fatalf("fill: overflow=%v err=%v", overflow, err)
+	}
+	if overflow, err := rig.store.AppendPendingChanges(ctx, c.ID, []state.ReplayChange{{FileID: "over"}}, "101", t0); err != nil || !overflow {
+		t.Fatalf("overflow: %v %v", overflow, err)
+	}
+	changes := rig.fake.CallCount("changes")
+	rig.tick(t0.Add(time.Second))
+	if got := rig.fake.CallCount("changes"); got != changes {
+		t.Fatalf("an overflowed buffer kept polling the feed: %d calls", got-changes)
+	}
+
+	rig.finish(job)
+	sub := rig.subscription(c.ID)
+	if sub.State != state.SyncNeedsReconcile || sub.ReplayOverflow {
+		t.Fatalf("after overflowed baseline: state=%q overflow=%v", sub.State, sub.ReplayOverflow)
+	}
+	if n := rig.pending(c.ID); n != 0 {
+		t.Fatalf("overflow kept %d rows", n)
+	}
+
+	before := len(rig.runs(c.ID, "reconcile"))
+	rig.tick(t0.Add(time.Second))
+	if got := len(rig.runs(c.ID, "reconcile")); got != before+1 {
+		t.Fatalf("reconcile runs = %d, want %d", got, before+1)
+	}
+	if sub = rig.subscription(c.ID); sub.State != state.SyncBootstrapping || sub.Cursor == "" {
+		t.Fatalf("state=%q cursor=%q", sub.State, sub.Cursor)
+	}
+}
+
+// The periodic full reconcile is jittered by ±10%, admitted once, and never
+// overlaps another run.
+func TestFullReconcileIsJitteredAndRunsOncePerPeriod(t *testing.T) {
+	t0 := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	rig := newSyncRig(t, t0)
+	c := rig.ready("Periodic")
+	sub := rig.realtime(c)
+	every := 7 * 24 * time.Hour
+
+	first := time.UnixMilli(sub.NextFullReconcileAt).UTC()
+	if d := first.Sub(t0); d < every*9/10 || d > every*11/10 {
+		t.Fatalf("first slot %v outside ±10%% of %v", d, every)
+	}
+	rig.tick(first.Add(-time.Second))
+	if runs := rig.runs(c.ID, "full_reconcile"); len(runs) != 0 {
+		t.Fatalf("ran before the slot: %d", len(runs))
+	}
+
+	rig.tick(first)
+	runs := rig.runs(c.ID, "full_reconcile")
+	if len(runs) != 1 {
+		t.Fatalf("full reconcile runs = %d", len(runs))
+	}
+	after := rig.subscription(c.ID)
+	next := time.UnixMilli(after.NextFullReconcileAt).UTC()
+	if d := next.Sub(first); d < every*9/10 || d > every*11/10 {
+		t.Fatalf("next slot %v outside ±10%% of %v", d, every)
+	}
+	rig.tick(first.Add(time.Second))
+	if runs = rig.runs(c.ID, "full_reconcile"); len(runs) != 1 {
+		t.Fatalf("a second tick duplicated the reconcile: %d", len(runs))
+	}
+}
+
+// Seeded crash matrix: a daemon may die before, during or after the baseline.
+// Whatever the point, a restart replays the durable buffer once, ends at the
+// feed head and never duplicates the run.
+func TestReplayCrashMatrix(t *testing.T) {
+	for seed := uint64(1); seed <= 12; seed++ {
+		t.Run("seed-"+strconv.FormatUint(seed, 10), func(t *testing.T) {
+			rng := rand.New(rand.NewPCG(seed, 0x5eed))
+			t0 := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+			rig := newSyncRig(t, t0)
+			c := rig.ready("Crash")
+			_, job := rig.bootstrapping(c)
+
+			files := rng.IntN(5) // 0..4 new files during the baseline
+			for i := range files {
+				rig.fake.File("crash-"+strconv.Itoa(i)+".txt", c.SourceID, int64(i+1))
+			}
+			crash := rng.IntN(3)
+			if crash == 0 {
+				rig.restart() // die before the first feed poll
+			}
+			rig.tick(t0.Add(time.Second))
+			if crash == 1 {
+				rig.restart() // die with stored pages, baseline unfinished
+			}
+			rig.finish(job)
+			if crash == 2 {
+				rig.restart() // die after the baseline, before replay
+			}
+			rig.tick(t0.Add(2 * time.Second))
+
+			sub := rig.subscription(c.ID)
+			if sub.State != state.SyncActive {
+				t.Fatalf("seed %d: state = %q", seed, sub.State)
+			}
+			if want := rig.feedCursor(); sub.Cursor != want {
+				t.Fatalf("seed %d: cursor = %q, want %q", seed, sub.Cursor, want)
+			}
+			if n := rig.pending(c.ID); n != 0 {
+				t.Fatalf("seed %d: %d rows left", seed, n)
+			}
+			want := 1
+			if files == 0 {
+				want = 0
+			}
+			if runs := rig.runs(c.ID, "realtime"); len(runs) != want {
+				t.Fatalf("seed %d: %d realtime runs, want %d", seed, len(runs), want)
+			}
+			// A further tick is a no-op: no second run, no cursor movement.
+			rig.tick(t0.Add(3 * time.Second))
+			if sub2 := rig.subscription(c.ID); sub2.Cursor != sub.Cursor {
+				t.Fatalf("seed %d: the cursor moved again: %q -> %q", seed, sub.Cursor, sub2.Cursor)
+			}
+			if runs := rig.runs(c.ID, "realtime"); len(runs) != want {
+				t.Fatalf("seed %d: a second tick added a run: %d", seed, len(runs))
+			}
+		})
 	}
 }

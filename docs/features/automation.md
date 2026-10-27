@@ -44,6 +44,11 @@ versioned_copy/replace_copy, `schedule_revision`, `revision`.
 - Run sync dùng **cùng collection/root**; `items` giữ mapping. Folder được list
   lại; file thay đổi fingerprint → generation mới; move/rename → `op=align`.
 - Item mất khỏi nguồn → `error_code=source_removed`, bản đích giữ nguyên.
+- Chống xoá nhầm: nếu một lần quét mất **>30%** mục đã map (sàn 10 mục), run
+  dừng **trước khi copy**, thành `partial` với `last_error.code=source_mass_removal`
+  và body có `source_removed`; `RunFinished` tạo audit S1 read-only
+  (`trigger=reconcile_watch`) để giải thích, không tự sửa/xoá đích. Dưới ngưỡng
+  chỉ đánh dấu `source_removed`.
 - `versioned_copy`: bản cũ giữ; `replace_copy`: trash bản cũ sau khi map bản mới.
 - `name/root` không đổi; không tạo wrapper mới mỗi run.
 
@@ -54,10 +59,39 @@ versioned_copy/replace_copy, `schedule_revision`, `revision`.
 - Mỗi page: lọc bằng `RelevantChange` (item đã biết hoặc nằm trong folder nguồn);
   `AdvancePoll` ghi cursor + admit run **cùng transaction**, nên cursor không vượt
   thay đổi chưa có run.
+- **Trong lúc baseline/reconcile** (`bootstrapping`): feed vẫn được poll nhưng
+  page được lưu thô vào `sync_pending_changes` (`file_id`, `removed`, `parents`,
+  `trashed`), **cursor chưa tiến**. Sau khi baseline xong, `replayPending` lọc
+  `RelevantChange` trên mapping đã đủ rồi `FinishReplay` xoá buffer, tiến cursor
+  và admit run **trong một transaction**. Trần 5000 thay đổi hoặc 4 MiB mỗi
+  collection; vượt trần → `replay_overflow` → subscription thành
+  `needs_reconcile` + full reconcile, không phát lại một tập đã biết thiếu.
+  Restart giữa chừng đọc tiếp từ `cursor_after` của dòng cuối, không lặp trang.
+- **Full reconcile định kỳ**: `full_reconcile_every` (giây, mặc định 604800 = 7
+  ngày, `0` tắt) đặt lúc `PUT /sync` từ config `full_reconcile_every` (Go
+  duration, rỗng = 168h, `0`/`off` = tắt). `next_full_reconcile_at` lệch ±10%;
+  slot được đẩy trước khi admit nên không chồng run; queue đầy thì giữ slot
+  due cho tick sau. Subscription cũ (schema trước 007) được xếp slot ở tick đầu
+  tiên, không dồn chạy ngay khi nâng cấp.
 - Cursor hết hạn/không dùng được → lấy token mới + `MarkNeedsReconcile` → full
   reconcile run (`bootstrapping`) rồi `active`.
 - Notification lỗi lặp của một subscription chỉ gửi một lần (marker
   `notify_markers`), xóa khi có run thành công.
+
+## Quota tài khoản
+
+- `copy_ledger(principal,hour,bytes)`: byte đã copy xong, ghi cùng transaction
+  với `CompleteItem`; `CopiedBytes24h` là một `SUM` 24 bucket (xem
+  [verification](../verification.md) cho số đo). Chỉ file có `size` mới cộng.
+- `dailyLimitExceeded` → job `blocked`, `last_error.code=quota_exceeded`,
+  `resume_after` = **midnight America/Los_Angeles** kế tiếp.
+  `storageQuotaExceeded` → `resume_after` = +24h (cần người dọn dung lượng, job
+  vẫn tự kiểm tra lại). Quota khác: `Retry-After` hoặc +1h.
+- Item về `pending` với `attempts-1` và `next_attempt_at=resume_after`; **không
+  đốt lượt**, **không gửi lại mù**. Worker dừng claim, job giữ nguyên id.
+- Engine mỗi vòng poll gọi `ResumeDueBlocked`; job `blocked` có mốc đã qua và
+  `desired_state=run` → `queued` (cùng id), rồi tiếp tục quét/copy phần còn lại.
+  `resume_after` hiện trong `GET /v1/jobs/{id}` (null khi không có).
 
 ## Pause / stop / resume
 
@@ -71,9 +105,8 @@ versioned_copy/replace_copy, `schedule_revision`, `revision`.
 
 ## Chưa hỗ trợ
 
-- Realtime chưa replay raw change page trong lúc bootstrapping (chỉ reconcile scan).
 - Chưa có `corpus_key`/cursor theo account; mỗi subscription một cursor.
-- Full metadata reconcile định kỳ, digest, "pause cả run đang chạy" bằng một nút:
-  chưa có.
+- Digest/nội dung file và "pause cả run đang chạy" bằng một nút: chưa có.
+- Full reconcile định kỳ chỉ đọc lại metadata/cây, không so digest nội dung.
 - `after_copy_sync_mode` (preference) chưa tự áp cho collection mới.
 - Filter theo loại/thành viên nguồn (type/member policy) chưa có; chỉ lọc theo cây.

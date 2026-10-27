@@ -296,7 +296,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request, p app.Principal)
 	}
 	return 200, map[string]any{"version": st.Version, "schema_version": st.SchemaVersion, "ready": st.Ready, "account": accountDTO(st.Account),
 		"bot_state": st.BotState, "running_jobs": st.Running, "queued_jobs": st.Queued, "blocked_jobs": st.Blocked,
-		"lifecycle": st.Lifecycle}, nil
+		"lifecycle": st.Lifecycle, "throttle": st.Throttle}, nil
 }
 
 // ---- plans & jobs ----

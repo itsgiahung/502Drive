@@ -72,6 +72,15 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 	defer store.Close()
 
 	svc := &app.Service{Store: store, Version: o.Version}
+	if every, err := cfg.FullReconcileEveryDuration(); err != nil {
+		return err
+	} else if every > 0 {
+		svc.FullReconcileEvery = &every
+	} else {
+		// Explicitly disabled: a non-nil zero duration says "off".
+		zero := time.Duration(0)
+		svc.FullReconcileEvery = &zero
+	}
 	var auth *drive.Auth
 	if cfg.OAuthClientFile != "" {
 		raw, err := config.ReadPrivate(cfg.OAuthClientFile)
@@ -101,9 +110,12 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 		svc.Auth = auth
 	}
 
+	start, maxWorkers, successes := cfg.Concurrency()
+	throttle := drive.NewThrottle(drive.ThrottleOptions{Start: start, Max: maxWorkers,
+		Successes: successes, ReadPerSecond: cfg.ReadRate()})
 	var clientMu sync.Mutex
 	var client *drive.Client
-	provider := func(ctx context.Context) (drive.Provider, error) {
+	baseProvider := func(ctx context.Context) (drive.Provider, error) {
 		if o.Provider != nil {
 			return o.Provider, nil
 		}
@@ -124,9 +136,23 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 		}
 		return client, nil
 	}
+	// Every Drive call in the daemon shares one account-wide AIMD limit and
+	// read budget.
+	provider := func(ctx context.Context) (drive.Provider, error) {
+		p, err := baseProvider(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return drive.Paced(p, throttle), nil
+	}
 	svc.Provider = provider
+	svc.Throttle = func() app.ThrottleStatus {
+		snap := throttle.Snapshot()
+		return app.ThrottleStatus{WorkersNow: snap.WorkersNow, ThrottledLast5m: snap.ThrottledLast5m, NextRetryAt: snap.NextRetryAt}
+	}
 
-	eng := &engine.Engine{Store: store, Provider: provider, Log: log}
+	eng := &engine.Engine{Store: store, Provider: provider, Log: log, Throttle: throttle,
+		Workers: start, MaxWorkers: maxWorkers}
 	svc.Wake = eng.Wake
 
 	// Power/network lifecycle: OS events where available, clock gaps always.

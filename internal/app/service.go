@@ -36,7 +36,13 @@ type Service struct {
 	BotState func() string
 	// Lifecycle reports the power/network state; nil means "running, online".
 	Lifecycle func() Lifecycle
-	Now       func() time.Time
+	// FullReconcileEvery is the periodic full reconcile interval for realtime
+	// subscriptions. nil keeps the 7-day default; 0 disables it.
+	FullReconcileEvery *time.Duration
+	// Throttle reports the account-wide concurrency/pacing state; nil means
+	// "not wired" (tests) and reports the default worker count.
+	Throttle func() ThrottleStatus
+	Now      func() time.Time
 }
 
 func (s *Service) now() time.Time {

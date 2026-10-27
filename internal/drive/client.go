@@ -18,6 +18,11 @@ import (
 
 const fileFields = "id,name,mimeType,parents,size,md5Checksum,version,resourceKey,driveId,trashed,shortcutDetails(targetId,targetMimeType,targetResourceKey),capabilities(canCopy,canAddChildren),appProperties,createdTime,modifiedTime,owners(displayName,emailAddress),webViewLink"
 
+// listFields is the minimal projection discovery needs: enough to map names,
+// kinds, sizes and versions, without owners/timestamps/links that only the UI
+// reads. Every list call (single or batched) uses it.
+const listFields = "id,name,mimeType,parents,size,md5Checksum,version,resourceKey,trashed,shortcutDetails(targetId,targetMimeType,targetResourceKey)"
+
 // Client is the Google Drive v3 implementation of Provider.
 type Client struct {
 	svc *gdrive.Service
@@ -50,6 +55,20 @@ func NewClient(ctx context.Context, ts oauth2.TokenSource, endpoint string) (*Cl
 func keyHeader(h http.Header, id, key string) {
 	if key != "" {
 		h.Set("X-Goog-Drive-Resource-Keys", id+"/"+key)
+	}
+}
+
+// keyHeaders lists every folder key of a batch, comma-separated. Google accepts
+// several id/resourceKey pairs on one request.
+func keyHeaders(h http.Header, parents []Parent) {
+	parts := make([]string, 0, len(parents))
+	for _, p := range parents {
+		if p.ResourceKey != "" {
+			parts = append(parts, p.ID+"/"+p.ResourceKey)
+		}
+	}
+	if len(parts) > 0 {
+		h.Set("X-Goog-Drive-Resource-Keys", strings.Join(parts, ","))
 	}
 }
 
@@ -115,7 +134,7 @@ func wrap(err error) error {
 	case ge.Code == 403:
 		e.Kind = KindPermission
 	case ge.Code >= 500:
-		e.Kind = KindUnavailable
+		e.Kind = KindServer
 	default:
 		e.Kind = KindInvalid
 	}
@@ -147,7 +166,7 @@ func (c *Client) ListChildren(ctx context.Context, folderID, resourceKey, pageTo
 	call := c.svc.Files.List().
 		Q(fmt.Sprintf("'%s' in parents and trashed=false", QueryEscape(folderID))).
 		Corpora("allDrives").SupportsAllDrives(true).IncludeItemsFromAllDrives(true).
-		PageSize(200).OrderBy("folder,name").Fields("nextPageToken,files(" + fileFields + ")").Context(ctx)
+		PageSize(1000).OrderBy("folder,name").Fields("nextPageToken,files(" + listFields + ")").Context(ctx)
 	keyHeader(call.Header(), folderID, resourceKey)
 	if pageToken != "" {
 		call.PageToken(pageToken)
@@ -168,6 +187,39 @@ func intentProps(intent string) map[string]string {
 		return nil
 	}
 	return map[string]string{IntentProperty: intent}
+}
+
+// ListChildrenBatch reads the children of up to MaxBatchParents folders with
+// one files.list. The caller must drain every page before committing: a page
+// token belongs to the combined query, not to one folder.
+func (c *Client) ListChildrenBatch(ctx context.Context, parents []Parent, pageToken string) ([]File, string, error) {
+	if len(parents) == 0 {
+		return nil, "", nil
+	}
+	if len(parents) > MaxBatchParents {
+		return nil, "", &Error{Kind: KindInvalid, Reason: "batch_too_large"}
+	}
+	terms := make([]string, 0, len(parents))
+	for _, p := range parents {
+		terms = append(terms, fmt.Sprintf("'%s' in parents", QueryEscape(p.ID)))
+	}
+	call := c.svc.Files.List().
+		Q("(" + strings.Join(terms, " or ") + ") and trashed=false").
+		Corpora("allDrives").SupportsAllDrives(true).IncludeItemsFromAllDrives(true).
+		PageSize(1000).OrderBy("folder,name").Fields("nextPageToken,files(" + listFields + ")").Context(ctx)
+	keyHeaders(call.Header(), parents)
+	if pageToken != "" {
+		call.PageToken(pageToken)
+	}
+	r, err := call.Do()
+	if err != nil {
+		return nil, "", wrap(err)
+	}
+	out := make([]File, 0, len(r.Files))
+	for _, f := range r.Files {
+		out = append(out, convert(f))
+	}
+	return out, r.NextPageToken, nil
 }
 
 func (c *Client) CreateFolder(ctx context.Context, name, parentID, intent string) (File, error) {

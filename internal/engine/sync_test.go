@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -210,5 +211,127 @@ func TestStoppedOrCancelledSyncRunDoesNotBreakTheCollection(t *testing.T) {
 	}
 	if got := mustColl(e, base.CollectionID); got.Revision != before.Revision {
 		t.Fatalf("revision moved %d -> %d", before.Revision, got.Revision)
+	}
+}
+
+// Losing more than 30% of the mapped source in one scan stops the run before
+// any copy and asks for a read-only audit; the destination is never touched.
+func TestMassSourceRemovalStopsAndQueuesAnAudit(t *testing.T) {
+	e := newEnv(t)
+	src := e.fake.Folder("Bulk", "root")
+	files := make([]drive.File, 20)
+	for i := range files {
+		files[i] = e.fake.File(fmt.Sprintf("f%02d.txt", i), src.ID, int64(i+1))
+	}
+	base, root := e.baseline(src)
+	if got := len(e.fake.Children(root)); got != 20 {
+		t.Fatalf("baseline files = %d", got)
+	}
+
+	for i := range 9 {
+		e.fake.Mutate(files[i].ID, func(x *drive.File) { x.Trashed = true })
+	}
+	writes := e.fake.Writes
+	j := e.runUntil(e.runNow(base.CollectionID).ID, terminal)
+	if j.State != state.JobPartial || j.LastError == nil || j.LastError.Code != "source_mass_removal" {
+		t.Fatalf("state=%s err=%+v", j.State, j.LastError)
+	}
+	if j.SourceRemoved != 9 {
+		t.Fatalf("source_removed = %d", j.SourceRemoved)
+	}
+	if e.fake.Writes != writes {
+		t.Fatalf("the suspect run wrote %d objects", e.fake.Writes-writes)
+	}
+	if got := len(e.fake.Children(root)); got != 20 {
+		t.Fatalf("destination lost files: %d", got)
+	}
+
+	jobs, _, err := e.store.ListJobs(context.Background(), "", "", 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var audit *state.Job
+	for i := range jobs {
+		if jobs[i].Kind == state.JobKindAudit && jobs[i].CollectionID == base.CollectionID {
+			audit = &jobs[i]
+		}
+	}
+	if audit == nil || audit.Trigger != "reconcile_watch" {
+		t.Fatalf("no watch audit was queued: %+v", jobs)
+	}
+}
+
+// A loss under the threshold is normal source churn: the scan flags the gone
+// items, copies what remains and does not raise an audit.
+func TestSmallSourceRemovalSyncsNormally(t *testing.T) {
+	e := newEnv(t)
+	src := e.fake.Folder("Churn", "root")
+	files := make([]drive.File, 20)
+	for i := range files {
+		files[i] = e.fake.File(fmt.Sprintf("f%02d.txt", i), src.ID, int64(i+1))
+	}
+	base, root := e.baseline(src)
+	for i := range 5 {
+		e.fake.Mutate(files[i].ID, func(x *drive.File) { x.Trashed = true })
+	}
+
+	j := e.runUntil(e.runNow(base.CollectionID).ID, terminal)
+	if j.State != state.JobSucceeded {
+		t.Fatalf("state=%s err=%+v", j.State, j.LastError)
+	}
+	if j.SourceRemoved != 0 {
+		t.Fatalf("below-threshold loss was reported as mass removal: %d", j.SourceRemoved)
+	}
+	if got := len(e.fake.Children(root)); got != 20 {
+		t.Fatalf("destination changed under churn: %d", got)
+	}
+	jobs, _, err := e.store.ListJobs(context.Background(), "", "", 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range jobs {
+		if x.Kind == state.JobKindAudit && x.CollectionID == base.CollectionID {
+			t.Fatal("churn queued an audit")
+		}
+	}
+}
+
+// A pause seen at the top of a page read must stop the scan, not produce an
+// empty successful page: committing that would mark the folder fully listed and
+// silently drop the rest of the tree (found while pausing the 10k load probe).
+func TestPausedListingDoesNotReportAnEmptyPage(t *testing.T) {
+	e := newEnv(t)
+	e.fake.PageSize = 5
+	src := e.fake.Folder("Paged", "root")
+	for i := range 12 {
+		e.fake.Folder(fmt.Sprintf("d%02d", i), src.ID)
+	}
+	job := e.submit(src)
+	ctx := context.Background()
+	eng := e.engine()
+	eng.defaults()
+	r := &run{e: eng, db: ctx, id: job.ID, p: e.fake}
+	if _, err := e.store.UpdateJob(ctx, job.ID, func(j *state.Job) (string, bool) {
+		j.DesiredState = "pause"
+		return "", false
+	}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := e.store.Items(ctx, job.CollectionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root state.Item
+	for _, it := range items {
+		if it.Kind == state.KindFolder && it.ParentSourceID == "" {
+			root = it
+		}
+	}
+	files, next, err := r.listPage(ctx, root)
+	if err == nil || len(files) != 0 || next != "" {
+		t.Fatalf("paused listPage = %d files, next %q, err %v (an empty success would truncate the tree)", len(files), next, err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
 	}
 }

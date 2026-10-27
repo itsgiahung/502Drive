@@ -151,12 +151,53 @@ power source trong test; mô phỏng không thay thế kiểm trên OS thật.
 | S4 | Offline 100 tick/queue full | local | `TestScheduledRunCatchesUpExactlyOnceAfterDowntime`, `TestQueueFullKeepsTheSlotDue` |
 | S5 | Run now + tick + realtime burst | local | app sync coalesce, syncer burst test |
 | S6 | Pause/stop restart, callback cũ | local | app `TestPauseResumeStopSurviveRestart`, [sync_test.go](../internal/httpapi/sync_test.go) |
-| S7 | Attach realtime sau copy | local (một phần) | `TestRealtimeCapturesTheCursorBeforeWritingTheSubscription`; replay: chưa |
+| S7 | Attach realtime sau copy | local | `TestRealtimeCapturesTheCursorBeforeWritingTheSubscription`; replay: A2-S2 |
 | S8 | Feed token hết hạn | local | `TestPollerReconcilesAnExpiredCursor` |
 | S9 | Filter/type/policy giống nhau | local (một phần) | delta tests; filter loại: chưa có |
 | S10 | versioned vs replace_copy | local | [sync_test.go](../internal/engine/sync_test.go) `TestReplaceCopyRetiresOldVersionOnlyAfterNewOne` |
 | S11 | No-change/recurring failure | local | notifier no-change + one-failure tests |
 | S12 | Library scope/buttons | local (một phần) | HTTP pagination + telegram library |
+
+## Replay và full reconcile (A2/S2)
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| A2-S2-1 | Thay đổi trong lúc baseline được lưu thô, cursor không tiến; baseline xong phát lại đúng một lần, cursor = đầu feed | local | [syncer_test.go](../internal/daemon/syncer_test.go) `TestPollStoresChangesDuringBaselineAndReplaysAfterIt` |
+| A2-S2-2 | Restart giữa chừng: đọc tiếp từ cuối buffer, không lặp trang, không mất | local | `TestReplayDoesNotRepeatPagesAfterRestart`, `TestReplayCrashMatrix` (12 seed) |
+| A2-S2-3 | Thay đổi không liên quan vẫn tiến cursor nhưng không tạo run | local | `TestReplayAdvancesTheCursorWithoutARunForUnrelatedChanges` |
+| A2-S2-4 | Pause giữ buffer + cursor; resume phát lại | local | `TestPauseKeepsTheReplayBufferForResume` |
+| A2-S2-5 | Vượt trần replay → `needs_reconcile` + full reconcile, không sync im lặng | local | `TestAnOverflowedReplayQueuesAFullReconcile`, [state/replay_test.go](../internal/state/replay_test.go) hai test trần |
+| A2-S2-6 | Full reconcile định kỳ: jitter ±10%, một run/kỳ, không chồng; tắt được | local | `TestFullReconcileIsJitteredAndRunsOncePerPeriod`, `TestFullReconcileCanBeDisabled`, `TestClaimDueFullReconcilesSchedulesJitteredSlots` |
+| A2-S2-7 | Mất >30% nguồn → `partial` + `source_mass_removal` + audit, không copy/xoá; dưới ngưỡng sync bình thường | local | [engine/sync_test.go](../internal/engine/sync_test.go) `TestMassSourceRemovalStopsAndQueuesAnAudit`, `TestSmallSourceRemovalSyncsNormally` |
+| A2-S2-8 | Migration 006→007 có dữ liệu, `foreign_key_check` sạch | local | `TestMigration007UpgradesFromSchema006WithData` |
+| A2-S2-9 | Replay/Changes trên Google thật, feed nhiều trang, quota thật | chưa chạy | cần live harness |
+
+## AIMD và phân loại lỗi (A2/S3)
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| A2-S3-1 | Limit lớn dần sau N thành công, halve khi 429, sàn 1, trần `max_workers`; lỗi khác không đổi | local | [drive/throttle_test.go](../internal/drive/throttle_test.go) `TestThrottleGrowsAfterSuccessesAndHalvesOnThrottle` |
+| A2-S3-2 | Acquire tôn trọng trần, chờ và huỷ theo ctx | local | `TestThrottleAcquireWaitsForTheLimit`, `TestThrottleAcquireHonoursCancellation` |
+| A2-S3-3 | Token bucket đọc chia nhịp, tắt được | local | `TestThrottleReadPacesABurst`, `TestThrottleReadCanBeDisabled` |
+| A2-S3-4 | 429 không đốt attempt item; item xong với `attempts<=1`; 3 throttle được đếm | local | [engine/throttle_test.go](../internal/engine/throttle_test.go) `TestThrottleDoesNotBurnItemAttempts` |
+| A2-S3-5 | Provider paced làm limit lớn lên trong lúc copy | local | `TestPacedProviderGrowsTheAccountLimit` |
+| A2-S3-6 | `/v1/status.throttle` đúng shape + OpenAPI conformance; chưa nối dây vẫn 4/0/null | local | [httpapi/lifecycle_test.go](../internal/httpapi/lifecycle_test.go) `TestStatusReportsTheThrottleState` |
+| A2-S3-7 | Phân loại 429/403 rate/quota/quyền/5xx/transport | local | [drive/client_test.go](../internal/drive/client_test.go) `TestErrorClassification` |
+| A2-S3-8 | 429/5xx thật từ Google, `Retry-After` thật, nhiều tài khoản | chưa chạy | cần live harness |
+
+## Quota và sổ byte (A2/Q1)
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| A2-Q1-1 | `dailyLimitExceeded` → job `blocked`, `resume_after` = midnight Pacific; item pending, 0 attempt, không copy file | local | [engine/quota_test.go](../internal/engine/quota_test.go) `TestDailyQuotaBlocksTheJobAndResumesAfterTheReset` |
+| A2-Q1-2 | Qua mốc → tự resume **cùng job id**, chạy xong; `resume_after` biến mất | local | cùng test |
+| A2-Q1-3 | `storageQuotaExceeded` → +24h, đúng 1 call copy, không đốt attempt | local | `TestStorageQuotaBlocksForADayWithoutBurningAttempts` |
+| A2-Q1-4 | `resume_after` theo DST/múi giờ Pacific; quota khác dùng Retry-After/+1h | local | `TestQuotaResumeTimes` |
+| A2-Q1-5 | Sổ byte: cộng đúng size file, hoàn thành lặp lại không tăng, ngoài 24h = 0 | local | `TestCopiedBytesAreLedgeredOnce` |
+| A2-Q1-6 | `ResumeDueBlocked` chỉ chạy job quá mốc + `desired_state=run`; block tay không tự chạy | local | [state/quota_test.go](../internal/state/quota_test.go) `TestResumeDueBlockedOnlyMovesJobsPastTheirMark` |
+| A2-Q1-7 | Migration 007→008 có dữ liệu, `foreign_key_check` sạch | local | `TestMigration008AddsTheCopyLedger` |
+| A2-Q1-8 | Job DTO có `resume_after` (null khi không) + conformance OpenAPI | local | [httpapi](../internal/httpapi/server_test.go) conformance chung |
+| A2-Q1-9 | Quota/reset thật của Google, storage thật | chưa chạy | cần live harness |
 
 ## Vận hành, release, login
 

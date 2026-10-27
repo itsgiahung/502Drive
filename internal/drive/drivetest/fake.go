@@ -40,6 +40,14 @@ func New() *Fake {
 
 func (f *Fake) id() string { f.next++; return fmt.Sprintf("fake%06d", f.next) }
 
+// CallCount reads one call counter under the fake's lock, for tests that
+// measure a run while it is still in flight.
+func (f *Fake) CallCount(op string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Calls[op]
+}
+
 // Put adds a file under parent and returns it. size<0 means no size (native/folder).
 func (f *Fake) Put(name, mime, parent string, size int64) drive.File {
 	f.mu.Lock()
@@ -178,6 +186,42 @@ func (f *Fake) ListChildren(ctx context.Context, folder, key, token string) ([]d
 		start = end
 	}
 	return all[start:end], next, nil
+}
+
+// ListChildrenBatch implements drive.BatchLister: the flattened children of
+// the given folders, paged as one result set like the real combined query.
+func (f *Fake) ListChildrenBatch(ctx context.Context, parents []drive.Parent, token string) ([]drive.File, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.call("list_batch", drive.File{}); err != nil {
+		return nil, "", err
+	}
+	if len(parents) > drive.MaxBatchParents {
+		return nil, "", &drive.Error{Kind: drive.KindInvalid, Status: 400, Reason: "batch_too_large"}
+	}
+	start := 0
+	if token != "" {
+		n, err := strconv.Atoi(token)
+		if err != nil {
+			return nil, "", &drive.Error{Kind: drive.KindInvalid, Status: 400}
+		}
+		start = n
+	}
+	var all []drive.File
+	for _, p := range parents {
+		all = append(all, f.childrenLocked(p.ID)...)
+	}
+	end := start + f.PageSize
+	next := ""
+	if end < len(all) {
+		next = strconv.Itoa(end)
+	} else {
+		end = len(all)
+	}
+	if start > end {
+		start = end
+	}
+	return append([]drive.File(nil), all[start:end]...), next, nil
 }
 
 func (f *Fake) write(op string, x drive.File, mk func() drive.File) (drive.File, error) {

@@ -40,6 +40,18 @@ commit rồi mới trả `202` + `Location`.
 - Folder rỗng được tạo; item nguồn mất dấu `source_removed`, **không xóa** bản đích.
 - `versioned_copy` giữ bản cũ; `replace_copy` chỉ trash bản cũ sau khi bản mới
   được map (`retireSuperseded`, [run.go](../../internal/engine/run.go)).
+- **AIMD toàn tài khoản** ([throttle.go](../../internal/drive/throttle.go)):
+  `workers` 4 → `max_workers` 8, +1 sau `throttle_successes` call thành công
+  liên tiếp, **halve** khi 429/rateLimit; permit bao quanh claim → call → ghi kết
+  quả nên số item `executing` không vượt trần. Đọc (list/get/changes) qua token
+  bucket `read_requests_per_second` (mặc định 8/s, burst 1 s); ghi chỉ chịu AIMD.
+- **Throttle không phải lỗi item**: 429 trả `attempts` về như trước khi claim,
+  item `pending` với `rate_limited`, hẹn `max(backoff mũ có jitter, Retry-After)`;
+  `listPage`/`reconcile` không tăng số lần thử khi bị throttle. `Retry-After`
+  luôn được tôn trọng. `/v1/status.throttle` báo `workers_now`,
+  `throttled_last_5m`, `next_retry_at`.
+- 5xx là `KindServer` (khác transport `KindUnavailable`/`KindUnreachable`) để
+  log/status phân biệt "Google lỗi" với "mất mạng".
 - Load probe 10 000 file/500 folder: [load_test.go](../../internal/engine/load_test.go).
 
 ## 4. Điều khiển và trạng thái

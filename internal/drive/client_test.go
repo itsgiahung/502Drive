@@ -93,8 +93,8 @@ func TestErrorClassification(t *testing.T) {
 		{403, "forbidden", "", KindPermission, 0},
 		{401, "", "", KindAuth, 0},
 		{404, "", "", KindNotFound, 0},
-		{500, "", "", KindUnavailable, 0},
-		{503, "", "", KindUnavailable, 0},
+		{500, "", "", KindServer, 0},
+		{503, "", "", KindServer, 0},
 		{400, "invalid", "", KindInvalid, 0},
 	}
 	for _, tc := range cases {
@@ -137,5 +137,52 @@ func TestShortcutAndMetadataConversion(t *testing.T) {
 	f, err := c.GetFile(context.Background(), "S1", "")
 	if err != nil || !f.IsShortcut() || f.ShortcutTargetID != "T1" || f.ShortcutTargetKey != "rk" || !f.CanCopy || f.CanAddChildren || f.Version != "9" {
 		t.Fatalf("%+v %v", f, err)
+	}
+}
+
+func TestBatchListUsesOneQueryWithMinimalFields(t *testing.T) {
+	var got *http.Request
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.Clone(context.Background())
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"nextPageToken":"NEXT","files":[{"id":"f1","name":"a.txt","mimeType":"text/plain","parents":["A1"],"version":"2"},{"id":"f2","name":"b","mimeType":"application/vnd.google-apps.folder","parents":["B2"]}]}`)
+	})
+	files, next, err := c.ListChildrenBatch(context.Background(), []Parent{{ID: "A'1", ResourceKey: "k1"}, {ID: "B2", ResourceKey: "k2"}, {ID: "C3"}}, "P1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 || files[0].ID != "f1" || files[1].Name != "b" || next != "NEXT" {
+		t.Fatalf("files=%+v next=%q", files, next)
+	}
+	q := got.URL.Query()
+	if q.Get("q") != `('A\'1' in parents or 'B2' in parents or 'C3' in parents) and trashed=false` {
+		t.Fatalf("q = %q", q.Get("q"))
+	}
+	if q.Get("pageSize") != "1000" || q.Get("pageToken") != "P1" {
+		t.Fatalf("paging = %v", q)
+	}
+	fields := q.Get("fields")
+	if !strings.Contains(fields, "files(id,name,mimeType,parents,") || strings.Contains(fields, "owners") || strings.Contains(fields, "webViewLink") || strings.Contains(fields, "createdTime") {
+		t.Fatalf("fields = %q", fields)
+	}
+	if keys := got.Header.Get("X-Goog-Drive-Resource-Keys"); keys != "A'1/k1,B2/k2" {
+		t.Fatalf("keys = %q", keys)
+	}
+}
+
+func TestBatchListRejectsMoreThanFortyParents(t *testing.T) {
+	called := false
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	})
+	parents := make([]Parent, MaxBatchParents+1)
+	for i := range parents {
+		parents[i] = Parent{ID: fmt.Sprintf("p%d", i)}
+	}
+	if _, _, err := c.ListChildrenBatch(context.Background(), parents, ""); KindOf(err) != KindInvalid {
+		t.Fatalf("err = %v", err)
+	}
+	if called {
+		t.Fatal("an oversized batch was sent")
 	}
 }

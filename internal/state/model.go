@@ -122,6 +122,13 @@ type Job struct {
 	NextAttemptAt *int64    `json:"next_attempt_at,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+	// SourceRemoved counts mapping items that a delta scan no longer found at
+	// the source. It is a body-only field (no column) used by the mass-removal
+	// guard to ask for an audit.
+	SourceRemoved int `json:"source_removed,omitempty"`
+	// ResumeAfter is the instant a quota-blocked job may continue on its own.
+	// It is body-only: the engine scans blocked jobs for it.
+	ResumeAfter *time.Time `json:"resume_after,omitempty"`
 }
 
 type Collection struct {

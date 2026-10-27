@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/itsgiahung/502Drive/internal/app"
 )
@@ -63,5 +64,37 @@ func TestSleepingRefusesNewWorkButKeepsReads(t *testing.T) {
 	src := h.fake.Folder("S2", "root")
 	if r := h.do("POST", "/v1/plans", map[string]any{"source": src.ID}, "awake-key", true); r.status != 201 {
 		t.Fatalf("plan after waking = %d (%s)", r.status, r.body)
+	}
+}
+
+func TestStatusReportsTheThrottleState(t *testing.T) {
+	h := newHarness(t, false)
+	next := time.Date(2026, 10, 27, 12, 0, 30, 0, time.UTC)
+	h.svc.Throttle = func() app.ThrottleStatus {
+		return app.ThrottleStatus{WorkersNow: 6, ThrottledLast5m: 3, NextRetryAt: &next}
+	}
+	r := h.do("GET", "/v1/status", nil, "", true)
+	if r.status != 200 {
+		t.Fatalf("status = %d (%s)", r.status, r.body)
+	}
+	h.conform("GET", "/v1/status", r)
+	thr, ok := r.data["data"].(map[string]any)["throttle"].(map[string]any)
+	if !ok {
+		t.Fatalf("throttle missing: %s", r.body)
+	}
+	if thr["workers_now"] != float64(6) || thr["throttled_last_5m"] != float64(3) {
+		t.Fatalf("throttle = %v", thr)
+	}
+	if got, _ := thr["next_retry_at"].(string); got != "2026-10-27T12:00:30Z" {
+		t.Fatalf("next_retry_at = %v", thr["next_retry_at"])
+	}
+
+	// Not wired (a bare Service) still reports a truthful shape with no hint.
+	h.svc.Throttle = nil
+	r = h.do("GET", "/v1/status", nil, "", true)
+	h.conform("GET", "/v1/status", r)
+	thr = r.data["data"].(map[string]any)["throttle"].(map[string]any)
+	if thr["workers_now"] != float64(4) || thr["next_retry_at"] != nil {
+		t.Fatalf("unwired throttle = %v", thr)
 	}
 }

@@ -30,9 +30,11 @@ nhất, `application_id=502002`. Không sửa migration đã áp; thêm file m�
 | `settings` | `key`, `value` | Default destination, preferences (`prefs:<principal>`) |
 | `destinations` | `id`, `folder_id`, `resource_key`, `drive_id`, `name`, `revision` | Đích đã validate, không unique theo tên |
 | `items` | `(collection_id,source_id)`, `job_id`, `kind`, `state`, `generation`, `intent_key`, `dest_*`, `list_state`, `page_token`, `op` | Item = mapping + write intent; không unique theo tên |
-| `sync_subscriptions` | `collection_id` PK, `mode`, `state`, `schedule`, `schedule_revision`, `content_policy`, `next_due`, `next_key`, `cursor`, `rerun_requested`, `next_poll_at` | Một subscription/collection |
+| `sync_subscriptions` | `collection_id` PK, `mode`, `state`, `schedule`, `schedule_revision`, `content_policy`, `next_due`, `next_key`, `cursor`, `rerun_requested`, `next_poll_at`, `full_reconcile_every`, `next_full_reconcile_at`, `replay_overflow` | Một subscription/collection |
 | `item_versions` | `(collection_id,source_id,generation)`, `dest_id`, `fingerprint`, `state` | Lịch sử version cho `replace_copy` |
 | `sync_occurrences` | `(collection_id,schedule_revision,occurrence_key)` | Claim slot một lần |
+| `sync_pending_changes` | `(collection_id,seq)` PK, `cursor_after`, `change_json` | Page feed lưu thô trong lúc bootstrapping; xoá khi replay/overflow |
+| `copy_ledger` | `(principal,hour)` PK, `bytes` | Byte copy xong theo giờ, cho cửa sổ 24h và quota Q1 |
 
 ## 003_principals.sql
 

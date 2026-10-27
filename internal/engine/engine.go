@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/itsgiahung/502Drive/internal/drive"
@@ -29,9 +30,15 @@ type Engine struct {
 	Provider func(ctx context.Context) (drive.Provider, error)
 	Log      *slog.Logger
 
-	Jobs        int           // concurrent jobs (default 2)
-	Workers     int           // concurrent copy workers per job (default 4)
-	MaxCalls    int           // concurrent provider calls overall (default 8)
+	Jobs int // concurrent jobs (default 2)
+	// Workers is the initial account-wide concurrency (default 4); MaxWorkers
+	// is the AIMD ceiling (default 8). The controller grows the limit after a
+	// run of successes and halves it on a throttle.
+	Workers    int
+	MaxWorkers int
+	// Throttle is shared with the paced provider, so the engine and the
+	// syncer use one account-wide budget. nil creates one for this engine.
+	Throttle    *drive.Throttle
 	BackoffBase time.Duration // first retry delay (default 2s)
 	BackoffMax  time.Duration // cap on a retry delay (default 5m)
 	Settle      time.Duration // wait between reconcile queries (default 2s)
@@ -47,10 +54,10 @@ type Engine struct {
 	// AfterRun is called when a job reaches a final state, for sync bookkeeping.
 	AfterRun func(jobID string)
 
-	wake    chan struct{}
-	calls   chan struct{}
-	mu      sync.Mutex
-	running map[string]bool
+	wake        chan struct{}
+	throttleSeq atomic.Int64
+	mu          sync.Mutex
+	running     map[string]bool
 }
 
 func (e *Engine) defaults() {
@@ -60,8 +67,8 @@ func (e *Engine) defaults() {
 	if e.Workers == 0 {
 		e.Workers = 4
 	}
-	if e.MaxCalls == 0 {
-		e.MaxCalls = 8
+	if e.MaxWorkers < e.Workers {
+		e.MaxWorkers = max(8, e.Workers)
 	}
 	if e.BackoffBase == 0 {
 		e.BackoffBase = 2 * time.Second
@@ -81,8 +88,10 @@ func (e *Engine) defaults() {
 	if e.Log == nil {
 		e.Log = slog.New(slog.DiscardHandler)
 	}
+	if e.Throttle == nil {
+		e.Throttle = drive.NewThrottle(drive.ThrottleOptions{Start: e.Workers, Max: e.MaxWorkers})
+	}
 	e.wake = make(chan struct{}, 1)
-	e.calls = make(chan struct{}, e.MaxCalls)
 	e.running = map[string]bool{}
 }
 
@@ -134,6 +143,11 @@ func (e *Engine) Run(ctx context.Context) error {
 		e.mu.Lock()
 		room := e.Jobs - len(e.running)
 		e.mu.Unlock()
+		// Quota-blocked jobs whose resume_after has passed continue with the
+		// same identity; nothing is re-admitted or duplicated.
+		if n, err := e.Store.ResumeDueBlocked(db, e.Now()); err == nil && n > 0 {
+			e.Log.Info("quota: blocked jobs resumed", "count", n)
+		}
 		for ; room > 0 && ctx.Err() == nil; room-- {
 			j, err := e.Store.ClaimQueued(db)
 			if errors.Is(err, state.ErrNotFound) {
@@ -168,15 +182,19 @@ func (e *Engine) backoff(attempts int) time.Duration {
 	return d/2 + time.Duration(rand.Int64N(int64(d/2)+1))
 }
 
-func (e *Engine) acquire(ctx context.Context) error {
-	select {
-	case e.calls <- struct{}{}:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+func (e *Engine) acquire(ctx context.Context) error { return e.Throttle.Acquire(ctx) }
+func (e *Engine) release()                          { e.Throttle.Release() }
+
+// throttleWait is an account-wide exponential backoff with jitter for retries
+// caused by throttling. It is separate from item attempts: a throttle is not a
+// failure of the item and must not exhaust its retry budget.
+func (e *Engine) throttleWait() time.Duration {
+	n := int(e.throttleSeq.Add(1)) - 1
+	return e.backoff(n)
 }
-func (e *Engine) release() { <-e.calls }
+
+// throttleClear forgets the throttle streak after a successful call.
+func (e *Engine) throttleClear() { e.throttleSeq.Store(0) }
 
 func (e *Engine) sleep(ctx context.Context, d time.Duration) bool {
 	t := time.NewTimer(d)

@@ -66,7 +66,7 @@ func Classify(err error) *Error {
 		e := Fail(http.StatusTooManyRequests, "rate_limited", "Google Drive is limiting requests. Try again shortly.")
 		e.Retryable, e.RetryAfter = true, max(drive.RetryAfterOf(err), 5*time.Second)
 		return e
-	case drive.KindUnavailable, drive.KindUnreachable, drive.KindCancelled:
+	case drive.KindUnavailable, drive.KindServer, drive.KindUnreachable, drive.KindCancelled:
 		e := Fail(http.StatusBadGateway, "provider_unavailable", "Google Drive is not reachable right now.")
 		e.Retryable = true
 		return e

@@ -147,7 +147,7 @@ func (s *Service) Mkdir(ctx context.Context, p Principal, key, parentID, name st
 	// Unknown outcome (the request may have reached Drive): look for our own
 	// tagged folder before reporting a failure.
 	var de *drive.Error
-	if errors.As(err, &de) && de.Kind == drive.KindUnavailable {
+	if errors.As(err, &de) && (de.Kind == drive.KindUnavailable || de.Kind == drive.KindServer) {
 		if found, ferr := prov.FindByIntent(ctx, parent.ID, intent); ferr == nil && len(found) == 1 {
 			return found[0], true, nil
 		}

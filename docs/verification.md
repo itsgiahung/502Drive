@@ -66,6 +66,98 @@ Windows Terminal (đã xem GIF dựng từ cùng bộ vẽ, không phải termin
 đăng nhập thật. GitHub Actions không chạy được (hết phút miễn phí với repo
 private); toàn bộ kiểm tra chạy bằng `scripts/release-local.sh`.
 
+## Đợt A2 (S2 → S3 → F1 → Q1)
+
+Fake provider/DB, không phải Google thật. Lệnh: xem báo cáo
+`docs/handoff/BATCH-A2-REPORT.md` (dán nguyên văn).
+
+### S2 — replay + full reconcile
+
+- Thay đổi trong baseline: lưu `sync_pending_changes`, cursor đứng yên; baseline
+  xong replay một transaction (xoá buffer + tiến cursor + admit run). Test
+  `TestPollStoresChangesDuringBaselineAndReplaysAfterIt`.
+- Crash matrix 12 seed (chết trước poll, sau khi lưu trang, sau baseline): restart
+  vẫn kết thúc ở đầu feed, đúng một run, không lặp trang.
+- Trần 5000 dòng / 4 MiB: append dừng đúng trần, `replay_overflow` chuyển
+  subscription sang `needs_reconcile` (không phát lại tập thiếu).
+- Full reconcile: slot đầu và slot kế trong ±10% của 7 ngày; tick thứ hai không
+  tạo run; `0` tắt.
+- Ngưỡng 30%: 9/20 file mất → job `partial`, `source_removed=9`, 0 lệnh ghi
+  Drive, 20 bản đích còn nguyên, audit `reconcile_watch` được tạo; 5/20 → sync
+  thường.
+- Migration 006→007 trên DB có dữ liệu: `user_version≥7`,
+  `PRAGMA foreign_key_check` rỗng.
+
+
+### S3 — AIMD, token bucket, phân loại lỗi
+
+- `drive.Throttle`: 2 → 3 → 4 sau 2/4 success, không vượt 4; 429 → 2 → 1, sàn
+  1; lỗi mạng/5xx/quota/quyền không đổi limit; Acquire chờ đúng 1 slot và huỷ
+  theo ctx; bucket 20 req/s trễ ≥20 ms ở call thứ 21; cửa sổ 5 phút + `next_retry_at`.
+- Engine: 3 lần 429 liên tiếp trên copy → item `done`, `attempts=1`, 4 call
+  copy, throttle đếm 3; provider paced làm limit 1 → ≥2.
+- `/v1/status` có `throttle` (6, 3, `2026-10-27T12:00:30Z`) và conformance
+  OpenAPI; service chưa nối dây trả 4/0/null.
+- 5xx đổi từ `unavailable` sang `server`; test phân loại cũ được cập nhật.
+- Chưa đo trên Google thật: 429 thật, `Retry-After` thật, tài khoản nhiều job.
+
+
+### F1 — fast-list
+
+- Cây 45 folder nhỏ (1 file/folder), fake pageSize 1000:
+  **trước** 46 lệnh `files.list` (1 gốc + 45 folder), **sau** 3 lệnh (1 list gốc
+  + 2 batch 40/5) → **15,3×**; cây đích đủ 45 folder đúng tên. Test
+  `TestBatchListCutsFileListCalls`.
+- Fallback khi query gộp bị 400 → list từng folder, job vẫn xong; thứ tự cha
+  trước con được kiểm bằng hook `folder`; sync không đổi chỉ tốn ≤3 lệnh list và
+  0 ghi.
+- 10k file / 1k folder (pageSize 1000, riêng tiến trình, `FASTLIST_MODE`):
+
+| Chỉ số | Trước F1 (`before`) | Sau F1 (`after`) | Tỉ lệ |
+| --- | --- | --- | --- |
+| `files.list` | **1001** | **26** | **38,5×** ít hơn |
+| Thời gian discovery | **4,67 s** | **2,35 s** | **1,99×** nhanh hơn |
+| Heap sau khi copy | 21 MiB | 21 MiB | — |
+| RSS đỉnh (`VmHWM`) | 71 440 kB | 71 924 kB | — |
+| Kết quả | 11 001 node, succeeded | 11 001 node, succeeded | — |
+
+  Lệnh: `FASTLIST_MODE=before|after go test -count=1 -run TestFastListTenThousand
+  -timeout 900s -v ./internal/engine`. Cùng một tiến trình riêng cho mỗi mode nên
+  RSS đỉnh không bị cộng dồn; cây giả dựng lại mỗi lần.
+- `EXPLAIN QUERY PLAN` cho truy vấn lặp mới:
+
+```
+pending-batch:  SEARCH sync_pending_changes USING INDEX sqlite_autoindex_sync_pending_changes_1 (collection_id=?)
+pending-last:   SEARCH sync_pending_changes USING INDEX sqlite_autoindex_sync_pending_changes_1 (collection_id=?)
+pending-collections: SCAN sync_pending_changes USING COVERING INDEX sqlite_autoindex_sync_pending_changes_1
+due-polls:      SEARCH sync_subscriptions USING INDEX sync_due_poll (mode=? AND state=? AND next_poll_at<?) | USE TEMP B-TREE FOR ORDER BY
+full-reconcile: SEARCH sync_subscriptions USING INDEX sync_due_full (mode=? AND state=?)
+next-batch:     MULTI-INDEX OR | SEARCH items USING INDEX items_job_list (job_id=? AND kind=? AND list_state=?) | SEARCH items USING INDEX items_scan_list (scan_job=? AND kind=? AND list_state=?) | USE TEMP B-TREE FOR ORDER BY
+next-partial:   MULTI-INDEX OR | INDEX 1 | SEARCH items USING INDEX items_job_list (job_id=? AND kind=? AND list_state=?) | INDEX 2 | SEARCH items USING INDEX items_scan_list (scan_job=? AND kind=? AND list_state=?) | USE TEMP B-TREE FOR ORDER BY
+item-totals:    SEARCH items USING INDEX items_parent (collection_id=?)
+copied-24h:     SEARCH copy_ledger USING INDEX sqlite_autoindex_copy_ledger_1 (principal=? AND hour>?)
+```
+
+- Số câu SQL mỗi tick syncer (đếm tĩnh từ code): **5** khi rảnh
+  (`ClaimDueSchedules`, `ClaimDueFullReconciles`, `PendingCollections`, `DuePolls`,
+  `NeedsReconcileSubs`). Một poll realtime yên tĩnh thêm `LastPendingCursor` +
+  transaction `AdvancePoll` (`getSub`, đọc collection, `putSub`) ⇒ **~9**; poll
+  bootstrapping thêm `getSub` + N insert + `putSub`, **không `COUNT(*)`** (trần
+  buffer đọc từ cột `replay_count/replay_bytes`).
+- Không nạp cả cây: batch tối đa 40 cha, trần 20 000 file/batch rồi fallback.
+
+
+### Q1 — quota và sổ byte
+
+- `dailyLimitExceeded` → job `blocked`, `resume_after` = 2026-10-28T07:00:00Z
+  (midnight PDT), 0 file trong đích, 2 item pending `attempts=0`; nâng đồng hồ
+  qua mốc → tự chạy lại **cùng id** và succeeded.
+- `storageQuotaExceeded` → `now+24h`, đúng 1 call copy, không attempt nào bị đốt.
+- Ledger: 10+20+5 = **35 byte**; delta no-op vẫn 35; `now+25h` = 0.
+- Migration 007→008 (áp dụng luôn 009): `user_version≥8`, `foreign_key_check` rỗng, ledger dùng được.
+- Chưa chạy: quota/reset thật, Shared Drive hết dung lượng thật.
+
+
 ## Chưa chạy
 
 - Google Drive thật: copy/sync/Changes API, 429/quota, Shared Drive, resource key,

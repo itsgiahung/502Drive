@@ -41,6 +41,10 @@ func (s *Service) ConfigureSync(ctx context.Context, p Principal, key, collectio
 		return SyncView{}, false, err
 	}
 	now := s.now().UTC()
+	every := 7 * 24 * time.Hour
+	if s.FullReconcileEvery != nil {
+		every = *s.FullReconcileEvery
+	}
 	change := state.SyncChange{
 		Mode:                 req.Mode,
 		Schedule:             req.Schedule,
@@ -48,6 +52,7 @@ func (s *Service) ConfigureSync(ctx context.Context, p Principal, key, collectio
 		ExpectedCollection:   req.ExpectedCollection,
 		ExpectedSubscription: req.ExpectedSubscription,
 		Now:                  now,
+		FullReconcileEvery:   int64(every / time.Second),
 	}
 	switch req.Mode {
 	case state.ModeScheduled:

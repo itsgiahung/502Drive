@@ -52,9 +52,21 @@ type Subscription struct {
 	Cursor           string
 	RerunRequested   bool
 	NextPollAt       int64
+	// FullReconcileEvery is the periodic full reconcile interval in seconds
+	// (0 disables it); NextFullReconcileAt is epoch milliseconds.
+	FullReconcileEvery  int64
+	NextFullReconcileAt int64
+	// ReplayOverflow means the replay buffer hit its cap while a baseline was
+	// running; the next activation asks for a full reconcile instead of
+	// replaying a set that is known to be incomplete.
+	ReplayOverflow bool
+	// ReplayCount/ReplayBytes mirror the buffer size so the cap check is a
+	// column read, not a COUNT(*) per poll.
+	ReplayCount int64
+	ReplayBytes int64
 }
 
-const subCols = "id,collection_id,mode,state,schedule,schedule_revision,content_policy,revision,next_due,next_key,last_attempt_at,last_success_at,last_error,cursor,rerun_requested,next_poll_at"
+const subCols = "id,collection_id,mode,state,schedule,schedule_revision,content_policy,revision,next_due,next_key,last_attempt_at,last_success_at,last_error,cursor,rerun_requested,next_poll_at,full_reconcile_every,next_full_reconcile_at,replay_overflow,replay_count,replay_bytes"
 
 func msTime(v sql.NullInt64) *time.Time {
 	if !v.Valid {
@@ -75,12 +87,14 @@ func scanSub(r interface{ Scan(...any) error }) (Subscription, error) {
 	var s Subscription
 	var sched, lastErr string
 	var nd, la, ls sql.NullInt64
-	var rerun int
-	err := r.Scan(&s.ID, &s.CollectionID, &s.Mode, &s.State, &sched, &s.ScheduleRevision, &s.ContentPolicy, &s.Revision, &nd, &s.NextKey, &la, &ls, &lastErr, &s.Cursor, &rerun, &s.NextPollAt)
+	var rerun, overflow int
+	err := r.Scan(&s.ID, &s.CollectionID, &s.Mode, &s.State, &sched, &s.ScheduleRevision, &s.ContentPolicy, &s.Revision, &nd, &s.NextKey, &la, &ls, &lastErr, &s.Cursor, &rerun, &s.NextPollAt,
+		&s.FullReconcileEvery, &s.NextFullReconcileAt, &overflow, &s.ReplayCount, &s.ReplayBytes)
 	if err != nil {
 		return s, err
 	}
 	s.NextDue, s.LastAttemptAt, s.LastSuccessAt, s.RerunRequested = msTime(nd), msTime(la), msTime(ls), rerun == 1
+	s.ReplayOverflow = overflow == 1
 	if sched != "" {
 		var sp schedule.Spec
 		if json.Unmarshal([]byte(sched), &sp) == nil {
@@ -118,11 +132,18 @@ func putSub(ctx context.Context, q queryer, s Subscription) error {
 	if s.RerunRequested {
 		rerun = 1
 	}
-	_, err := q.ExecContext(ctx, `INSERT INTO sync_subscriptions(`+subCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	overflow := 0
+	if s.ReplayOverflow {
+		overflow = 1
+	}
+	_, err := q.ExecContext(ctx, `INSERT INTO sync_subscriptions(`+subCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(collection_id) DO UPDATE SET mode=excluded.mode,state=excluded.state,schedule=excluded.schedule,schedule_revision=excluded.schedule_revision,
 		content_policy=excluded.content_policy,revision=excluded.revision,next_due=excluded.next_due,next_key=excluded.next_key,last_attempt_at=excluded.last_attempt_at,
-		last_success_at=excluded.last_success_at,last_error=excluded.last_error,cursor=excluded.cursor,rerun_requested=excluded.rerun_requested,next_poll_at=excluded.next_poll_at`,
-		s.ID, s.CollectionID, s.Mode, s.State, sched, s.ScheduleRevision, s.ContentPolicy, s.Revision, msVal(s.NextDue), s.NextKey, msVal(s.LastAttemptAt), msVal(s.LastSuccessAt), lastErr, s.Cursor, rerun, s.NextPollAt)
+		last_success_at=excluded.last_success_at,last_error=excluded.last_error,cursor=excluded.cursor,rerun_requested=excluded.rerun_requested,next_poll_at=excluded.next_poll_at,
+		full_reconcile_every=excluded.full_reconcile_every,next_full_reconcile_at=excluded.next_full_reconcile_at,replay_overflow=excluded.replay_overflow,
+		replay_count=excluded.replay_count,replay_bytes=excluded.replay_bytes`,
+		s.ID, s.CollectionID, s.Mode, s.State, sched, s.ScheduleRevision, s.ContentPolicy, s.Revision, msVal(s.NextDue), s.NextKey, msVal(s.LastAttemptAt), msVal(s.LastSuccessAt), lastErr, s.Cursor, rerun, s.NextPollAt,
+		s.FullReconcileEvery, s.NextFullReconcileAt, overflow, s.ReplayCount, s.ReplayBytes)
 	return err
 }
 
@@ -155,6 +176,9 @@ type SyncChange struct {
 	NextDue *schedule.Slot
 	Cursor  string
 	Now     time.Time
+	// FullReconcileEvery is the periodic full reconcile interval in seconds
+	// (0 disables it). The caller reads it from config.
+	FullReconcileEvery int64
 }
 
 // ConfigureSync creates or updates the single subscription of a collection.
@@ -191,10 +215,13 @@ func (s *Store) ConfigureSync(ctx context.Context, actor, scopePrincipal, key, c
 			sub = Subscription{ID: ID("sub"), CollectionID: collectionID, Revision: 0, ScheduleRevision: 0}
 		}
 		sub.Mode, sub.ContentPolicy, sub.Schedule = ch.Mode, ch.ContentPolicy, ch.Schedule
+		sub.FullReconcileEvery = ch.FullReconcileEvery
+		sub.ReplayOverflow, sub.ReplayCount, sub.ReplayBytes = false, 0, 0
 		sub.Revision++
 		sub.ScheduleRevision++
 		sub.NextDue, sub.NextKey, sub.Cursor, sub.RerunRequested, sub.LastError = nil, "", "", false, nil
 		sub.NextPollAt = 0
+		sub.NextFullReconcileAt = 0
 		ready := c.State == "ready"
 		var admit bool
 		switch {
@@ -205,6 +232,7 @@ func (s *Store) ConfigureSync(ctx context.Context, actor, scopePrincipal, key, c
 			sub.NextDue, sub.NextKey = &ch.NextDue.At, ch.NextDue.Key
 		default:
 			sub.State, sub.Cursor, admit = SyncBootstrapping, ch.Cursor, true
+			sub.NextFullReconcileAt = nextFullReconcile(ch.Now, sub.FullReconcileEvery)
 		}
 		if e = putSub(ctx, tx, sub); e != nil {
 			return nil, e
@@ -233,7 +261,7 @@ func (s *Store) ConfigureSync(ctx context.Context, actor, scopePrincipal, key, c
 
 func (c SyncChange) fingerprint() any {
 	sp, _ := json.Marshal(c.Schedule)
-	return []any{c.Mode, string(sp), c.ContentPolicy, c.ExpectedCollection, c.ExpectedSubscription}
+	return []any{c.Mode, string(sp), c.ContentPolicy, c.ExpectedCollection, c.ExpectedSubscription, c.FullReconcileEvery}
 }
 
 func subJSON(s Subscription) map[string]any {
@@ -510,9 +538,11 @@ func (s *Store) ClaimDueSchedules(ctx context.Context, now time.Time) ([]Job, er
 	return jobs, nil
 }
 
-// DuePolls lists active realtime subscriptions whose poll time has come.
+// DuePolls lists subscriptions whose poll time has come. A bootstrapping
+// subscription is polled too: the feed is stored raw for replay once the
+// baseline finishes, so changes made during the scan are never lost.
 func (s *Store) DuePolls(ctx context.Context, now time.Time) ([]Subscription, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT "+subCols+" FROM sync_subscriptions WHERE mode='realtime' AND state='active' AND next_poll_at<=? ORDER BY next_poll_at LIMIT 50", now.UnixMilli())
+	rows, err := s.db.QueryContext(ctx, "SELECT "+subCols+" FROM sync_subscriptions WHERE mode='realtime' AND state IN ('active','bootstrapping') AND next_poll_at<=? ORDER BY next_poll_at LIMIT 50", now.UnixMilli())
 	if err != nil {
 		return nil, err
 	}
@@ -627,6 +657,21 @@ func (s *Store) RunFinished(ctx context.Context, jobID string) (*Job, error) {
 		if e != nil {
 			return e
 		}
+		var cb []byte
+		if e = tx.QueryRowContext(ctx, "SELECT body FROM collections WHERE id=?", j.CollectionID).Scan(&cb); e != nil {
+			return e
+		}
+		c, _ := decodeCollection(cb)
+		// A delta scan that lost a large part of the source stops rather than
+		// syncing silently; the read-only audit explains what happened. This
+		// is independent of a subscription (RunNow can start a delta run), and
+		// the finished job has already left the active set, so admission is
+		// legal.
+		if j.SourceRemoved > 0 {
+			if _, e := admitWatchAudit(ctx, tx, c); e != nil && !errors.Is(e, ErrCapacity) && !errors.Is(e, ErrTransition) {
+				return e
+			}
+		}
 		sub, e := getSub(ctx, tx, j.CollectionID)
 		if errors.Is(e, ErrNotFound) {
 			return nil
@@ -642,11 +687,6 @@ func (s *Store) RunFinished(ctx context.Context, jobID string) (*Job, error) {
 		} else if j.LastError != nil {
 			sub.LastError = j.LastError
 		}
-		var cb []byte
-		if e = tx.QueryRowContext(ctx, "SELECT body FROM collections WHERE id=?", j.CollectionID).Scan(&cb); e != nil {
-			return e
-		}
-		c, _ := decodeCollection(cb)
 		switch sub.State {
 		case SyncWaitingBaseline:
 			if j.Trigger == "initial" && ok {
@@ -664,8 +704,19 @@ func (s *Store) RunFinished(ctx context.Context, jobID string) (*Job, error) {
 				}
 			}
 		case SyncBootstrapping:
-			if ok {
+			if ok && sub.ReplayOverflow {
+				// The replay buffer hit its cap: do not pretend the feed is
+				// covered. Take a fresh cursor and run a full reconcile.
+				sub.State, sub.NextPollAt, sub.ReplayOverflow = SyncNeedsReconcile, 0, false
+				sub.LastError = &Failure{Code: "replay_overflow", Message: "Changes during the baseline exceeded the replay buffer; a full reconcile was queued."}
+				if e := clearPendingChanges(ctx, tx, j.CollectionID); e != nil {
+					return e
+				}
+			} else if ok {
 				sub.State, sub.NextPollAt = SyncActive, 0
+				if sub.FullReconcileEvery > 0 && sub.NextFullReconcileAt == 0 {
+					sub.NextFullReconcileAt = nextFullReconcile(now, sub.FullReconcileEvery)
+				}
 			} else if j.State != JobCancelled {
 				sub.State = SyncNeedsReconcile
 			}
@@ -800,27 +851,6 @@ func (s *Store) FinishScan(ctx context.Context, run, collectionID string) (remov
 		return e
 	})
 	return removed, err
-}
-
-// RecordVersion notes the destination object produced for a generation and,
-// when it replaced an earlier copy, returns that copy's ID so the caller can
-// retire it under the replace_copy policy.
-func (s *Store) RecordVersion(ctx context.Context, it Item, destID string) (oldDest string, err error) {
-	err = s.tx(ctx, func(tx *sql.Tx) error {
-		if _, e := tx.ExecContext(ctx, "INSERT OR REPLACE INTO item_versions(collection_id,source_id,generation,dest_id,fingerprint,state) VALUES(?,?,?,?,?,'current')", it.CollectionID, it.SourceID, it.Generation, destID, it.Fingerprint); e != nil {
-			return e
-		}
-		if it.OldDestID == "" {
-			return nil
-		}
-		oldDest = it.OldDestID
-		if _, e := tx.ExecContext(ctx, "UPDATE item_versions SET state='superseded' WHERE collection_id=? AND source_id=? AND generation<? AND state='current'", it.CollectionID, it.SourceID, it.Generation); e != nil {
-			return e
-		}
-		_, e := tx.ExecContext(ctx, "UPDATE items SET old_dest_id='' WHERE collection_id=? AND source_id=?", it.CollectionID, it.SourceID)
-		return e
-	})
-	return oldDest, err
 }
 
 type Superseded struct {

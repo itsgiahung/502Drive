@@ -79,6 +79,24 @@ type Provider interface {
 	ListChanges(ctx context.Context, pageToken string) (changes []Change, next, newStart string, err error)
 }
 
+// Parent names one folder in a batch listing. ResourceKey is optional (shared
+// drives need it beside the ID).
+type Parent struct {
+	ID          string
+	ResourceKey string
+}
+
+// MaxBatchParents bounds one combined files.list query. Forty IDs keep the q
+// parameter far below Google's length limit and still cut calls by ~40x.
+const MaxBatchParents = 40
+
+// BatchLister is an optional provider extension: one files.list returns the
+// children of several folders. Engine discovery uses it when available and
+// falls back to ListChildren otherwise, so test doubles stay valid.
+type BatchLister interface {
+	ListChildrenBatch(ctx context.Context, parents []Parent, pageToken string) ([]File, string, error)
+}
+
 // Change is one entry of the Drive change feed.
 type Change struct {
 	FileID  string
@@ -98,8 +116,13 @@ type Kind string
 const (
 	// KindThrottled: Google rejected the call for rate; nothing was written.
 	KindThrottled Kind = "throttled"
-	// KindUnavailable: transport error or 5xx; a write may or may not have happened.
+	// KindUnavailable: transport error (timeout, broken connection); a write
+	// may or may not have happened.
 	KindUnavailable Kind = "unavailable"
+	// KindServer: the provider answered 5xx. Kept apart from a transport
+	// failure so logs and status can tell "Google is broken" from "the network
+	// is down".
+	KindServer Kind = "server"
 	// KindUnreachable: the connection could not be established; nothing was sent.
 	KindUnreachable Kind = "unreachable"
 	KindAuth        Kind = "auth"
@@ -137,6 +160,22 @@ func KindOf(err error) Kind {
 		return KindCancelled
 	}
 	return KindUnavailable
+}
+
+// QuotaScope tells a daily quota ("daily", resets at midnight Pacific) from a
+// storage quota ("storage", needs a human) and any other quota error ("quota").
+func QuotaScope(err error) string {
+	var de *Error
+	if !errors.As(err, &de) || de.Kind != KindQuota {
+		return ""
+	}
+	switch de.Reason {
+	case "dailyLimitExceeded":
+		return "daily"
+	case "storageQuotaExceeded":
+		return "storage"
+	}
+	return "quota"
 }
 
 func RetryAfterOf(err error) time.Duration {

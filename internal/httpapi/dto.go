@@ -14,6 +14,13 @@ import (
 
 func ts(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 
+func tsPtr(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return ts(*t)
+}
+
 func kindDTO(kind, mime string) string {
 	switch {
 	case kind == state.KindFolder:
@@ -39,6 +46,7 @@ func jobDTO(j state.Job) map[string]any {
 		"destination_id": j.DestinationID, "root_name": j.RootName, "state": j.State, "phase": j.Phase,
 		"desired_state": j.DesiredState, "revision": j.Revision, "counts": j.Counts, "result_url": j.ResultURL,
 		"last_error": failureDTO(j.LastError), "created_at": ts(j.CreatedAt), "updated_at": ts(j.UpdatedAt),
+		"resume_after": tsPtr(j.ResumeAfter),
 	}
 	if j.Kind != "" {
 		out["kind"] = j.Kind
