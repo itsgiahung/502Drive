@@ -257,6 +257,10 @@ func (m Model) typing() bool {
 		return true
 	case m.cp != nil && m.cp.input != nil && m.screen == screenCopy:
 		return true
+	case m.screen == screenCollection && m.clean != nil && m.clean.input != nil:
+		return true
+	case m.screen == screenSettings && m.setInput != nil:
+		return true
 	}
 	return false
 }
@@ -265,6 +269,12 @@ func (m Model) typing() bool {
 func (m Model) typingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.screen == screenCopy {
 		return m.copyTyping(msg)
+	}
+	if m.screen == screenCollection {
+		return m.cleanupTyping(msg)
+	}
+	if m.screen == screenSettings {
+		return m.settingsTyping(msg)
 	}
 	d := m.drv
 	switch msg.Type {

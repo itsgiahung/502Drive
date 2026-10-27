@@ -21,6 +21,11 @@ type Status struct {
 	Workers     int
 	Throttled5m int
 	RetryAt     time.Time
+	// Lifecycle is the daemon's power/network state: running, suspending,
+	// sleeping, resuming or reconnect_required. Empty means "not reported".
+	Lifecycle       string
+	LifecycleOnline bool
+	GapSeconds      int
 }
 
 // Job is one job row; counts are real, never estimated.
@@ -39,6 +44,13 @@ type Job struct {
 	Total        *int
 	ResultURL    string
 	LastError    string
+	// Kind is empty for a copy or sync run, else audit, repair or cleanup.
+	Kind string
+	// ResumeAfter is when a quota-blocked job continues by itself (zero: not waiting).
+	ResumeAfter time.Time
+	// SkippedByCode counts skipped items by their stable reason code.
+	SkippedByCode map[string]int
+	Bytes         int64
 }
 
 // SyncState is the subscription shown on a library card.
@@ -61,6 +73,20 @@ type Collection struct {
 	Revision   int
 	ResultURL  string
 	Sync       *SyncState
+	RootName   string
+	Filter     FilterRules
+	OnConflict string
+}
+
+// FilterRules is the selective-sync rule of a collection (read-only here).
+type FilterRules struct {
+	Include, Exclude []string
+	MinSize, MaxSize int64
+}
+
+// Active reports whether any rule would drop something.
+func (f FilterRules) Active() bool {
+	return len(f.Include) > 0 || len(f.Exclude) > 0 || f.MinSize > 0 || f.MaxSize > 0
 }
 
 // Destination is one saved target folder.
@@ -87,8 +113,16 @@ type Check struct {
 
 // Prefs are the per-principal settings the TUI can change.
 type Prefs struct {
-	Language string
+	Language string // auto, vi or en
 	Timezone string
+	// Notifications and quiet hours (QuietStart/QuietEnd are HH:MM or empty).
+	NotifyCompleted, NotifyFailed, NotifyAction bool
+	QuietStart, QuietEnd                        string
+	// RetentionDays is the history window; 0 keeps everything.
+	RetentionDays int
+	// Autostart is this machine's start-at-sign-in switch (not a daemon
+	// preference); AutostartKnown is false where it cannot be read.
+	Autostart, AutostartKnown bool
 }
 
 // Snapshot is everything one refresh reads.
@@ -138,6 +172,57 @@ type Plan struct {
 	Files, Folders                       int
 	Complete                             bool
 	Warnings                             []string
+	// Filter is the preview of the selective-sync rule; nil when none applies.
+	Filter *PlanFilter
+}
+
+// PlanFilter is what the rule would keep and drop in the part of the tree the
+// preview looked at (the top level only, see Scope).
+type PlanFilter struct {
+	Included, Excluded               int
+	IncludedSamples, ExcludedSamples []string
+	Scope                            string
+}
+
+// CopyOptions are the choices that travel with a preview. Empty means the
+// daemon default (follow shortcuts, rename on a name clash, no filter).
+type CopyOptions struct {
+	Shortcuts    string // follow or skip
+	OnConflict   string // skip, rename or update
+	FilterPreset string // "", no_video, docs_only or under_1gb
+}
+
+// ExistingCopyError is returned by SubmitMode when the same source is already
+// copied to the same destination and no mode was given (HTTP 409
+// already_copied). The dialog then asks: update the old copy or make a new one.
+type ExistingCopyError struct{ Message string }
+
+func (e *ExistingCopyError) Error() string { return e.Message }
+
+// Finding is one difference an integrity audit found.
+type Finding struct {
+	Kind, SourceID, DestID, Detail string
+	Repairable, Repaired           bool
+}
+
+// AuditReport is one integrity audit with its (first) findings. Counts holds
+// every finding by kind; Findings is only the first page.
+type AuditReport struct {
+	ID, CollectionID, JobID, State string
+	Revision, Scanned              int
+	Counts                         map[string]int
+	Findings                       []Finding
+	// Repairable counts the repairable findings that were read.
+	Repairable int
+}
+
+// Total is the number of differences found.
+func (r AuditReport) Total() int {
+	n := 0
+	for _, c := range r.Counts {
+		n += c
+	}
+	return n
 }
 
 // WatchEvent is one signal from the daemon's realtime stream. Connected tells
@@ -176,6 +261,34 @@ type Actions struct {
 	// Watch opens the realtime stream; it reconnects by itself and closes its
 	// channel when ctx ends. Nil means the model polls.
 	Watch func(ctx context.Context) <-chan WatchEvent
+
+	// Copy dialog with options. InspectWith previews with the shortcut, name
+	// clash and filter choices; SubmitMode starts the job and answers an
+	// existing copy ("" asks: ExistingCopyError; "update" refreshes the old
+	// copy; "new" copies again). Nil falls back to Inspect and Submit.
+	InspectWith func(ctx context.Context, source, destinationID, rootName string, opt CopyOptions) (Plan, error)
+	SubmitMode  func(ctx context.Context, plan Plan, mode string) (jobID, collectionID string, err error)
+
+	// Integrity audit (S1): StartAudit admits the read-only scan, GetAudit
+	// reads the report, RepairAudit admits a repair job (dryRun plans only).
+	StartAudit  func(ctx context.Context, collectionID string) (AuditReport, error)
+	GetAudit    func(ctx context.Context, auditID string) (AuditReport, error)
+	RepairAudit func(ctx context.Context, auditID string, revision int, dryRun bool) (jobID string, err error)
+
+	// Collection lifecycle (L1). action is retire, resume or forget; Cleanup
+	// admits a cleanup job (dryRun plans only; a real one needs the typed name).
+	CollectionLifecycle func(ctx context.Context, collectionID, action string, revision int) error
+	Cleanup             func(ctx context.Context, collectionID string, revision int, dryRun bool, confirmName string) (jobID string, err error)
+	// SetFilterPreset replaces a collection's filter with a preset (S5).
+	SetFilterPreset func(ctx context.Context, collectionID, preset string, revision int) error
+	// ShowRetired makes the next snapshots include retired collections.
+	ShowRetired func(on bool)
+
+	// Settings. SetPreference changes one daemon preference by its API name
+	// (notify_completed, notify_failed, notify_action_required, quiet_hours,
+	// retention_days); SetAutostart is this machine's start-at-sign-in switch.
+	SetPreference func(ctx context.Context, field string, value any) error
+	SetAutostart  func(on bool) error
 }
 
 // preset names shared with the CLI sync presets.

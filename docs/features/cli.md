@@ -167,6 +167,53 @@ Bộ lọc (`FILTER`, S5) dùng chung cho `inspect`, `copy` và `sync filter set
 - Test: [explorer_test.go](../../internal/tui/explorer_test.go);
   JSON request/response: [drive_test.go](../../internal/httpapi/drive_test.go).
 
+### Library, Jobs, hộp copy và Settings (Đợt T)
+
+Mọi phím dưới đây chỉ gọi API có sẵn của daemon (TUI không ghi DB, không mở engine riêng); thiếu action
+nào thì dòng/phím đó không hiện thay vì hiện mà chết. Chuỗi hiển thị vi/en nằm ở
+[tui_ext.go](../../internal/i18n/tui_ext.go); nhãn trạng thái, thời lượng, dung lượng dùng
+[internal/present](../../internal/present).
+
+**Vòng đời máy (T1).** `GET /v1/status.lifecycle` hiện thành một dòng trên Home, Jobs, Library
+("Đang ngủ · việc đang chạy sẽ tiếp tục khi máy dậy", "Đang kết nối lại… (sau 1g00p ngủ)" khi ngủ ≥ 60 giây,
+"Cần đăng nhập lại Google · nhấn l") và một dấu ngắn `zZ`/`~` trên thanh tab. `l` mở đăng nhập ở mọi tab có dòng
+này. Daemon cũ không báo `lifecycle` thì không có dòng nào.
+
+**Jobs.** Job `blocked` có `resume_after` ở tương lai hiện "Chờ quota tới HH:MM" (múi giờ trong Settings) thay cho
+thanh tiến độ và **không** được gửi `retry` (daemon tự tiếp tục; `p` và `c` vẫn dùng được). Chi tiết job liệt kê số mục
+bỏ qua theo mã K1 (`filtered`, `conflict`, `shortcut_unresolved`, `shortcut_loop`, `cannot_copy`,
+`google_native_export_only`, `too_large_for_quota`, `unreadable`, `trashed_source`; mã lạ hiện nguyên văn), loại job
+(`audit`/`repair`/`cleanup`) và dung lượng.
+
+**Library.** `H` hiện thêm nguồn đã ngừng theo dõi (đọc `GET /v1/collections?all=true` rồi chỉ giữ mục `retired`, để
+không lôi bản sao của người khác vào). Màn một nguồn (`enter`):
+
+| Phím | Tác dụng | API |
+| --- | --- | --- |
+| `a` | quét toàn vẹn (chỉ đọc), mỗi lần một lượt | `POST /v1/collections/{id}/audits`, rồi đọc `GET /v1/audits/{id}` theo mỗi lần làm mới |
+| `v` | bật/tắt danh sách sai lệch (6 dòng đầu) | `GET /v1/audits/{id}/findings` (đọc tối đa 500) |
+| `f` / `F` | lập kế hoạch sửa (dry-run, không đổi gì) / sửa thật (phải có kế hoạch trước, hỏi `y/N`) | `POST /v1/audits/{id}/repair` với `expected_revision` của báo cáo |
+| `b` | đổi bộ lọc: không lọc → bỏ video → chỉ tài liệu → bỏ file > 1 GB | `PUT /v1/collections/{id}/filter` (áp dụng cho lần chạy sau) |
+| `o` | ngừng theo dõi, hỏi trước và nói rõ cái gì được giữ | `POST …/retire` |
+| `u` | theo dõi lại (nguồn đã ngừng) hoặc tiếp tục sync đang tạm dừng | `POST …/resume` / sync resume |
+| `w` | quên bản ghi cục bộ (chỉ khi đã ngừng theo dõi), hỏi `y/N` | `POST …/forget` |
+| `c` rồi `C` | dọn đích: `c` chạy dry-run và hiện "N mục · X sẽ vào thùng rác Drive"; `C` bắt gõ lại đúng tên thư mục rồi mới gửi | `POST …/cleanup` (`dry_run` rồi `confirm_name`) |
+
+Mọi lệnh gửi `expected_revision` mà người dùng đang thấy; lỗi của daemon (ví dụ `collection_busy`) hiện ở dòng trạng thái.
+
+**Hộp copy.** Thêm `f` (lọc), `o` (xử lý trùng tên: đổi tên → bỏ qua → cập nhật), `k` (shortcut: đi theo/bỏ qua);
+mỗi lần đổi, bản xem trước chạy lại với `filter`, `on_conflict`, `shortcuts` nên con số hiển thị luôn khớp với
+cái sẽ chạy: "Đạt: N · Bị loại: M (chỉ tính cấp cao nhất)" kèm tối đa 3 mẫu bị loại. Khi daemon trả `409
+already_copied` hộp hỏi "`u` cập nhật bản cũ · `n` tạo bản mới · `esc` hủy" rồi gửi lại `mode=update|new`
+(trước đây TUI gửi không có `mode` và chỉ hiện lỗi).
+
+**Settings.** Con trỏ đi qua các dòng (↑ ở dòng đầu lên thanh tab): ngôn ngữ (English → Tiếng Việt → Tự động theo
+locale máy), tự chạy khi đăng nhập (T3, công tắc của máy này, không phải của daemon), giờ yên tĩnh (gõ
+`22:00-07:00`, để trống = tắt), giữ lịch sử (7/30/90/180/365 ngày hoặc mãi mãi), ba công tắc thông báo. Mỗi thay đổi hiện
+ngay và lưu qua `PATCH /v1/preferences`; lưu lỗi thì hiện lỗi và lần làm mới sau trả về giá trị thật.
+
+Test: [batch_t_test.go](../../internal/tui/batch_t_test.go), [tui_ext_test.go](../../internal/cli/tui_ext_test.go).
+
 ## Tray (`502drive tray`)
 
 - Chỉ client HTTP; menu: trạng thái, Open TUI, Copy link trong clipboard, Jobs &

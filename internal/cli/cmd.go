@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -54,6 +55,8 @@ type App struct {
 	uiLang string
 	// slow caches the TUI's rarely changing sections.
 	slow slowCache
+	// showRetired makes the TUI's snapshots list retired collections too.
+	showRetired atomic.Bool
 }
 
 func (a *App) out() io.Writer  { return a.io.Out }

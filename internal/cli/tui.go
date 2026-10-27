@@ -33,6 +33,17 @@ func (a *App) tuiActions() tui.Actions {
 		LoginState:            a.tuiLoginState,
 		OpenURL:               a.tuiOpenURL,
 		Watch:                 a.tuiWatch,
+		InspectWith:           a.tuiInspectWith,
+		SubmitMode:            a.tuiSubmitMode,
+		StartAudit:            a.tuiStartAudit,
+		GetAudit:              a.tuiGetAudit,
+		RepairAudit:           a.tuiRepairAudit,
+		CollectionLifecycle:   a.tuiCollectionLifecycle,
+		Cleanup:               a.tuiCleanup,
+		SetFilterPreset:       a.tuiSetFilterPreset,
+		ShowRetired:           func(on bool) { a.showRetired.Store(on) },
+		SetPreference:         a.tuiSetPreference,
+		SetAutostart:          a.tuiSetAutostart,
 	}
 }
 
@@ -256,6 +267,11 @@ func (a *App) tuiSnapshot(ctx context.Context) (tui.Snapshot, error) {
 			Throttled int        `json:"throttled_last_5m"`
 			RetryAt   *time.Time `json:"next_retry_at"`
 		} `json:"throttle"`
+		Lifecycle struct {
+			State  string `json:"state"`
+			Online bool   `json:"online"`
+			Gap    int    `json:"last_gap_seconds"`
+		} `json:"lifecycle"`
 		Account struct {
 			Status string `json:"status"`
 		} `json:"account"`
@@ -265,7 +281,8 @@ func (a *App) tuiSnapshot(ctx context.Context) (tui.Snapshot, error) {
 	}
 	snap.Status = tui.Status{Version: st.Version, Ready: st.Ready, Running: st.Running, Queued: st.Queued,
 		Blocked: st.Blocked, AccountStatus: st.Account.Status, BotState: st.Bot,
-		Workers: st.Throttle.Workers, Throttled5m: st.Throttle.Throttled}
+		Workers: st.Throttle.Workers, Throttled5m: st.Throttle.Throttled,
+		Lifecycle: st.Lifecycle.State, LifecycleOnline: st.Lifecycle.Online, GapSeconds: st.Lifecycle.Gap}
 	if st.Throttle.RetryAt != nil {
 		snap.Status.RetryAt = *st.Throttle.RetryAt
 	}
@@ -325,7 +342,11 @@ func (a *App) tuiJobs(ctx context.Context, snap *tui.Snapshot) {
 	for _, j := range page.Items {
 		job := tui.Job{ID: j.ID, CollectionID: j.CollectionID, SourceName: j.SourceName, State: j.State,
 			Desired: j.Desired, Revision: j.Revision, Completed: j.Counts.Completed, Failed: j.Counts.Failed,
-			Blocked: j.Counts.Blocked, Skipped: j.Counts.Skipped, Total: j.Counts.Total}
+			Blocked: j.Counts.Blocked, Skipped: j.Counts.Skipped, Total: j.Counts.Total,
+			Kind: j.Kind, SkippedByCode: j.Counts.SkippedByCode, Bytes: j.Counts.Bytes}
+		if j.ResumeAfter != nil {
+			job.ResumeAfter = parseTime(j.ResumeAfter)
+		}
 		if j.Phase != nil {
 			job.Phase = *j.Phase
 		}
@@ -340,18 +361,29 @@ func (a *App) tuiJobs(ctx context.Context, snap *tui.Snapshot) {
 }
 
 func (a *App) tuiCollections(ctx context.Context, snap *tui.Snapshot) {
-	r, err := a.call(ctx, "GET", "/v1/collections", nil, nil, "")
-	if err != nil {
+	items, ok := a.collectionItems(ctx, nil)
+	if !ok {
 		return
 	}
-	var page struct {
-		Items []collectionView `json:"items"`
+	if a.showRetired.Load() {
+		// "all" would also list other principals' live copies; only the
+		// retired ones are wanted on top of the usual list.
+		if all, ok := a.collectionItems(ctx, url.Values{"all": {"true"}}); ok {
+			seen := map[string]bool{}
+			for _, c := range items {
+				seen[c.ID] = true
+			}
+			for _, c := range all {
+				if c.State == "retired" && !seen[c.ID] {
+					items = append(items, c)
+				}
+			}
+		}
 	}
-	if r.Decode(&page) != nil {
-		return
-	}
-	for _, c := range page.Items {
-		coll := tui.Collection{ID: c.ID, SourceName: c.SourceName, State: c.State, Revision: c.Revision}
+	for _, c := range items {
+		coll := tui.Collection{ID: c.ID, SourceName: c.SourceName, State: c.State, Revision: c.Revision, RootName: c.RootName,
+			OnConflict: c.OnConflict,
+			Filter:     tui.FilterRules{Include: c.Filter.Include, Exclude: c.Filter.Exclude, MinSize: c.Filter.MinSize, MaxSize: c.Filter.MaxSize}}
 		if c.ResultURL != nil {
 			coll.ResultURL = *c.ResultURL
 		}
@@ -374,6 +406,21 @@ func (a *App) tuiCollections(ctx context.Context, snap *tui.Snapshot) {
 		}
 		snap.Collections = append(snap.Collections, coll)
 	}
+}
+
+// collectionItems reads one page of the library.
+func (a *App) collectionItems(ctx context.Context, q url.Values) ([]collectionView, bool) {
+	r, err := a.call(ctx, "GET", "/v1/collections", q, nil, "")
+	if err != nil {
+		return nil, false
+	}
+	var page struct {
+		Items []collectionView `json:"items"`
+	}
+	if r.Decode(&page) != nil {
+		return nil, false
+	}
+	return page.Items, true
 }
 
 func (a *App) tuiDestinations(ctx context.Context, snap *tui.Snapshot) {
@@ -420,13 +467,26 @@ func (a *App) tuiPrefs(ctx context.Context, snap *tui.Snapshot) {
 		return
 	}
 	var prefs struct {
-		Language string `json:"language"`
-		Timezone string `json:"timezone"`
+		Language        string  `json:"language"`
+		Timezone        string  `json:"timezone"`
+		NotifyCompleted bool    `json:"notify_completed"`
+		NotifyFailed    bool    `json:"notify_failed"`
+		NotifyAction    bool    `json:"notify_action_required"`
+		QuietStart      *string `json:"quiet_hours_start"`
+		QuietEnd        *string `json:"quiet_hours_end"`
+		RetentionDays   int     `json:"retention_days"`
 	}
 	if r.Decode(&prefs) != nil {
 		return
 	}
-	snap.Prefs = tui.Prefs{Language: prefs.Language, Timezone: prefs.Timezone}
+	snap.Prefs = tui.Prefs{Language: prefs.Language, Timezone: prefs.Timezone,
+		NotifyCompleted: prefs.NotifyCompleted, NotifyFailed: prefs.NotifyFailed, NotifyAction: prefs.NotifyAction,
+		RetentionDays: prefs.RetentionDays}
+	if prefs.QuietStart != nil && prefs.QuietEnd != nil {
+		snap.Prefs.QuietStart, snap.Prefs.QuietEnd = *prefs.QuietStart, *prefs.QuietEnd
+	}
+	// Autostart is this machine's switch, not a daemon preference.
+	snap.Prefs.Autostart, snap.Prefs.AutostartKnown = a.autostartForTUI()
 }
 
 // tuiJobAction uses the revision the user saw; a stale click is reported and
