@@ -156,3 +156,17 @@ func TestSettingsStartsOnTheTabBar(t *testing.T) {
 		t.Fatalf("the tab bar must mark the cursor:\n%s", m.View())
 	}
 }
+
+func TestHomeShowsGoogleThrottlingOnlyWhenItHappens(t *testing.T) {
+	d := newDriveFake()
+	m := driveModel(t, d, 100, 30)
+	m, _ = update(t, m, key("1"))
+	if strings.Contains(m.View(), "throttled") {
+		t.Fatal("no throttle line expected while nothing is limited")
+	}
+	d.snap.Status.Workers, d.snap.Status.Throttled5m = 2, 3
+	m = run(t, m, m.fetch())
+	if !strings.Contains(m.View(), "Workers: 2") {
+		t.Fatalf("throttle line missing:\n%s", m.View())
+	}
+}

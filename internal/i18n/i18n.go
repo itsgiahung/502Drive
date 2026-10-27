@@ -18,6 +18,8 @@ const (
 	Google          Key = "google"
 	Telegram        Key = "telegram"
 	Running         Key = "running"
+	ThrottleLine    Key = "throttle_line"
+	ThrottleRetry   Key = "throttle_retry"
 	Queued          Key = "queued"
 	Blocked         Key = "blocked"
 	Home            Key = "home"
@@ -265,6 +267,8 @@ var VI = map[Key]string{
 	GreetMorning:    "Chào buổi sáng! Sẵn sàng copy.",
 	GreetDay:        "Chào bạn! Dán link để bắt đầu.",
 	GreetEvening:    "Chào buổi tối! Mọi thứ đang ổn.",
+	ThrottleLine:    "Luồng: %d · bị giới hạn %d lần/5 phút",
+	ThrottleRetry:   "Google giới hạn tới %s",
 	StayRunning:     "502Drive vẫn chạy nền ở khay hệ thống. Chọn Thoát trên khay để dừng hẳn.",
 	WorkingNow:      "Đang copy %d / %d mục",
 	AllDone:         "Xong rồi — không còn việc nào đang chạy.",
@@ -413,6 +417,8 @@ var EN = map[Key]string{
 	GreetMorning:    "Good morning! Ready to copy.",
 	GreetDay:        "Hello! Paste a link to start.",
 	GreetEvening:    "Good evening! All quiet.",
+	ThrottleLine:    "Workers: %d · throttled %d/5m",
+	ThrottleRetry:   "Google limit until %s",
 	StayRunning:     "502Drive keeps running in the tray. Choose Quit in the tray to stop it.",
 	WorkingNow:      "Copying %d / %d items",
 	AllDone:         "All done — nothing is running.",

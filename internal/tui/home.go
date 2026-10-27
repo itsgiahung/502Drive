@@ -307,6 +307,13 @@ func (m Model) infoColumn() []string {
 		countWord(m.snap.Status.Running, m.t(i18n.Running)),
 		countWord(m.snap.Status.Queued, m.t(i18n.Queued)),
 		countWord(m.snap.Status.Blocked, m.t(i18n.Blocked)))))
+	if s := m.snap.Status; s.Throttled5m > 0 || s.RetryAt.After(time.Now()) {
+		line := fmt.Sprintf(m.t(i18n.ThrottleLine), s.Workers, s.Throttled5m)
+		if s.RetryAt.After(time.Now()) {
+			line += " · " + fmt.Sprintf(m.t(i18n.ThrottleRetry), s.RetryAt.Local().Format("15:04"))
+		}
+		lines = append(lines, m.warn(line))
+	}
 	if b := m.snap.Status.BotState; b != "" && b != "disabled" {
 		lines = append(lines, m.dim(m.t(i18n.Telegram)+": "+Sanitize(b)))
 	}

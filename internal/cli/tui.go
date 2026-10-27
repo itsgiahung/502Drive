@@ -245,12 +245,17 @@ func (a *App) tuiSnapshot(ctx context.Context) (tui.Snapshot, error) {
 		return snap, err
 	}
 	var st struct {
-		Version string `json:"version"`
-		Ready   bool   `json:"ready"`
-		Running int    `json:"running_jobs"`
-		Queued  int    `json:"queued_jobs"`
-		Blocked int    `json:"blocked_jobs"`
-		Bot     string `json:"bot_state"`
+		Version  string `json:"version"`
+		Ready    bool   `json:"ready"`
+		Running  int    `json:"running_jobs"`
+		Queued   int    `json:"queued_jobs"`
+		Blocked  int    `json:"blocked_jobs"`
+		Bot      string `json:"bot_state"`
+		Throttle struct {
+			Workers   int        `json:"workers_now"`
+			Throttled int        `json:"throttled_last_5m"`
+			RetryAt   *time.Time `json:"next_retry_at"`
+		} `json:"throttle"`
 		Account struct {
 			Status string `json:"status"`
 		} `json:"account"`
@@ -259,7 +264,11 @@ func (a *App) tuiSnapshot(ctx context.Context) (tui.Snapshot, error) {
 		return snap, err
 	}
 	snap.Status = tui.Status{Version: st.Version, Ready: st.Ready, Running: st.Running, Queued: st.Queued,
-		Blocked: st.Blocked, AccountStatus: st.Account.Status, BotState: st.Bot}
+		Blocked: st.Blocked, AccountStatus: st.Account.Status, BotState: st.Bot,
+		Workers: st.Throttle.Workers, Throttled5m: st.Throttle.Throttled}
+	if st.Throttle.RetryAt != nil {
+		snap.Status.RetryAt = *st.Throttle.RetryAt
+	}
 	a.tuiJobs(ctx, &snap)
 	a.tuiCollections(ctx, &snap)
 	a.tuiSlowSections(ctx, &snap)

@@ -17,6 +17,10 @@ type Status struct {
 	Blocked       int
 	AccountStatus string
 	BotState      string
+	// Throttle is Google rate-limiting; zero values mean none.
+	Workers     int
+	Throttled5m int
+	RetryAt     time.Time
 }
 
 // Job is one job row; counts are real, never estimated.
