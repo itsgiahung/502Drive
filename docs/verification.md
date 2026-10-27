@@ -1,4 +1,31 @@
-# Verification — cập nhật 2026-10-27
+# Verification — cập nhật 2026-10-28
+
+## Phiên 2026-10-28 — Google Drive thật (lần đầu)
+
+Môi trường: Fedora 44, GNOME 50, daemon `v0.3.0-dev` (9b16d2b) đăng nhập một tài
+khoản cá nhân; nguồn là thư mục thử do **một tài khoản khác** tạo và chia sẻ quyền
+Viewer (6 file gồm hai file trùng tên, một Google Doc, thư mục con, thư mục rỗng);
+đích là thư mục thử riêng (`destinations add`, không phải mặc định). Chạy qua CLI,
+không dùng harness `internal/live` (không cần đưa token ra ngoài daemon).
+
+| Kịch bản | Kết quả |
+| --- | --- |
+| `doctor --online`, `onboard --no-input` | đạt; exit 0 |
+| `mkdir`, `destinations add` | đạt |
+| `inspect` / `inspect --deep` | 6 file, 2 thư mục, 107 B, 1 native, 0 không copy được — khớp nguồn |
+| `copy --wait` | 9/9 mục trong 6,5 s; cây, thư mục rỗng, Google Doc giữ nguyên; trùng tên → `dup (2).txt` |
+| `copy` lần hai (update) | **lỗi** → sửa: Google Doc không đổi bị copy lại (fingerprint dùng `version`) — `ddafacd` |
+| `audit` | **lỗi** → sửa: báo nhầm tên `dup (2).txt` do N1 đặt (`a958d12`); lệnh `audit` lần sau phát lại báo cáo cũ (`24d7489`) |
+| sync khi nguồn không đổi | 0 mục copy; fingerprint dạng cũ được nâng cấp, không copy lại |
+| sync sau khi đổi nguồn | file mới ✓, move ✓, thư mục đổi tên ✓, xóa ở nguồn giữ bản đích ✓; đổi tên file = generation mới (giữ bản cũ theo `versioned_copy`) |
+| `audit --repair --apply` | **lỗi** → sửa: repair không có gì để sửa vẫn trash lịch sử phiên bản (`9b16d2b`) |
+| realtime với nguồn được chia sẻ | file mới được copy sau ~40–50 s |
+| `sync stop`, `retire`, `cleanup` | dry-run ✓, sai tên xác nhận bị từ chối ✓, cleanup chỉ đưa gốc vào thùng rác ✓ |
+| `kill -9` daemon giữa lúc copy | 5 mục `unknown_remote_outcome` (thực tế chưa được tạo) → `jobs retry` → 10/10, không trùng |
+
+Chưa chạy trong phiên này: Telegram thật, tray/thông báo bấm tay, Shared Drive,
+cây lớn (throttle/AIMD, quota ngày), Windows/macOS, mất mạng/ngủ máy thật.
+
 
 ## Phiên 2026-10-27 (Đợt D — đồng bộ tài liệu với code)
 
