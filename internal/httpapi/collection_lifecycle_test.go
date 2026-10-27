@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"fmt"
 	"testing"
+	"time"
 )
 
 // TestCollectionLifecycleRoutes walks retire -> list -> resume -> retire ->
@@ -19,7 +21,16 @@ func TestCollectionLifecycleRoutes(t *testing.T) {
 	}
 	h.conform("POST", "/v1/collections/{collection_id}/forget", r)
 
-	r = h.do("POST", base+"/retire", map[string]any{"expected_revision": rev}, "retire-1", true)
+	// A background run finishing right after the copy may bump the revision;
+	// that is a legitimate stale conflict, so retry with the current one.
+	for attempt := range 10 {
+		rev = h.collectionRevision(coll)
+		r = h.do("POST", base+"/retire", map[string]any{"expected_revision": rev}, fmt.Sprintf("retire-1-%d", attempt), true)
+		if r.status != 409 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	if r.status != 200 {
 		t.Fatalf("retire = %d %s", r.status, r.body)
 	}
