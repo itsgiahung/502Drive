@@ -28,6 +28,7 @@ const (
 	screenHelp
 	screenDrive
 	screenCopy
+	screenReport
 )
 
 const (
@@ -106,6 +107,17 @@ type Model struct {
 	showRetired bool
 	// Settings: the field being typed (quiet hours), if any.
 	setInput *textinput.Model
+	// Batch IT: the server-side job filter and its source name, the moves
+	// made in the queue, batch progress, the newest audit per collection (the
+	// maps are shared between copies), the problem report and the CSV path
+	// being typed.
+	jq         JobQuery
+	jqName     string
+	qm         *queueMoves
+	batches    map[string]*batchState
+	lastAudits map[string]*lastAuditState
+	rep        *reportView
+	exp        *exportFlow
 
 	watching bool // the realtime stream is connected
 	watchCh  <-chan WatchEvent
@@ -140,7 +152,8 @@ func New(acts Actions, opt Options) Model {
 	lang = i18n.Resolve(lang) // "auto" follows the machine's locale
 	now := opt.now()
 	m := Model{acts: acts, opt: opt, ctx: context.Background(), screen: screenHome, width: width, height: opt.Height,
-		lang: lang, fetching: true, selected: map[string]bool{}, rates: map[string]*rate{}, prevStates: map[string]string{}, audits: map[string]*auditState{},
+		lang: lang, fetching: true, jq: JobQuery{Pages: 1}, qm: &queueMoves{}, batches: map[string]*batchState{}, lastAudits: map[string]*lastAuditState{},
+		selected: map[string]bool{}, rates: map[string]*rate{}, prevStates: map[string]string{}, audits: map[string]*auditState{},
 		started: now, lastInput: now, anim: mascot.NewMini(), cmd: newPrompt(), sc: &spinCtl{}, cache: newFolderCache()}
 	m.frame = mascot.StaticMini(mascot.Idle, .3)
 	return m
@@ -158,6 +171,9 @@ func (m Model) Init() tea.Cmd {
 type snapshotMsg struct {
 	snap Snapshot
 	err  error
+	// jq is the job filter the snapshot was read with; nil for a message the
+	// model built itself.
+	jq *JobQuery
 }
 type actionMsg struct {
 	text string
@@ -216,10 +232,10 @@ func waitWatch(ch <-chan WatchEvent) tea.Cmd {
 
 // fetch reads a snapshot in the background.
 func (m Model) fetch() tea.Cmd {
-	acts, ctx := m.acts, m.ctx
+	acts, ctx, q := m.acts, m.ctx, m.jq
 	return func() tea.Msg {
 		snap, err := acts.Snapshot(ctx)
-		return snapshotMsg{snap: snap, err: err}
+		return snapshotMsg{snap: snap, err: err, jq: &q}
 	}
 }
 
@@ -255,6 +271,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onMkdir(msg)
 	case destMsg:
 		return m.onDest(msg)
+	case moveMsg:
+		return m.onMove(msg)
+	case queueMsg:
+		return m.onQueue(msg)
+	case batchMsg:
+		return m.onBatch(msg)
+	case batchSubmitMsg:
+		return m.onBatchSubmit(msg)
+	case deepTickMsg:
+		return m.onDeepTick(msg)
+	case deepMsg:
+		return m.onDeep(msg)
+	case reportMsg:
+		return m.onReport(msg)
+	case exportMsg:
+		return m.onExport(msg)
+	case searchMsg:
+		return m.onSearch(msg)
+	case lastAuditMsg:
+		return m.onLastAudit(msg)
 	case planMsg:
 		return m.onPlan(msg)
 	case submitMsg:
@@ -301,10 +337,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selected = map[string]bool{}
 		return m, m.refetch()
 	case tea.MouseMsg:
-		return m.onMouse(msg)
+		return m.afterNav(m.onMouse(msg))
 	case tea.KeyMsg:
 		m.lastInput = m.opt.now()
-		return m.key(msg)
+		return m.afterNav(m.key(msg))
 	}
 	if m.typing() { // cursor blink and paste messages reach the text field
 		return m.forwardToInput(msg)
@@ -323,6 +359,8 @@ func (m Model) forwardToInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 		*m.clean.input, cmd = m.clean.input.Update(msg)
 	case m.screen == screenSettings && m.setInput != nil:
 		*m.setInput, cmd = m.setInput.Update(msg)
+	case m.exp != nil:
+		*m.exp.input, cmd = m.exp.input.Update(msg)
 	}
 	return m, cmd
 }
@@ -337,6 +375,11 @@ func (m Model) refetch() tea.Cmd {
 
 func (m Model) onSnapshot(msg snapshotMsg) (tea.Model, tea.Cmd) {
 	m.fetching = false
+	if msg.err == nil && msg.jq != nil && *msg.jq != m.jq {
+		// The filter changed while this was being read: ask again.
+		m.fetching = true
+		return m, m.fetch()
+	}
 	if msg.err != nil {
 		m.online = false
 	} else {
@@ -354,6 +397,12 @@ func (m Model) onSnapshot(msg snapshotMsg) (tea.Model, tea.Cmd) {
 	cmds := []tea.Cmd{}
 	if msg.err == nil {
 		if cmd := m.pollAudits(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if cmd := m.pollBatches(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if cmd := m.pollLastAudits(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	}
@@ -511,6 +560,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quits = true
 		return m, tea.Quit
 	case tea.KeyEsc:
+		if m.screen == screenDrive && m.drv != nil && m.drv.query != "" {
+			return m.leaveSearch()
+		}
 		if m.screen == screenDrive && m.drv != nil && m.drv.pick {
 			return m.cancelPick()
 		}
@@ -560,16 +612,15 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.move(-1), nil
 	case "down", "j":
-		next := m.move(1)
-		return next, next.maybeLoadMore()
+		return m.afterMove(m.move(1))
 	case "pgup":
 		return m.move(-m.pageSize()), nil
 	case "pgdown":
-		return m.move(m.pageSize()), nil
+		return m.afterMove(m.move(m.pageSize()))
 	case "home", "g":
 		return m.move(-1 << 20), nil
 	case "end", "G":
-		return m.move(1 << 20), nil
+		return m.afterMove(m.move(1 << 20))
 	case "r":
 		if m.screen == screenDrive {
 			return m.driveKey("r")
@@ -588,6 +639,35 @@ func (m Model) goTo(s screen) (tea.Model, tea.Cmd) {
 	m.tabFocus = false
 	m.selected = map[string]bool{}
 	return m.startAnim()
+}
+
+// afterMove loads the next page of whatever list the cursor just reached the
+// end of: more jobs, or more of a Drive folder.
+func (m Model) afterMove(next Model) (tea.Model, tea.Cmd) {
+	if next.screen == screenJobs {
+		return next.loadMoreJobs()
+	}
+	return next, next.maybeLoadMore()
+}
+
+// afterNav runs after every key or click: it leaves a job filter behind when
+// the user goes to another tab and reads the newest audits on the Library.
+func (m Model) afterNav(next tea.Model, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	nm, ok := next.(Model)
+	if !ok {
+		return next, cmd
+	}
+	if nm.screen != screenJobs && nm.screen != screenJob && nm.screen != screenReport {
+		var reset tea.Cmd
+		nm, reset = nm.resetJobQuery()
+		if reset != nil {
+			cmd = tea.Batch(cmd, reset)
+		}
+	}
+	if audit := nm.pollLastAudits(); audit != nil {
+		cmd = tea.Batch(cmd, audit)
+	}
+	return nm, cmd
 }
 
 func (m Model) move(delta int) Model {
@@ -609,6 +689,8 @@ func (m Model) back() (tea.Model, tea.Cmd) {
 	case screenCollection:
 		m.screen = screenLibrary
 		m.clean = nil
+	case screenReport:
+		return m.leaveReport()
 	case screenHome:
 		m.quits = true
 		return m, tea.Quit
@@ -658,8 +740,18 @@ func (m Model) screenKey(key string) (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case screenJobs:
 		return m.jobsKey(key)
+	case screenReport:
+		if key == "E" {
+			return m.startExport("report", m.rep.jobID)
+		}
 	case screenJob:
 		j, ok := m.selectedJob()
+		if ok && key == "R" {
+			return m.openReport(j)
+		}
+		if ok && key == "E" {
+			return m.startExport("report", j.ID)
+		}
 		if !ok || m.acts.JobAction == nil {
 			return m, nil
 		}
@@ -777,6 +869,10 @@ func (m Model) listLen() int {
 		return len(m.settingsRows())
 	case screenHelp:
 		return len(i18n.HelpLines(m.lang))
+	case screenReport:
+		if m.rep != nil && m.rep.rep != nil {
+			return len(m.rep.rep.Items)
+		}
 	}
 	return 0
 }
@@ -800,7 +896,9 @@ func (m *Model) clampCursor() {
 func (m Model) listShape() (per, title int) {
 	switch m.screen {
 	case screenJobs:
-		return 2, 2 + len(m.jobsBanner()) + len(m.lifeBanner())
+		return 2, 2 + len(m.jobsBanner()) + len(m.lifeBanner()) + len(m.jobsHeadLines()) + m.jobsMoreLines() + len(m.exportLines())
+	case screenReport:
+		return 1, len(m.reportHead()) + len(m.exportLines())
 	case screenLibrary:
 		return 2, 2 + len(m.lifeBanner()) + len(m.libraryNote())
 	case screenDestination:
@@ -815,6 +913,9 @@ func (m Model) listShape() (per, title int) {
 			}
 			if m.drv.prompt != nil {
 				title += 4
+			}
+			if m.drv.query != "" && len(m.drv.page.Items) >= searchLimit {
+				title++
 			}
 			if m.drv.err != "" {
 				title++

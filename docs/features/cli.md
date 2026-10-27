@@ -228,8 +228,7 @@ bỏ qua theo mã K1 (`filtered`, `conflict`, `shortcut_unresolved`, `shortcut_l
 `google_native_export_only`, `too_large_for_quota`, `unreadable`, `trashed_source`; mã lạ hiện nguyên văn), loại job
 (`audit`/`repair`/`cleanup`) và dung lượng.
 
-**Library.** `H` hiện thêm nguồn đã ngừng theo dõi (đọc `GET /v1/collections?all=true` rồi chỉ giữ mục `retired`, để
-không lôi bản sao của người khác vào). Màn một nguồn (`enter`):
+**Library.** `H` hiện thêm nguồn đã ngừng theo dõi (đọc `GET /v1/collections?include_retired=true`, chỉ của người dùng này). Màn một nguồn (`enter`):
 
 | Phím | Tác dụng | API |
 | --- | --- | --- |
@@ -256,6 +255,57 @@ locale máy), tự chạy khi đăng nhập (T3, công tắc của máy này, kh
 ngay và lưu qua `PATCH /v1/preferences`; lưu lỗi thì hiện lỗi và lần làm mới sau trả về giá trị thật.
 
 Test: [batch_t_test.go](../../internal/tui/batch_t_test.go), [tui_ext_test.go](../../internal/cli/tui_ext_test.go).
+
+### Lô, hàng đợi, quét sâu, báo cáo, tìm Drive (Đợt IT)
+
+Cũng chỉ gọi API có sẵn (không ghi DB); chuỗi vi/en ở [tui_it.go](../../internal/i18n/tui_it.go), adapter ở
+[tui_it.go](../../internal/cli/tui_it.go). Thiếu action nào thì phím/dòng đó không hiện.
+
+**Hộp copy.**
+
+| Phím / thao tác | Tác dụng | API |
+| --- | --- | --- |
+| dán nhiều link (mỗi dòng một link) | một **lô**: không xem trước từng link, `1/2` tên, `d` đích, `f/o/k` tùy chọn áp cho cả lô; link lỗi báo riêng | `POST /v1/plans` + `POST /v1/jobs` với `batch_id` cho từng link (khóa idempotency riêng, mỗi lần Enter là một lô mới) |
+| `i` / `x` | bật/tắt quét sâu cùng bản xem trước / hủy quét đang chạy | `POST /v1/plans` với `deep`, `GET /v1/plans/{id}` mỗi ~0,7 giây, `POST /v1/plans/{id}/preflight/cancel` |
+| `s` | chọn đồng bộ sau copy: tắt / realtime / mỗi giờ / 6 giờ / hằng ngày (bắt đầu ở tùy chọn đã lưu) | `after_copy_sync_mode` trong `POST /v1/jobs`; chỉ gửi khi khác tùy chọn đã lưu |
+| gõ chữ không phải link/ID | tìm trong Drive theo tên (tối đa 20) | `GET /v1/drive/search?q=` |
+
+Quét sâu: số đang quét ghi "Chưa đủ để là tổng"; xong mới hiện tổng, Google/shortcut/không copy được/thư mục không đọc
+được, ước tính (từ các lần copy đã đo) và cảnh báo `estimate_unknown`, `destination_storage_short`,
+`may_hit_daily_limit`. Đích mà tài khoản không ghi được (`destination_not_writable`) có câu riêng và chặn Enter tới khi
+chọn lại.
+
+**Jobs.**
+
+| Phím | Tác dụng | API |
+| --- | --- | --- |
+| `f` | lọc theo trạng thái (tất cả → queued → running → paused → blocked → failed → succeeded) | `GET /v1/jobs?state=` |
+| `s` | chỉ nguồn của dòng đang chọn / bỏ giới hạn | `GET /v1/jobs?collection_id=` |
+| cuối danh sách (`↓`, `End`) | tải trang kế | `GET /v1/jobs?cursor=` |
+| `K` / `J` | đưa job chờ lên / xuống một chỗ | `POST /v1/jobs/{id}/move` (`before`/`after`, `expected_revision`) |
+| `+` / `-` | đổi ưu tiên -5..5 của job chờ | `POST /v1/jobs/{id}/move` (`priority`) |
+| `P` / `U` | tạm dừng (hỏi `y/N`) / tiếp tục cả hàng đợi | `POST /v1/queue/pause`, `POST /v1/queue/resume` |
+| `E` | xuất lịch sử 30 ngày ra CSV (hỏi đường dẫn) | `GET /v1/history` |
+
+Rời tab Jobs thì bộ lọc được bỏ. Job trong một lô hiện "lô abc123 3/10" (đọc `GET /v1/batches/{id}`, mỗi lô một lần).
+Thứ tự "chờ #N" là ước lượng: ưu tiên → thời điểm nhận → các lần đổi chỗ đã làm trong phiên này (API chưa trả vị trí).
+`status.queue.paused` hiện dòng "Hàng đợi đang tạm dừng" trên Jobs/Home và `||` trên thanh tab.
+
+**Chi tiết job.** `R` mở báo cáo lỗi/chặn/bỏ qua theo mã K1 (`GET /v1/jobs/{id}/items?problems=true`, đọc tối đa 500
+dòng, báo "Đã cắt ở N dòng"); `E` xuất báo cáo ra CSV (tối đa 5000 dòng, như `jobs report --format csv`) tới đường dẫn gõ vào.
+Tệp mới 0600, ô bắt đầu bằng `= + - @` được chặn công thức, **không ghi đè** tệp đã có và không tạo tệp khi đọc lỗi.
+
+**Drive.** `/` tìm theo tên; kết quả dùng chung phím với thư mục (`enter` mở thư mục, `c` copy, `i` thông tin);
+`esc`/`←` về thư mục đang đứng.
+
+**Library.** Mỗi dòng đang thấy hiện audit gần nhất ("kiểm tra: sạch" / "N sai lệch (M sửa được)", đọc
+`GET /v1/collections/{id}/audits/latest`, tối đa một lần mỗi phút mỗi nguồn); màn nguồn bắt đầu từ audit đó nên `f`
+lập kế hoạch sửa được ngay.
+
+**Settings.** Dòng cuối "Đồng bộ sau copy" (tắt/realtime/mỗi giờ/6 giờ/hằng ngày) lưu ngay `after_copy_sync_mode`.
+
+Test: [batch_it_test.go](../../internal/tui/batch_it_test.go), [batch_it2_test.go](../../internal/tui/batch_it2_test.go),
+[tui_it_test.go](../../internal/cli/tui_it_test.go).
 
 ## Tray (`502drive tray`)
 

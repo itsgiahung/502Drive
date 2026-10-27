@@ -26,6 +26,8 @@ type Status struct {
 	Lifecycle       string
 	LifecycleOnline bool
 	GapSeconds      int
+	// QueuePaused is the global pause of the job queue (S6).
+	QueuePaused bool
 }
 
 // Job is one job row; counts are real, never estimated.
@@ -51,6 +53,13 @@ type Job struct {
 	// SkippedByCode counts skipped items by their stable reason code.
 	SkippedByCode map[string]int
 	Bytes         int64
+	// BatchID is set when the job was admitted as part of a batch (S6);
+	// Priority is its queue priority (-5..5, higher runs first).
+	BatchID  string
+	Priority int
+	// Created is the admission time; queued jobs with equal priority run in
+	// this order unless they were moved.
+	Created time.Time
 }
 
 // SyncState is the subscription shown on a library card.
@@ -120,6 +129,9 @@ type Prefs struct {
 	QuietStart, QuietEnd                        string
 	// RetentionDays is the history window; 0 keeps everything.
 	RetentionDays int
+	// AfterCopySync is the default sync mode for a new copy (S8): off,
+	// realtime, hourly, six_hourly or daily.
+	AfterCopySync string
 	// Autostart is this machine's start-at-sign-in switch (not a daemon
 	// preference); AutostartKnown is false where it cannot be read.
 	Autostart, AutostartKnown bool
@@ -134,7 +146,10 @@ type Snapshot struct {
 	Account      Account
 	Prefs        Prefs
 	Checks       []Check
-	At           time.Time
+	// JobsNext is non-empty when the daemon has more jobs than Jobs holds for
+	// the current JobQuery.
+	JobsNext string
+	At       time.Time
 }
 
 // LoginSession is a Google sign-in the daemon started: the user opens URL.
@@ -174,6 +189,8 @@ type Plan struct {
 	Warnings                             []string
 	// Filter is the preview of the selective-sync rule; nil when none applies.
 	Filter *PlanFilter
+	// Deep is the full read-only scan (S7); nil unless one was asked for.
+	Deep *DeepScan
 }
 
 // PlanFilter is what the rule would keep and drop in the part of the tree the
@@ -190,6 +207,8 @@ type CopyOptions struct {
 	Shortcuts    string // follow or skip
 	OnConflict   string // skip, rename or update
 	FilterPreset string // "", no_video, docs_only or under_1gb
+	// Deep asks for the full read-only scan (S7) with the preview.
+	Deep bool
 }
 
 // ExistingCopyError is returned by SubmitMode when the same source is already
@@ -289,6 +308,29 @@ type Actions struct {
 	// retention_days); SetAutostart is this machine's start-at-sign-in switch.
 	SetPreference func(ctx context.Context, field string, value any) error
 	SetAutostart  func(on bool) error
+
+	// Batch IT. SubmitOpts starts one copy with its sync choice (S8);
+	// SubmitBatch admits one job per link under one batch id (S6) and reports
+	// each link; GetPlan re-reads a plan to follow its deep scan (S7);
+	// CancelPreflight stops that scan; GetBatch reads batch progress;
+	// QueuePause pauses or resumes the whole queue; MoveJob reorders or
+	// re-prioritises a queued job; SetJobQuery sets the server-side filter the
+	// next snapshots use; Report reads a job's problem items (X1); ExportCSV
+	// writes a CSV (kind report or history) to a path and returns the row
+	// count; Search finds Drive items by name; LatestAudit reads a
+	// collection's newest integrity audit (found is false when it has none).
+	SubmitOpts      func(ctx context.Context, plan Plan, o SubmitOptions) (jobID, collectionID string, err error)
+	SubmitBatch     func(ctx context.Context, req BatchRequest) (BatchResult, error)
+	GetPlan         func(ctx context.Context, id string) (Plan, error)
+	CancelPreflight func(ctx context.Context, planID string) (Plan, error)
+	GetBatch        func(ctx context.Context, id string) (BatchProgress, error)
+	QueuePause      func(ctx context.Context, paused bool) (affected int, err error)
+	MoveJob         func(ctx context.Context, id string, revision int, mv JobMove) error
+	SetJobQuery     func(q JobQuery)
+	Report          func(ctx context.Context, jobID string) (JobReport, error)
+	ExportCSV       func(ctx context.Context, kind, jobID, path string) (rows int, err error)
+	Search          func(ctx context.Context, query string) ([]DriveItem, error)
+	LatestAudit     func(ctx context.Context, collectionID string) (rep AuditReport, found bool, err error)
 }
 
 // preset names shared with the CLI sync presets.

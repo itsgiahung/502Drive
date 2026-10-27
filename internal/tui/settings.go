@@ -25,6 +25,7 @@ const (
 	rowNotifyDone
 	rowNotifyFailed
 	rowNotifyAction
+	rowAfterSync
 )
 
 // retentionChoices are the history windows ←/→ step through (0 keeps all).
@@ -44,7 +45,7 @@ func (m Model) settingsRows() []settingsRow {
 		rows = append(rows, rowAutostart)
 	}
 	if m.acts.SetPreference != nil {
-		rows = append(rows, rowQuiet, rowRetention, rowNotifyDone, rowNotifyFailed, rowNotifyAction)
+		rows = append(rows, rowQuiet, rowRetention, rowNotifyDone, rowNotifyFailed, rowNotifyAction, rowAfterSync)
 	}
 	return rows
 }
@@ -92,6 +93,10 @@ func (m Model) settingsStep(step int) (tea.Model, tea.Cmd) {
 	case rowNotifyAction:
 		p.NotifyAction = !p.NotifyAction
 		return m, m.setPref("notify_action_required", p.NotifyAction)
+	case rowAfterSync:
+		next := stepAfterSync(p.AfterCopySync, step)
+		p.AfterCopySync = next
+		return m, m.setPref("after_copy_sync_mode", next)
 	}
 	return m, nil
 }
@@ -126,6 +131,34 @@ func stepRetention(cur, step int) int {
 		}
 	}
 	return best
+}
+
+// stepAfterSync moves to the next (or previous) after-copy sync mode, wrapping
+// around; an unknown or empty value counts as "off".
+func stepAfterSync(cur string, step int) string {
+	n := len(afterModes)
+	idx := 0
+	for i, v := range afterModes {
+		if v == cur {
+			idx = i
+		}
+	}
+	return afterModes[((idx+step)%n+n)%n]
+}
+
+// afterSyncLabel names a mode for the user.
+func (m Model) afterSyncLabel(mode string) string {
+	switch mode {
+	case afterRealtime:
+		return m.t(i18n.AfterRealtime)
+	case afterHourly:
+		return m.t(i18n.AfterHourly)
+	case afterSixHourly:
+		return m.t(i18n.AfterSixHourly)
+	case afterDaily:
+		return m.t(i18n.AfterDaily)
+	}
+	return m.t(i18n.AfterOff)
 }
 
 // quietText is "22:00-07:00", or "" when quiet hours are off.
@@ -247,6 +280,8 @@ func (m Model) settingsView() []string {
 			lines = append(lines, line(mark, label, check(p.NotifyFailed)))
 		case rowNotifyAction:
 			lines = append(lines, line(mark, label, check(p.NotifyAction)))
+		case rowAfterSync:
+			lines = append(lines, line(mark, label, m.afterSyncChoiceText(p.AfterCopySync)))
 		}
 	}
 	lines = append(lines, line("  ", m.t(i18n.Timezone), Sanitize(orDash(m.snap.Prefs.Timezone))))
@@ -281,6 +316,25 @@ func (m Model) rowLabel(row settingsRow) string {
 		return m.t(i18n.SetNotifyFailed)
 	case rowNotifyAction:
 		return m.t(i18n.SetNotifyAction)
+	case rowAfterSync:
+		return m.t(i18n.SetAfterSync)
 	}
 	return ""
+}
+
+// afterSyncChoiceText shows the five modes with the saved one marked; on a
+// narrow terminal only the saved one is named.
+func (m Model) afterSyncChoiceText(cur string) string {
+	if m.width < 72 {
+		return m.good("● " + m.afterSyncLabel(cur))
+	}
+	parts := make([]string, len(afterModes))
+	for i, mode := range afterModes {
+		if mode == cur || (cur == "" && mode == afterOff) {
+			parts[i] = m.good("● " + m.afterSyncLabel(mode))
+		} else {
+			parts[i] = m.dim("○ " + m.afterSyncLabel(mode))
+		}
+	}
+	return strings.Join(parts, "  ")
 }
