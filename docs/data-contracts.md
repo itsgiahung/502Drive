@@ -55,6 +55,17 @@ nhất, `application_id=502002`. Không sửa migration đã áp; thêm file m�
 | --- | --- | --- |
 | `notify_markers` | `(principal,subject)`, `code`, `updated_at` | Lỗi lặp của một subscription chỉ báo một lần tới khi code đổi hoặc run thành công (xóa marker) |
 
+## 006_audit.sql
+
+| Bảng | Cột chính | Ghi chú |
+| --- | --- | --- |
+| `audits` | `id`, `collection_id`, `job_id`, `state` running/completed/failed, `counts` (JSON: mã finding → số), `plan` (JSON kế hoạch repair), `scanned`, `revision` | Một job audit/repair tương ứng một dòng; revision bảo vệ `POST /repair` |
+| `audit_findings` | `(audit_id,kind,source_id,dest_id)` PK, `repairable`, `repaired`, `detail` | Upsert theo PK nên quét lại (restart) không nhân đôi |
+
+`jobs` không thêm cột: `kind` (`audit`/`repair`), `audit_id`, `dry_run` là trường
+mới trong body JSON, `omitempty` — job copy cũ đọc lên vẫn đúng. Audit/repair
+chung ràng buộc `one_active_run` theo collection với mọi job khác.
+
 ## Ownership và vòng đời
 
 - `runtime state` (jobs/items/events/outbox) chỉ daemon ghi; CLI/TUI/tray/

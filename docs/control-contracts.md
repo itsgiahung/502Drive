@@ -54,6 +54,10 @@ với schema.
 | `PUT /v1/collections/{id}/sync` | Có (200) | sync.go, `app.ConfigureSync` |
 | `POST /v1/collections/{id}/sync/pause\|resume\|stop` | Có (202) | sync.go, `app.SyncAction` |
 | `POST /v1/collections/{id}/runs` | Có (202 + Location) | sync.go, `app.RunNow` |
+| `POST /v1/collections/{id}/audits` | Có (202 + `Location: /v1/audits/{id}`) | [audits.go](../internal/httpapi/audits.go), `app.RequestAudit` |
+| `GET /v1/audits/{id}` | Có | audits.go, `app.Audit` |
+| `GET /v1/audits/{id}/findings?kind&limit&cursor` | Có (phân trang) | audits.go, `app.AuditFindings` |
+| `POST /v1/audits/{id}/repair` | Có (202 + Location, cần `expected_revision`, `dry_run`) | audits.go, `app.RequestRepair` |
 
 Path param trong OpenAPI là `{collection_id}`/`{job_id}`, router dùng `{id}`;
 matching theo vị trí nên không ảnh hưởng client.

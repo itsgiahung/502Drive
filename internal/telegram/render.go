@@ -33,7 +33,10 @@ type texts struct {
 	scheduleLabel, nextRun, lastSuccess, activeJob            string
 	copyStateLabel, keepCopies                                string
 	// Bulk cancellation of in-flight jobs.
-	cancelAll, cancelAllAsk, cancelAllDone, cancelAllNone   string
+	cancelAll, cancelAllAsk, cancelAllDone, cancelAllNone string
+	// Integrity audit of a collection (S1).
+	auditCheck, auditDone, auditClean                       string
+	auditRepair, auditStarted, auditRepairStarted           string
 	noticeCompleted, noticeFailed, noticeAction             string
 	save, nextRuns                                          string
 	syncErrorNotice                                         string
@@ -128,10 +131,16 @@ var vietnamese = texts{
 	askFolder: "➕ Gửi tên cho thư mục mới (hoặc gửi /cancel để thôi).",
 	pickTitle: "📁 <b>Chọn nơi lưu</b>", saveToLabel: "📂 Lưu vào", nameLabel: "🏷 Tên kết quả",
 	noFolders: "Chưa có thư mục con nào ở đây.", renamed: "Đã đổi tên.",
-	cancelAll:     "🧹 Huỷ tất cả",
-	cancelAllAsk:  "<b>Huỷ tất cả công việc đang mở?</b>\nCó %d công việc sẽ dừng ngay. Bản đã copy xong vẫn giữ nguyên.",
-	cancelAllDone: "Đã huỷ %d, bỏ qua %d, lỗi %d.",
-	cancelAllNone: "Không có công việc nào đang mở.",
+	cancelAll:          "🧹 Huỷ tất cả",
+	cancelAllAsk:       "<b>Huỷ tất cả công việc đang mở?</b>\nCó %d công việc sẽ dừng ngay. Bản đã copy xong vẫn giữ nguyên.",
+	cancelAllDone:      "Đã huỷ %d, bỏ qua %d, lỗi %d.",
+	cancelAllNone:      "Không có công việc nào đang mở.",
+	auditCheck:         "🔍 Kiểm tra toàn vẹn",
+	auditDone:          "Kiểm tra toàn vẹn: %d sai lệch (%d sửa được)",
+	auditClean:         "Kiểm tra toàn vẹn: sạch, không có sai lệch",
+	auditRepair:        "🛠 Sửa theo báo cáo",
+	auditStarted:       "🔍 Đã bắt đầu kiểm tra toàn vẹn (công việc <code>%s</code>). Mở lại thẻ này để xem kết quả.",
+	auditRepairStarted: "🛠 Đã bắt đầu sửa theo báo cáo (công việc <code>%s</code>).",
 	errMsg: map[string]string{
 		"destination_required":       "Chọn thư mục đích trước (nhấn 📁 Chọn nơi lưu).",
 		"ambiguous_source":           "Link không rõ ràng. Hãy gửi đúng một link Drive.",
@@ -213,10 +222,16 @@ var english = texts{
 	askFolder: "➕ Send a name for the new folder (or /cancel).",
 	pickTitle: "📁 <b>Choose where to save</b>", saveToLabel: "📂 Save to", nameLabel: "🏷 Output name",
 	noFolders: "No sub-folders here yet.", renamed: "Renamed.",
-	cancelAll:     "🧹 Cancel all",
-	cancelAllAsk:  "<b>Cancel every open job?</b>\n%d job(s) will stop now. Anything already copied stays.",
-	cancelAllDone: "Cancelled %d, skipped %d, failed %d.",
-	cancelAllNone: "No open jobs.",
+	cancelAll:          "🧹 Cancel all",
+	cancelAllAsk:       "<b>Cancel every open job?</b>\n%d job(s) will stop now. Anything already copied stays.",
+	cancelAllDone:      "Cancelled %d, skipped %d, failed %d.",
+	cancelAllNone:      "No open jobs.",
+	auditCheck:         "🔍 Integrity check",
+	auditDone:          "Integrity check: %d finding(s) (%d repairable)",
+	auditClean:         "Integrity check: clean",
+	auditRepair:        "🛠 Repair",
+	auditStarted:       "🔍 Integrity audit started (job <code>%s</code>). Open this card again for the report.",
+	auditRepairStarted: "🛠 Repair started (job <code>%s</code>).",
 	errMsg: map[string]string{
 		"destination_required":       "Choose a destination first (tap 📁 Choose where).",
 		"ambiguous_source":           "That link is ambiguous. Send exactly one Drive link.",

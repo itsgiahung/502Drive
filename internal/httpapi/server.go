@@ -111,6 +111,10 @@ func (s *Server) Handler() http.Handler {
 	route("GET /v1/doctor", s.doctor)
 	route("GET /v1/collections", s.listCollections)
 	route("GET /v1/collections/{id}", s.getCollection)
+	route("POST /v1/collections/{id}/audits", s.startAudit)
+	route("GET /v1/audits/{id}", s.getAudit)
+	route("GET /v1/audits/{id}/findings", s.auditFindings)
+	route("POST /v1/audits/{id}/repair", s.repairAudit)
 	s.syncRoutes(route)
 	mux.HandleFunc("/", s.wrap(true, func(http.ResponseWriter, *http.Request, app.Principal) (int, any, error) {
 		return 0, nil, app.Fail(404, "not_found", "Not found.")

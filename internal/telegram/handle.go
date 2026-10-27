@@ -260,6 +260,10 @@ func (t *Telegram) act(ctx context.Context, p app.Principal, st state.Callback, 
 		return t.cancelAllAsk(ctx, p, st.ChatID, st.MessageID)
 	case "cancelall_do":
 		return t.cancelAllDo(ctx, p, st)
+	case "audit":
+		return t.auditStart(ctx, p, st)
+	case "audit_repair":
+		return t.auditRepair(ctx, p, st)
 	}
 	return nil
 }

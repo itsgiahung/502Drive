@@ -359,6 +359,13 @@ func (t *Telegram) collectionCard(ctx context.Context, p app.Principal, chatID i
 	if note != "" {
 		b.WriteString("\n\n" + note)
 	}
+	if summary, repairRow := t.auditSummary(ctx, p, tx, id); summary != "" {
+		b.WriteString("\n" + escape(summary))
+		rows := repairRow
+		rows = append(rows, t.collectionButtons(tx, id, view, configured)...)
+		rows = append(rows, []button{nav(tx.library, "library"), nav(tx.back, "home")})
+		return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
+	}
 	rows := t.collectionButtons(tx, id, view, configured)
 	rows = append(rows, []button{nav(tx.library, "library"), nav(tx.back, "home")})
 	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
@@ -370,7 +377,7 @@ func (t *Telegram) collectionButtons(tx texts, id string, view app.SyncView, con
 	primary := []button{act(tx.runNow, "sync_run", id, 0, "")}
 	if !configured {
 		primary = append([]button{act(tx.enableSync, "sync_presets", id, 0, "")}, primary...)
-		return [][]button{primary}
+		return [][]button{primary, {act(tx.auditCheck, "audit", id, 0, "")}}
 	}
 	sub := view.Subscription
 	switch sub.State {
@@ -384,7 +391,8 @@ func (t *Telegram) collectionButtons(tx texts, id string, view app.SyncView, con
 	if sub.State != "stopped" && sub.State != "stopping" {
 		secondary = append(secondary, act(tx.stopSync, "sync_stop", id, sub.Revision, ""))
 	}
-	return append(rows, secondary)
+	rows = append(rows, secondary)
+	return append(rows, []button{act(tx.auditCheck, "audit", id, 0, "")})
 }
 
 // syncPayload is the private intent of a preset button; revisions are read

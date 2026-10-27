@@ -32,6 +32,8 @@ Test: [cli_test.go](../../internal/cli/cli_test.go), [drive_test.go](../../inter
 502drive                       # trong TTY: tạo config lần đầu, bật daemon + tray (tách khỏi terminal), mở TUI
 502drive up                    # như trên nhưng không mở UI (dùng cho autostart)
 502drive stop [--yes]          # dừng daemon graceful qua HTTP; còn job thì hỏi (ngoài TTY cần --yes)
+502drive audit COLLECTION [--repair [--apply|--dry-run]] [--json]   # đối chiếu nguồn↔đích; repair mặc định dry-run
+502drive audit show AUDIT_ID [--kind K] [--all] [--json]            # xem lại báo cáo + findings
 502drive menu                  # chỉ mở TUI, line menu khi plain/dumb/NO_COLOR
 502drive logs [-n N] [-f] [--tray]
 502drive autostart enable|disable|status

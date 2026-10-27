@@ -100,10 +100,15 @@ type Failure struct {
 }
 
 type Job struct {
-	ID            string    `json:"id"`
-	Principal     string    `json:"principal_id"`
-	CollectionID  string    `json:"collection_id"`
-	Trigger       string    `json:"trigger"`
+	ID           string `json:"id"`
+	Principal    string `json:"principal_id"`
+	CollectionID string `json:"collection_id"`
+	Trigger      string `json:"trigger"`
+	// Kind distinguishes the job families: "" is a copy, "audit" scans a
+	// collection read-only, "repair" applies the fixes of an audit.
+	Kind          string    `json:"kind,omitempty"`
+	AuditID       string    `json:"audit_id,omitempty"`
+	DryRun        bool      `json:"dry_run,omitempty"`
 	SourceName    string    `json:"source_name"`
 	DestinationID string    `json:"destination_id"`
 	RootName      string    `json:"root_name"`

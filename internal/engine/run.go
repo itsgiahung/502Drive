@@ -23,6 +23,11 @@ type run struct {
 	collection string
 	mu         sync.Mutex
 	reconnect  bool // an auth failure was seen; stop claiming
+	// cleanupFailures counts superseded copies a repair could not trash.
+	cleanupFailures int
+	// superseded collects destination ids retired by this run's re-copies
+	// (RecordVersion returns them); a repair trashes them in its cleanup.
+	superseded []string
 }
 
 func (r *run) log(msg string, args ...any) {
@@ -74,12 +79,22 @@ func (r *run) execute(ctx context.Context) {
 	}
 	r.p = p
 
+	// Audit and repair are separate job families with their own phases.
+	job, _ := r.e.Store.GetJob(r.db, "", r.id)
+	switch job.Kind {
+	case state.JobKindAudit:
+		r.executeAudit(ctx, job)
+		return
+	case state.JobKindRepair:
+		r.executeRepair(ctx, job)
+		return
+	}
+
 	if !r.reconcileAll(ctx) {
 		r.settle(ctx)
 		return
 	}
 	r.setPhase("discovering")
-	job, _ := r.e.Store.GetJob(r.db, "", r.id)
 	r.trigger = job.Trigger
 	r.collection = job.CollectionID
 	ok := false
@@ -520,8 +535,15 @@ func (r *run) complete(ctx context.Context, it state.Item, destID string) {
 	if it.Kind == state.KindWrapper || it.Kind == state.KindFolder {
 		return
 	}
-	if _, e := r.e.Store.RecordVersion(r.db, it, destID); e != nil {
+	old, e := r.e.Store.RecordVersion(r.db, it, destID)
+	if e != nil {
 		r.log("record version failed", "err", e)
+		return
+	}
+	if old != "" {
+		r.mu.Lock()
+		r.superseded = append(r.superseded, old)
+		r.mu.Unlock()
 	}
 }
 

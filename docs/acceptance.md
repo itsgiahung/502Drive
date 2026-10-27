@@ -123,6 +123,24 @@ power source trong test; mô phỏng không thay thế kiểm trên OS thật.
 | T2-9 | Chống restart loop: unit `Restart=on-failure` + `StartLimitBurst=5`/300s; tray không tự hồi sinh daemon | local (unit text) | chưa chạy | [502drive.service](../packaging/502drive.service); `systemd-analyze verify`: chưa chạy |
 | T2-10 | Cấu trúc menu ổn định với id mới (start/stop/quit tách bạch) | local | — | `TestBuildViewKeepsAStableStructure`, `TestBuildViewUsesTheLanguage` |
 
+## Integrity audit & repair (S1)
+
+| ID | Kịch bản | Trạng thái | Test |
+| --- | --- | --- | --- |
+| S1-1 | Audit phát hiện đủ 8 loại finding, đúng repairable; audit không ghi Drive | local | [engine/audit_test.go](../internal/engine/audit_test.go) `TestAuditDetectsEveryFindingKind` |
+| S1-2 | Kill giữa audit → job stranded → restart quét lại xong, mapping không đổi | local | `TestAuditRestartsAfterAKillAndKeepsTheMapping` |
+| S1-3 | Repair dry-run không ghi Drive, lưu plan, tăng revision | local | `TestRepairDryRunWritesNothing` |
+| S1-4 | Repair sửa missing/mismatch/duplicate/align; stranger + nguồn mất không bị đụng; bản cũ chỉ trash sau khi bản mới đúng | local | `TestRepairFixesWhatIsSafeAndLeavesTheRest` |
+| S1-5 | Repair hai lần = no-op (không ghi Drive) | local | `TestRepairTwiceIsANoOp` |
+| S1-6 | Trash lỗi giữa repair → job partial, bản cũ còn; chạy lại xong, còn đúng 1 bản sống | local | `TestRepairTrashFailureIsRetriedOnTheNextRun` |
+| S1-7 | Pause/cancel giữa audit (cancel khi queued, pause giữa chừng + resume) | local | `TestAuditHonorsPauseAndCancel` |
+| S1-8 | Admission: audit/repair chặn khi collection có job active; idempotent replay; repair cần completed + revision đúng | local | [state/audit_test.go](../internal/state/audit_test.go) `TestAdmitAudit…`, `TestAdmitRepair…` |
+| S1-9 | Migration 005→006 có dữ liệu: giữ nguyên dữ liệu, `foreign_key_check` sạch | local | `TestMigration006UpgradesFromSchema005WithData` |
+| S1-10 | HTTP: 202+Location+Idempotency, findings phân trang/kind filter, 409 stale, 503 maintenance, conformance OpenAPI | local | [httpapi/audits_test.go](../internal/httpapi/audits_test.go) |
+| S1-11 | CLI: audit + show, `--repair` mặc định dry-run, `--apply` sửa và lặp lại no-op, `--json` | local | [cli/audit_test.go](../internal/cli/audit_test.go) |
+| S1-12 | Telegram: nút 🔍 trên thẻ collection, callback one-shot, tóm tắt + nút Sửa | local | [telegram/audit_test.go](../internal/telegram/audit_test.go) |
+| S1-13 | Audit/repair trên Drive thật (quota, permission thật, cây lớn) | chưa chạy | cần live harness (S12) |
+
 ## Automation và sync
 
 | ID | Scenario | Trạng thái | Test |

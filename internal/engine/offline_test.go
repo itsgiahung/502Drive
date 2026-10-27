@@ -108,6 +108,17 @@ func TestUnreachableReleasesWithoutPenaltyAndReportsIt(t *testing.T) {
 	if gate.Online() {
 		t.Fatal("the engine did not report the transport failure")
 	}
+	// The gate flips before the failing worker releases its item; give that
+	// release a moment instead of reading the item mid-flight.
+	for settle := time.Now().Add(2 * time.Second); time.Now().Before(settle); time.Sleep(5 * time.Millisecond) {
+		busy := false
+		for _, it := range itemsOf(t, e.store, job.CollectionID) {
+			busy = busy || it.State == state.ItemExecuting
+		}
+		if !busy {
+			break
+		}
+	}
 	for _, it := range itemsOf(t, e.store, job.CollectionID) {
 		switch it.State {
 		case state.ItemPending:
