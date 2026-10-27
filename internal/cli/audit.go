@@ -77,7 +77,9 @@ func (a *App) auditCmd() *cobra.Command {
 }
 
 func (a *App) runAudit(ctx context.Context, collection string, repair, dry bool, wait time.Duration) error {
-	key := requestID("audit", collection)
+	// A new key per invocation: a key derived from the collection alone would
+	// replay the first audit forever. Retries inside this call reuse it.
+	key := NewKey()
 	r, err := a.call(ctx, "POST", "/v1/collections/"+url.PathEscape(collection)+"/audits", nil, nil, key)
 	if err != nil {
 		return err

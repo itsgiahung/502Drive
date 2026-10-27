@@ -415,3 +415,25 @@ func TestCopyAutoNameDryRunPrintsTheDerivedName(t *testing.T) {
 		t.Fatalf("out = %q", out)
 	}
 }
+
+// Each `audit` invocation starts a new audit: two runs must not share an
+// idempotency key, or the server replays the first report forever.
+func TestAuditStartsANewAuditEachTime(t *testing.T) {
+	var keys []string
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/audits") {
+			keys = append(keys, r.Header.Get("Idempotency-Key"))
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/jobs/") {
+			reply(w, 200, map[string]any{"id": "job_1", "state": "succeeded", "revision": 1, "counts": map[string]any{}})
+			return
+		}
+		reply(w, 200, map[string]any{"id": "aud_1", "collection_id": "col_1", "job_id": "job_1", "state": "completed", "revision": 1})
+	})
+	for range 2 {
+		driveCLI(t, h, "audit", "col_1", "--wait", "0s", "--json")
+	}
+	if len(keys) != 2 || keys[0] == "" || keys[0] == keys[1] {
+		t.Fatalf("audit idempotency keys = %q", keys)
+	}
+}
