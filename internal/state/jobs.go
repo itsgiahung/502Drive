@@ -121,7 +121,7 @@ func appendEvent(ctx context.Context, q queryer, j Job, kind string, data map[st
 }
 
 func saveJob(ctx context.Context, q queryer, j Job) error {
-	if j.Kind != JobKindCleanup {
+	if j.Kind != JobKindCleanup && j.Kind != JobKindSnapshot && j.Kind != JobKindRestore {
 		j.Counts = Counts{} // counts are derived from items on read
 	}
 	b, err := json.Marshal(j)
@@ -149,7 +149,7 @@ func readJob(ctx context.Context, q queryer, principal, id string) (Job, error) 
 }
 
 func fillCounts(ctx context.Context, q queryer, j *Job) error {
-	if j.Kind == JobKindCleanup {
+	if j.Kind == JobKindCleanup || j.Kind == JobKindSnapshot || j.Kind == JobKindRestore {
 		// A cleanup owns no items: its counts are the plan it recorded (how
 		// many copied items and bytes the trash move covers), not a recount.
 		return nil

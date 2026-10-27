@@ -42,6 +42,17 @@ func (m Model) View() string {
 		return m.homeFrame()
 	}
 	body := m.body()
+	if m.screen == screenJob {
+		body = body[min(m.detailTop, max(0, len(body)-m.bodyRows())):]
+	}
+	if m.screen == screenCollection && !m.tabFocus {
+		for i, line := range body {
+			if strings.HasPrefix(ansi.Strip(line), "> ") {
+				body = body[max(0, i-m.bodyRows()+1):]
+				break
+			}
+		}
+	}
 	if m.height > 0 {
 		body = clipPad(body, m.bodyRows())
 	}
@@ -413,12 +424,15 @@ func (m Model) collectionView() []string {
 	if !ok {
 		return []string{"", m.dim(m.t(i18n.SelectSource))}
 	}
+	if m.syncMenu {
+		return m.collectionSyncView(c)
+	}
 	lines := []string{"", m.bold(Sanitize(c.SourceName)), ""}
-	lines = append(lines, m.kv(m.t(i18n.CopyState), m.stateWord(c.State)))
+	lines = append(lines, m.collectionKV(0, m.t(i18n.CopyState), m.stateWord(c.State)))
 	if c.Sync == nil {
-		lines = append(lines, m.kv(m.t(i18n.Sync), m.t(i18n.SyncOff)))
+		lines = append(lines, m.collectionKV(1, m.t(i18n.Sync), m.t(i18n.SyncOff)))
 	} else {
-		lines = append(lines, m.kv(m.t(i18n.Sync), c.Sync.Mode+" · "+c.Sync.State))
+		lines = append(lines, m.collectionKV(1, m.t(i18n.Sync), c.Sync.Mode+" · "+c.Sync.State))
 		lines = append(lines, m.kv(m.t(i18n.Revision), fmt.Sprintf("%d", c.Sync.Revision)))
 		if c.Sync.Schedule != "" {
 			lines = append(lines, m.kv(m.t(i18n.Schedule), Sanitize(c.Sync.Schedule)))
@@ -437,12 +451,12 @@ func (m Model) collectionView() []string {
 		}
 	}
 	if c.ResultURL != "" {
-		lines = append(lines, m.kv(m.t(i18n.Output), Sanitize(c.ResultURL)))
+		lines = append(lines, m.collectionKV(2, m.t(i18n.Output), Sanitize(c.ResultURL)))
 	}
 	if c.State == "retired" {
 		lines = append(lines, m.kv("", m.dim(m.t(i18n.LibRetiredTag))))
 	}
-	lines = append(lines, m.kv(m.t(i18n.FilterTitle), m.filterText(c.Filter)))
+	lines = append(lines, m.collectionKV(3, m.t(i18n.FilterTitle), m.filterText(c.Filter)))
 	if c.OnConflict != "" && c.OnConflict != "rename" {
 		lines = append(lines, m.kv(m.t(i18n.ConflictTitle), m.conflictLabel(c.OnConflict)))
 	}
@@ -533,10 +547,7 @@ func (m Model) footer() string {
 			keys = m.t(i18n.FooterJobWait)
 		}
 	case screenCollection:
-		keys = m.t(i18n.FooterColl)
-		if m.hasLibraryExt() {
-			keys = m.t(i18n.FooterCollExt)
-		}
+		keys = m.t(i18n.DetailKeys)
 	case screenJobs:
 		keys = m.t(i18n.FooterList)
 		if m.hasJobsExt() {

@@ -133,6 +133,7 @@ func (s *Server) Handler() http.Handler {
 	route("POST /v1/audits/{id}/repair", s.repairAudit)
 	s.syncRoutes(route)
 	s.lifecycleRoutes(route)
+	s.protectionRoutes(route)
 	mux.HandleFunc("/", s.wrap(true, func(http.ResponseWriter, *http.Request, app.Principal) (int, any, error) {
 		return 0, nil, app.Fail(404, "not_found", "Not found.")
 	}))

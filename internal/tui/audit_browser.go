@@ -65,16 +65,8 @@ func (m Model) auditBrowserKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch key {
-	case "esc":
-		m.screen = screenCollection
-		m.cursor, m.top = 0, 0
-		for i, c := range m.snap.Collections {
-			if c.ID == a.collection.ID {
-				m.cursor = i
-			}
-		}
-		m.ab = nil
-		return m, nil
+	case "esc", "left":
+		return m.leaveCollectionSubview(a.collection.ID), nil
 	case "q":
 		m.quits = true
 		return m, tea.Quit

@@ -206,7 +206,9 @@ type Job struct {
 	// AfterCopySync asks for a sync subscription on the collection this job
 	// creates, once the initial copy succeeds (S8). Empty means "use the
 	// principal's preference"; "off" means never.
-	AfterCopySync string `json:"after_copy_sync_mode,omitempty"`
+	AfterCopySync string            `json:"after_copy_sync_mode,omitempty"`
+	Protection    ProtectionOptions `json:"protection,omitempty"`
+	SnapshotID    string            `json:"snapshot_id,omitempty"`
 }
 
 // Collection states.
@@ -222,24 +224,25 @@ const (
 )
 
 type Collection struct {
-	ID            string      `json:"id"`
-	SourceID      string      `json:"source_id"`
-	SourceName    string      `json:"source_name"`
-	SourceKind    string      `json:"source_kind"`
-	SourceMime    string      `json:"source_mime,omitempty"`
-	ResourceKey   string      `json:"resource_key,omitempty"`
-	DestinationID string      `json:"destination_id"`
-	RootName      string      `json:"root_name"`
-	RootID        *string     `json:"destination_root_id"`
-	ResultURL     *string     `json:"result_url"`
-	BaselineJobID string      `json:"baseline_job_id"`
-	State         string      `json:"state"`
-	RetiredAt     *time.Time  `json:"retired_at,omitempty"`
-	Revision      int         `json:"revision"`
-	Sync          any         `json:"sync"`
-	Shortcuts     string      `json:"shortcuts,omitempty"`
-	OnConflict    string      `json:"on_conflict,omitempty"`
-	Filter        filter.Spec `json:"filter,omitempty"`
+	Protection    ProtectionOptions `json:"protection,omitempty"`
+	ID            string            `json:"id"`
+	SourceID      string            `json:"source_id"`
+	SourceName    string            `json:"source_name"`
+	SourceKind    string            `json:"source_kind"`
+	SourceMime    string            `json:"source_mime,omitempty"`
+	ResourceKey   string            `json:"resource_key,omitempty"`
+	DestinationID string            `json:"destination_id"`
+	RootName      string            `json:"root_name"`
+	RootID        *string           `json:"destination_root_id"`
+	ResultURL     *string           `json:"result_url"`
+	BaselineJobID string            `json:"baseline_job_id"`
+	State         string            `json:"state"`
+	RetiredAt     *time.Time        `json:"retired_at,omitempty"`
+	Revision      int               `json:"revision"`
+	Sync          any               `json:"sync"`
+	Shortcuts     string            `json:"shortcuts,omitempty"`
+	OnConflict    string            `json:"on_conflict,omitempty"`
+	Filter        filter.Spec       `json:"filter,omitempty"`
 }
 
 type Event struct {

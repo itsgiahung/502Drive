@@ -27,7 +27,7 @@ func (m Model) openStatePicker() Model {
 func (m Model) statePickerKey(key string) (tea.Model, tea.Cmd) {
 	p := m.statePick
 	switch key {
-	case "esc":
+	case "esc", "left":
 		m.statePick = nil
 	case "up", "k":
 		p.row = max(0, p.row-1)

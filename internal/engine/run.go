@@ -138,7 +138,14 @@ func (r *run) runOnce(ctx context.Context) {
 		}
 		r.keepEmpty = job.Filter.KeepEmptyFolders
 	}
+	r.collection = job.CollectionID
 	switch job.Kind {
+	case state.JobKindSnapshot:
+		r.executeSnapshot(ctx, job)
+		return
+	case state.JobKindRestore:
+		r.executeRestore(ctx, job)
+		return
 	case state.JobKindAudit:
 		r.executeAudit(ctx, job)
 		return
@@ -183,6 +190,11 @@ func (r *run) runOnce(ctx context.Context) {
 	}
 	r.setPhase("copying")
 	r.copyAll(ctx)
+	if ctx.Err() == nil && r.control() == "run" && !r.isQuota() && !r.isReconnect() {
+		if !r.protectSuccessfulRun(ctx, job) {
+			return
+		}
+	}
 	r.settle(ctx)
 }
 
@@ -298,6 +310,9 @@ func (r *run) finalize() {
 	if err == nil {
 		r.log("finished", "state", final, "collection", j.CollectionID)
 		r.afterRun()
+		if final == state.JobSucceeded && j.Protection.Snapshots {
+			r.check(r.e.Store.PruneSnapshots(r.db, j.CollectionID, j.Protection))
+		}
 	}
 }
 
@@ -1073,6 +1088,14 @@ func (r *run) retireSuperseded(ctx context.Context) (failed int) {
 		if ctx.Err() != nil {
 			return failed
 		}
+		keep, e := r.e.Store.SnapshotReferences(r.db, v.DestID)
+		if e != nil {
+			failed++
+			continue
+		}
+		if keep {
+			continue
+		}
 		// The id comes from our own records, but the object may have been
 		// taken over since: only a copy that still carries our intent is ours
 		// to trash.
@@ -1114,6 +1137,13 @@ func ownsGeneration(cur drive.File, it state.Item) bool {
 // already in the trash, is as good as trashed; an object without our intent is
 // left alone.
 func (r *run) trashOurs(ctx context.Context, id, exact string) error {
+	keep, refErr := r.e.Store.SnapshotReferences(r.db, id)
+	if refErr != nil {
+		return refErr
+	}
+	if keep {
+		return fmt.Errorf("retained snapshot protects this copy")
+	}
 	if err := r.e.acquire(ctx); err != nil {
 		return err
 	}

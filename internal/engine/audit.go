@@ -553,6 +553,13 @@ func (r *run) applyRepair(ctx context.Context, col state.Collection, plan []repa
 		if !replace && !mine[v.DestID] {
 			continue
 		}
+		keep, err := r.e.Store.SnapshotReferences(r.db, v.DestID)
+		if err != nil {
+			return err
+		}
+		if keep {
+			continue
+		}
 		before := r.cleanupFailures
 		r.trashOwned(ctx, v.DestID, "")
 		if r.cleanupFailures == before {

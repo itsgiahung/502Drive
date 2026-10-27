@@ -384,3 +384,9 @@ func (p pacedProvider) TrashFile(ctx context.Context, id string) error {
 	p.t.Observe(err)
 	return err
 }
+
+func (p pacedProvider) RestoreFile(ctx context.Context, id string) error {
+	err := p.Provider.RestoreFile(ctx, id)
+	p.t.Observe(err)
+	return err
+}

@@ -203,6 +203,9 @@ func (s *Store) ConfigureSync(ctx context.Context, actor, scopePrincipal, key, c
 		if c.Revision != ch.ExpectedCollection {
 			return nil, ErrStale
 		}
+		if e := refuseRestoreWriter(ctx, tx, collectionID); e != nil {
+			return nil, e
+		}
 		cur, e := getSub(ctx, tx, collectionID)
 		exists := e == nil
 		if e != nil && !errors.Is(e, ErrNotFound) {
@@ -295,6 +298,9 @@ func (s *Store) SyncAction(ctx context.Context, actor, scopePrincipal, key, coll
 			}
 			sub.State, sub.RerunRequested = SyncPaused, false
 		case "resume":
+			if e := refuseRestoreWriter(ctx, tx, collectionID); e != nil {
+				return nil, e
+			}
 			if sub.State != SyncPaused && sub.State != SyncStopped && sub.State != SyncError && sub.State != SyncNeedsReconcile {
 				return nil, ErrTransition
 			}
@@ -400,16 +406,17 @@ func admitRun(ctx context.Context, tx *sql.Tx, c Collection, trigger, occurrence
 	}
 	now := time.Now().UTC()
 	j := Job{ID: ID("job"), Principal: principal, CollectionID: c.ID, Trigger: trigger, SourceName: c.SourceName, DestinationID: c.DestinationID, RootName: c.RootName,
-		State: JobQueued, DesiredState: "run", Shortcuts: c.Shortcuts, OnConflict: c.OnConflict, Filter: c.Filter, Revision: 1, CreatedAt: now, UpdatedAt: now}
+		State: JobQueued, DesiredState: "run", Shortcuts: c.Shortcuts, OnConflict: c.OnConflict, Filter: c.Filter, Protection: c.Protection.Defaults(), Revision: 1, CreatedAt: now, UpdatedAt: now}
 	jb, _ := json.Marshal(j)
 	if _, err := tx.ExecContext(ctx, "INSERT INTO jobs VALUES(?,?,?,?,?)", j.ID, principal, c.ID, j.State, jb); err != nil {
 		return Job{}, false, err
 	}
-	// Re-arm: every mapped folder is scanned again; earlier failures get another try.
-	if _, err := tx.ExecContext(ctx, "UPDATE items SET list_state='none', page_token='', scan_job=? WHERE collection_id=? AND kind='folder' AND state='done'", j.ID, c.ID); err != nil {
+	// Reachability starts at the source root. Descendants are armed only when
+	// a page in this run sees them; a detached/missing folder is not a source.
+	if _, err := tx.ExecContext(ctx, "UPDATE items SET list_state=CASE WHEN parent_source_id='' THEN 'none' ELSE 'done' END, page_token='', scan_job=CASE WHEN parent_source_id='' THEN ? ELSE '' END WHERE collection_id=? AND kind='folder' AND state='done'", j.ID, c.ID); err != nil {
 		return Job{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE items SET state='pending', job_id=?, error_code='', next_attempt_at=0 WHERE collection_id=? AND state IN ('failed','skipped','cancelled')", j.ID, c.ID); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE items SET state='pending', job_id=?, error_code='', next_attempt_at=0 WHERE collection_id=? AND state IN ('failed','skipped','cancelled') AND error_code NOT IN ('mirror_removed','snapshot_extra')", j.ID, c.ID); err != nil {
 		return Job{}, false, err
 	}
 	// Work left pending by a run that was cancelled before it started is adopted.
@@ -686,6 +693,10 @@ func (s *Store) RunFinished(ctx context.Context, jobID string) (*Job, error) {
 		if e != nil {
 			return e
 		}
+		if j.Kind == JobKindSnapshot || j.Kind == JobKindRestore {
+			_, e = tx.ExecContext(ctx, "DELETE FROM job_bookkeeping WHERE job_id=?", jobID)
+			return e
+		}
 		var cb []byte
 		if e = tx.QueryRowContext(ctx, "SELECT body FROM collections WHERE id=?", j.CollectionID).Scan(&cb); e != nil {
 			return e
@@ -800,6 +811,22 @@ func (s *Store) FinishJob(ctx context.Context, id string, fn func(j *Job) (strin
 		j.UpdatedAt = time.Now().UTC()
 		if e = saveJob(ctx, tx, j); e != nil {
 			return e
+		}
+		if j.State == JobSucceeded {
+			var pending int
+			if e = tx.QueryRowContext(ctx, "SELECT count(*) FROM snapshot_items i JOIN snapshots s ON s.id=i.snapshot_id WHERE s.job_id=? AND i.identity=''", j.ID).Scan(&pending); e != nil {
+				return e
+			}
+			if pending > 0 {
+				return ErrNeedsAction
+			}
+			if _, e = tx.ExecContext(ctx, "UPDATE snapshots SET state='ready',revision=revision+1 WHERE job_id=? AND state='capturing' AND NOT EXISTS (SELECT 1 FROM snapshot_items i WHERE i.snapshot_id=snapshots.id AND i.identity='')", j.ID); e != nil {
+				return e
+			}
+		} else if j.State == JobCancelled || j.State == JobFailed {
+			if _, e = tx.ExecContext(ctx, "DELETE FROM snapshots WHERE job_id=? AND state='capturing'", j.ID); e != nil {
+				return e
+			}
 		}
 		if kind != "" {
 			if e = appendEvent(ctx, tx, j, kind, nil); e != nil {
@@ -945,7 +972,22 @@ func (s *Store) CommitDeltaPage(ctx context.Context, run string, folder Item, ch
 				}
 			}
 			moved := ex.ParentSourceID != folder.SourceID
+			if ex.ErrorCode == "mirror_removed" || ex.ErrorCode == "snapshot_extra" {
+				ls := "done"
+				if c.Kind == KindFolder {
+					ls = "none"
+				}
+				if _, e = tx.ExecContext(ctx, "UPDATE items SET state='pending',op='create',generation=generation+1,intent_key='',dest_id='',old_dest_id='',name=?,dest_name='',parent_source_id=?,job_id=?,seen_job=?,error_code='',list_state=? WHERE collection_id=? AND source_id=?", c.Name, folder.SourceID, run, run, ls, ex.CollectionID, ex.SourceID); e != nil {
+					return e
+				}
+				continue
+			}
 			if c.Kind == KindFolder {
+				if ex.ScanJob != run && ex.State == ItemDone {
+					if _, e = tx.ExecContext(ctx, "UPDATE items SET list_state='none',scan_job=? WHERE collection_id=? AND source_id=?", run, ex.CollectionID, ex.SourceID); e != nil {
+						return e
+					}
+				}
 				renamed := ex.Name != c.Name
 				if (renamed || moved) && ex.State == ItemDone {
 					if _, e = tx.ExecContext(ctx, "UPDATE items SET name=?, dest_name=CASE WHEN name<>? THEN '' ELSE dest_name END, conflict_action=CASE WHEN name<>? THEN '' ELSE conflict_action END, parent_source_id=?, state='pending', op='align', job_id=?, seen_job=?, error_code='' WHERE collection_id=? AND source_id=?", c.Name, c.Name, c.Name, folder.SourceID, run, run, ex.CollectionID, ex.SourceID); e != nil {
@@ -1032,6 +1074,12 @@ func moveRelPath(ctx context.Context, tx *sql.Tx, collectionID, sourceID, oldRel
 //   - was excluded and is now included: it becomes copyable (a folder is listed).
 func applyFilterDecision(ctx context.Context, tx *sql.Tx, run string, folder Item, c, ex Item) error {
 	if c.ErrorCode == SkipFiltered {
+		if c.Kind == KindFolder && ex.State == ItemDone {
+			_, e := tx.ExecContext(ctx, `WITH RECURSIVE kept(source_id) AS (
+			 SELECT ? UNION ALL SELECT i.source_id FROM items i JOIN kept k ON i.parent_source_id=k.source_id WHERE i.collection_id=?)
+			 UPDATE items SET seen_job=? WHERE collection_id=? AND source_id IN(SELECT source_id FROM kept)`, ex.SourceID, ex.CollectionID, run, ex.CollectionID)
+			return e
+		}
 		switch ex.State {
 		case ItemPending, ItemFailed, ItemBlocked:
 			if c.Kind == KindFolder {
@@ -1068,7 +1116,7 @@ func (s *Store) ApplySingleFile(ctx context.Context, run, collectionID string, c
 			_, e = tx.ExecContext(ctx, "UPDATE items SET error_code='source_removed' WHERE collection_id=? AND source_id=? AND state='done'", collectionID, c.SourceID)
 			return e
 		}
-		if SameSource(ex.Fingerprint, c.Fingerprint) {
+		if SameSource(ex.Fingerprint, c.Fingerprint) && ex.ErrorCode != "mirror_removed" && ex.ErrorCode != "snapshot_extra" {
 			_, e = tx.ExecContext(ctx, "UPDATE items SET error_code=CASE WHEN error_code='source_removed' THEN '' ELSE error_code END, fingerprint=CASE WHEN state IN ('executing','reconciling') THEN fingerprint ELSE ? END WHERE collection_id=? AND source_id=?", c.Fingerprint, collectionID, c.SourceID)
 			return e
 		}

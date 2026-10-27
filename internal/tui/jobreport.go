@@ -79,11 +79,18 @@ func (m Model) onReport(msg reportMsg) (tea.Model, tea.Cmd) {
 
 // leaveReport goes back to the job with the cursor where it was.
 func (m Model) leaveReport() (tea.Model, tea.Cmd) {
+	m.screen = screenJobs
 	if m.rep != nil {
 		m.cursor, m.top = m.rep.jobCursor, m.rep.jobTop
+		for i, j := range m.snap.Jobs {
+			if j.ID == m.rep.jobID {
+				m.cursor, m.screen = i, screenJob
+				break
+			}
+		}
 	}
 	m.rep, m.exp = nil, nil
-	m.screen = screenJob
+	m.clampCursor()
 	return m, nil
 }
 

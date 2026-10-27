@@ -63,6 +63,7 @@ func (s *Store) Prune(ctx context.Context, opt PruneOptions) (PruneReport, error
 		  AND id NOT IN (SELECT DISTINCT consumed_job FROM plans WHERE consumed_job IS NOT NULL AND consumed_job <> '')
 		  AND id NOT IN (SELECT DISTINCT job_id FROM sync_occurrences WHERE job_id <> '')
 		  AND id NOT IN (SELECT DISTINCT job_id FROM audits)
+		  AND id NOT IN (SELECT DISTINCT job_id FROM snapshots)
 		  AND id NOT IN (SELECT DISTINCT job_id FROM notification_outbox WHERE state = 'pending' AND job_id <> '')
 	`
 

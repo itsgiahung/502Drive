@@ -160,6 +160,7 @@ func (s *Store) ForgetCollection(ctx context.Context, principal, key, collection
 
 		// Cascade delete in foreign key safe order
 		queries := []string{
+			"DELETE FROM snapshots WHERE collection_id=?",
 			"DELETE FROM audit_findings WHERE audit_id IN (SELECT id FROM audits WHERE collection_id=?)",
 			"DELETE FROM audits WHERE collection_id=?",
 			"DELETE FROM sync_occurrences WHERE collection_id=?",

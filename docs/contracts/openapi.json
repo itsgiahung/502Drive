@@ -2804,6 +2804,400 @@
      }
     }
    }
+  },
+  "/v1/collections/{collection_id}/protection": {
+   "get": {
+    "summary": "GET /v1/collections/{collection_id}/protection",
+    "parameters": [
+     {
+      "name": "collection_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Result",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProtectionResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   },
+   "put": {
+    "summary": "PUT /v1/collections/{collection_id}/protection",
+    "parameters": [
+     {
+      "name": "collection_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "Idempotency-Key",
+      "in": "header",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 128
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Result",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProtectionResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProtectionInput"
+       }
+      }
+     }
+    }
+   }
+  },
+  "/v1/collections/{collection_id}/snapshots": {
+   "get": {
+    "summary": "GET /v1/collections/{collection_id}/snapshots",
+    "parameters": [
+     {
+      "name": "collection_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Result",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SnapshotPageResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   },
+   "post": {
+    "summary": "POST /v1/collections/{collection_id}/snapshots",
+    "parameters": [
+     {
+      "name": "collection_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "Idempotency-Key",
+      "in": "header",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 128
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Accepted job",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ActionInput"
+       }
+      }
+     }
+    }
+   }
+  },
+  "/v1/snapshots/{snapshot_id}": {
+   "get": {
+    "summary": "GET /v1/snapshots/{snapshot_id}",
+    "parameters": [
+     {
+      "name": "snapshot_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Result",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SnapshotResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
+  },
+  "/v1/snapshots/{snapshot_id}/items": {
+   "get": {
+    "summary": "GET /v1/snapshots/{snapshot_id}/items",
+    "parameters": [
+     {
+      "name": "snapshot_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Result",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SnapshotItemsPageResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
+  },
+  "/v1/snapshots/{snapshot_id}/pin": {
+   "post": {
+    "summary": "POST /v1/snapshots/{snapshot_id}/pin",
+    "parameters": [
+     {
+      "name": "snapshot_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "Idempotency-Key",
+      "in": "header",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 128
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Result",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SnapshotResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ActionInput"
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "summary": "DELETE /v1/snapshots/{snapshot_id}/pin",
+    "parameters": [
+     {
+      "name": "snapshot_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "Idempotency-Key",
+      "in": "header",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 128
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Result",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SnapshotResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ActionInput"
+       }
+      }
+     }
+    }
+   }
+  },
+  "/v1/snapshots/{snapshot_id}/restore": {
+   "post": {
+    "summary": "POST /v1/snapshots/{snapshot_id}/restore",
+    "parameters": [
+     {
+      "name": "snapshot_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "Idempotency-Key",
+      "in": "header",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 128
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Accepted job",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SnapshotRestoreInput"
+       }
+      }
+     }
+    }
+   }
+  },
+  "/v1/jobs/{job_id}/restore-plan": {
+   "get": {
+    "summary": "GET /v1/jobs/{job_id}/restore-plan",
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Result",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RestorePlanResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
   }
  },
  "components": {
@@ -3399,7 +3793,11 @@
          "copying",
          "finalizing",
          "scanning",
-         "cleanup"
+         "cleanup",
+         "mirror",
+         "snapshot",
+         "planning",
+         "restoring"
         ]
        },
        {
@@ -3488,7 +3886,9 @@
       "enum": [
        "audit",
        "repair",
-       "cleanup"
+       "cleanup",
+       "snapshot",
+       "restore"
       ]
      },
      "audit_id": {
@@ -3551,6 +3951,9 @@
      },
      "queue_paused": {
       "type": "boolean"
+     },
+     "snapshot_id": {
+      "type": "string"
      }
     },
     "required": [
@@ -4821,7 +5224,11 @@
       ]
      },
      "deletion_policy": {
-      "const": "preserve_destination"
+      "type": "string",
+      "enum": [
+       "preserve_destination",
+       "mirror_owned"
+      ]
      },
      "last_attempt_at": {
       "anyOf": [
@@ -5016,6 +5423,9 @@
      },
      "root_name": {
       "type": "string"
+     },
+     "protection": {
+      "$ref": "#/components/schemas/ProtectionOptions"
      }
     },
     "required": [
@@ -5954,6 +6364,349 @@
      "data",
      "request_id"
     ]
+   },
+   "ProtectionOptions": {
+    "type": "object",
+    "properties": {
+     "mirror": {
+      "type": "boolean"
+     },
+     "snapshots": {
+      "type": "boolean"
+     },
+     "keep_days": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3650
+     },
+     "keep_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+     }
+    },
+    "required": [
+     "mirror",
+     "snapshots",
+     "keep_days",
+     "keep_count"
+    ],
+    "additionalProperties": false
+   },
+   "ProtectionInput": {
+    "type": "object",
+    "properties": {
+     "expected_revision": {
+      "type": "integer",
+      "minimum": 1
+     },
+     "options": {
+      "$ref": "#/components/schemas/ProtectionOptions"
+     }
+    },
+    "required": [
+     "expected_revision",
+     "options"
+    ],
+    "additionalProperties": false
+   },
+   "Protection": {
+    "type": "object",
+    "properties": {
+     "collection_id": {
+      "type": "string"
+     },
+     "revision": {
+      "type": "integer"
+     },
+     "options": {
+      "$ref": "#/components/schemas/ProtectionOptions"
+     }
+    },
+    "required": [
+     "collection_id",
+     "revision",
+     "options"
+    ],
+    "additionalProperties": false
+   },
+   "Snapshot": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "collection_id": {
+      "type": "string"
+     },
+     "job_id": {
+      "type": "string"
+     },
+     "state": {
+      "type": "string",
+      "enum": [
+       "capturing",
+       "ready"
+      ]
+     },
+     "pinned": {
+      "type": "boolean"
+     },
+     "revision": {
+      "type": "integer"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "expires_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "items": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "collection_id",
+     "job_id",
+     "state",
+     "pinned",
+     "revision",
+     "created_at",
+     "expires_at",
+     "items"
+    ],
+    "additionalProperties": false
+   },
+   "SnapshotItem": {
+    "type": "object",
+    "properties": {
+     "source_id": {
+      "type": "string"
+     },
+     "destination_id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "parent_id": {
+      "type": "string"
+     },
+     "path": {
+      "type": "string"
+     },
+     "identity": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "source_id",
+     "destination_id",
+     "name",
+     "parent_id",
+     "path",
+     "identity"
+    ],
+    "additionalProperties": false
+   },
+   "DestinationAction": {
+    "type": "object",
+    "properties": {
+     "ordinal": {
+      "type": "integer"
+     },
+     "action": {
+      "type": "string",
+      "enum": [
+       "restore",
+       "remove"
+      ]
+     },
+     "target": {
+      "$ref": "#/components/schemas/SnapshotItem"
+     },
+     "state": {
+      "type": "string",
+      "enum": [
+       "pending",
+       "executing",
+       "done"
+      ]
+     }
+    },
+    "required": [
+     "ordinal",
+     "action",
+     "target",
+     "state"
+    ],
+    "additionalProperties": false
+   },
+   "SnapshotPage": {
+    "type": "object",
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Snapshot"
+      }
+     },
+     "next_cursor": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "items",
+     "next_cursor"
+    ],
+    "additionalProperties": false
+   },
+   "SnapshotItemsPage": {
+    "type": "object",
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/SnapshotItem"
+      }
+     },
+     "next_after": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "items",
+     "next_after"
+    ],
+    "additionalProperties": false
+   },
+   "RestorePlan": {
+    "type": "object",
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/DestinationAction"
+      }
+     },
+     "next_cursor": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "items",
+     "next_cursor"
+    ],
+    "additionalProperties": false
+   },
+   "SnapshotRestoreInput": {
+    "type": "object",
+    "properties": {
+     "expected_revision": {
+      "type": "integer",
+      "minimum": 1
+     },
+     "dry_run": {
+      "type": "boolean",
+      "default": true
+     }
+    },
+    "required": [
+     "expected_revision"
+    ],
+    "additionalProperties": false
+   },
+   "ProtectionResponse": {
+    "type": "object",
+    "properties": {
+     "data": {
+      "$ref": "#/components/schemas/Protection"
+     },
+     "request_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "data",
+     "request_id"
+    ],
+    "additionalProperties": false
+   },
+   "SnapshotResponse": {
+    "type": "object",
+    "properties": {
+     "data": {
+      "$ref": "#/components/schemas/Snapshot"
+     },
+     "request_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "data",
+     "request_id"
+    ],
+    "additionalProperties": false
+   },
+   "SnapshotPageResponse": {
+    "type": "object",
+    "properties": {
+     "data": {
+      "$ref": "#/components/schemas/SnapshotPage"
+     },
+     "request_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "data",
+     "request_id"
+    ],
+    "additionalProperties": false
+   },
+   "SnapshotItemsPageResponse": {
+    "type": "object",
+    "properties": {
+     "data": {
+      "$ref": "#/components/schemas/SnapshotItemsPage"
+     },
+     "request_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "data",
+     "request_id"
+    ],
+    "additionalProperties": false
+   },
+   "RestorePlanResponse": {
+    "type": "object",
+    "properties": {
+     "data": {
+      "$ref": "#/components/schemas/RestorePlan"
+     },
+     "request_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "data",
+     "request_id"
+    ],
+    "additionalProperties": false
    }
   },
   "responses": {

@@ -78,6 +78,10 @@ func (r *run) executeCleanup(ctx context.Context, job state.Job) {
 	}
 
 	// Live cleanup: move destination root folder to Drive trash
+	if keep, err := r.e.Store.SnapshotReferences(r.db, *col.RootID); err != nil || keep {
+		r.block("snapshot_protected", "Retained snapshots protect this destination root; cleanup was not applied.")
+		return
+	}
 	r.setPhase("cleanup")
 	if err := r.e.acquire(ctx); err != nil {
 		r.settleCleanup(ctx)

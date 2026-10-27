@@ -103,6 +103,7 @@ type Provider interface {
 	RenameFile(ctx context.Context, id, name string) error
 	MoveFile(ctx context.Context, id, fromParent, toParent string) error
 	TrashFile(ctx context.Context, id string) error
+	RestoreFile(ctx context.Context, id string) error
 	// StartPageToken returns the cursor for "changes from now on".
 	StartPageToken(ctx context.Context) (string, error)
 	// ListChanges returns one page of the change feed. When the feed is

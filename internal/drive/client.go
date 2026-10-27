@@ -366,6 +366,11 @@ func (c *Client) TrashFile(ctx context.Context, id string) error {
 	return wrap(err)
 }
 
+func (c *Client) RestoreFile(ctx context.Context, id string) error {
+	_, err := c.svc.Files.Update(id, &gdrive.File{Trashed: false, ForceSendFields: []string{"Trashed"}}).SupportsAllDrives(true).Fields("id").Context(ctx).Do()
+	return wrap(err)
+}
+
 // Search lists non-trashed items whose name contains query. Corpora allDrives
 // keeps shared-drive items visible; Google itself enforces view permission.
 func (c *Client) Search(ctx context.Context, query string, limit int) ([]File, error) {

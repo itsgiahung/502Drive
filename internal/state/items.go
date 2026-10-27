@@ -221,7 +221,7 @@ func (s *Store) ClaimItem(ctx context.Context, jobID string, now int64) (Item, e
 			return e
 		}
 		key := IntentKey(col, source, destParent, kind, gen)
-		if _, e := tx.ExecContext(ctx, "UPDATE items SET state='executing', dest_parent_id=?, intent_key=?, attempts=attempts+1 WHERE collection_id=? AND source_id=?", destParent, key, col, source); e != nil {
+		if _, e := tx.ExecContext(ctx, "UPDATE items SET state='executing', dest_parent_id=?, intent_key=CASE WHEN op='align' AND intent_key<>'' THEN intent_key ELSE ? END, attempts=attempts+1 WHERE collection_id=? AND source_id=?", destParent, key, col, source); e != nil {
 			return e
 		}
 		it, e := scanItem(tx.QueryRowContext(ctx, "SELECT "+itemCols+" FROM items WHERE collection_id=? AND source_id=?", col, source))

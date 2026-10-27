@@ -24,6 +24,7 @@ type SyncRequest struct {
 type SyncView struct {
 	Subscription state.Subscription
 	ActiveJobID  string
+	Mirror       bool
 	configured   bool
 }
 
@@ -202,7 +203,11 @@ func (s *Service) SyncStatus(ctx context.Context, collectionID string) (SyncView
 	if err != nil {
 		return SyncView{}, false, err
 	}
-	return SyncView{Subscription: sub, ActiveJobID: active, configured: true}, true, nil
+	c, err := s.Store.GetCollection(ctx, "", collectionID)
+	if err != nil {
+		return SyncView{}, false, err
+	}
+	return SyncView{Subscription: sub, ActiveJobID: active, Mirror: c.Protection.Mirror, configured: true}, true, nil
 }
 
 // SyncInterval keeps the daemon's poll cadence in one place for tests.

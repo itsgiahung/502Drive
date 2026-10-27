@@ -84,8 +84,7 @@ func (m Model) filterTyping(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		if !f.busy {
-			m.screen = screenCollection
-			m.fe = nil
+			m = m.leaveCollectionSubview(f.collection.ID)
 		}
 		return m, nil
 	case "tab", "shift+tab", "up", "down":
@@ -132,8 +131,7 @@ func (m Model) onFilterEdit(msg filterEditMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.saved {
-		m.screen = screenCollection
-		m.fe = nil
+		m = m.leaveCollectionSubview(f.collection.ID)
 		return m, m.refetch()
 	}
 	f.preview = msg.preview

@@ -240,6 +240,7 @@ func (a *App) rootCommand() *cobra.Command {
 		a.trayCmd(), a.upCmd(), a.stopCmd(), a.logsCmd(), a.autostartCmd(), a.updateCmd(), a.assetsCmd(),
 		a.queueCmd(true), a.queueCmd(false))
 	root.AddCommand(a.maintenanceCmd())
+	root.AddCommand(a.snapshotsCmd())
 	root.AddCommand(a.maintenanceCmds()...)
 	// Shell completion for every command whose argument is a job or a copied
 	// source. Cobra calls these for bash, zsh and fish alike.

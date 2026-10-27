@@ -480,6 +480,22 @@ func (f *Fake) TrashFile(ctx context.Context, id string) error {
 	return nil
 }
 
+func (f *Fake) RestoreFile(ctx context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.call("restore", drive.File{ID: id}); err != nil {
+		return err
+	}
+	x, ok := f.files[id]
+	if !ok {
+		return &drive.Error{Kind: drive.KindNotFound, Status: 404}
+	}
+	x.Trashed = false
+	f.files[id] = x
+	f.record(x)
+	return nil
+}
+
 // Search returns non-trashed items whose name contains query, newest-name
 // order stable for tests. It mirrors Drive's case-insensitive containment.
 func (f *Fake) Search(ctx context.Context, query string, limit int) ([]drive.File, error) {

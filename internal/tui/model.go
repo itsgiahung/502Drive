@@ -88,6 +88,10 @@ type Model struct {
 	screen        screen
 	focusedJob    bool
 	cursor, top   int
+	detailRow     int
+	detailTop     int
+	syncMenu      bool
+	syncRow       int
 	lang          string
 	// tabFocus puts the cursor on the tab bar: ←/→ switch tabs, ↓ or Enter
 	// goes into the page, ↑ at the top of a page comes back.
@@ -399,6 +403,12 @@ func (m Model) onSnapshot(msg snapshotMsg) (tea.Model, tea.Cmd) {
 	} else {
 		m.online = true
 		jobID := ""
+		collectionID := ""
+		if m.screen == screenCollection {
+			if c, ok := m.currentCollection(); ok {
+				collectionID = c.ID
+			}
+		}
 		if m.screen == screenJob {
 			if j, ok := m.selectedJob(); ok {
 				jobID = j.ID
@@ -409,14 +419,31 @@ func (m Model) onSnapshot(msg snapshotMsg) (tea.Model, tea.Cmd) {
 		}
 		m.observe(msg.snap)
 		m.snap = msg.snap
+		if collectionID != "" {
+			m.cursor = -1
+			for i, c := range m.snap.Collections {
+				if c.ID == collectionID {
+					m.cursor = i
+					break
+				}
+			}
+			if m.cursor < 0 {
+				m.screen, m.syncMenu = screenLibrary, false
+			}
+		}
 		if jobID != "" {
+			found := false
 			for i, j := range m.snap.Jobs {
 				if j.ID == jobID {
+					found = true
 					m.cursor = i
 					m.screen = screenJob
 					m.focusedJob = true
 					break
 				}
+			}
+			if !found && m.screen == screenJob {
+				m.screen, m.detailTop = screenJobs, 0
 			}
 		}
 		if m.opt.Language == "" && msg.snap.Prefs.Language != "" {
@@ -576,6 +603,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.copyScreenKey(msg)
 	}
 	if m.screen == screenCollection && !m.tabFocus {
+		if next, cmd, handled := m.collectionNavigation(msg.String()); handled {
+			return next, cmd
+		}
 		if next, cmd, handled := m.collectionKey(msg); handled {
 			return next, cmd
 		}
@@ -605,6 +635,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyLeft:
 		if m.arrowsSwitchTabs() {
 			return m.moveTab(-1)
+		}
+		if m.screen == screenJob || m.screen == screenCollection || m.screen == screenReport || m.screen == screenHelp {
+			return m.back()
 		}
 	case tea.KeyCtrlC:
 		m.quits = true
@@ -656,20 +689,44 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "7":
 		return m.openDrive(false)
 	case "up", "k":
+		if m.screen == screenJob {
+			m.detailTop = max(0, m.detailTop-1)
+			return m, nil
+		}
 		if m.cursor == 0 && m.activeTab() >= 0 {
 			m.tabFocus = true
 			return m, nil
 		}
 		return m.move(-1), nil
 	case "down", "j":
+		if m.screen == screenJob {
+			m.detailTop = min(max(0, len(m.jobView())-m.bodyRows()), m.detailTop+1)
+			return m, nil
+		}
 		return m.afterMove(m.move(1))
 	case "pgup":
+		if m.screen == screenJob {
+			m.detailTop = max(0, m.detailTop-m.bodyRows())
+			return m, nil
+		}
 		return m.move(-m.pageSize()), nil
 	case "pgdown":
+		if m.screen == screenJob {
+			m.detailTop = min(max(0, len(m.jobView())-m.bodyRows()), m.detailTop+m.bodyRows())
+			return m, nil
+		}
 		return m.afterMove(m.move(m.pageSize()))
 	case "home", "g":
+		if m.screen == screenJob {
+			m.detailTop = 0
+			return m, nil
+		}
 		return m.move(-1 << 20), nil
 	case "end", "G":
+		if m.screen == screenJob {
+			m.detailTop = max(0, len(m.jobView())-m.bodyRows())
+			return m, nil
+		}
 		return m.afterMove(m.move(1 << 20))
 	case "r":
 		if m.screen == screenDrive {
@@ -686,6 +743,7 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) goTo(s screen) (tea.Model, tea.Cmd) {
 	m.screen, m.cursor, m.top = s, 0, 0
+	m.detailRow, m.detailTop, m.syncRow, m.syncMenu = 0, 0, 0, false
 	m.tabFocus = false
 	m.selected = map[string]bool{}
 	return m.startAnim()
@@ -739,6 +797,7 @@ func (m Model) back() (tea.Model, tea.Cmd) {
 	case screenCollection:
 		m.screen = screenLibrary
 		m.clean = nil
+		m.syncMenu = false
 	case screenReport:
 		return m.leaveReport()
 	case screenHome:
@@ -747,7 +806,11 @@ func (m Model) back() (tea.Model, tea.Cmd) {
 	default:
 		m.screen = screenHome
 	}
-	m.cursor, m.top = 0, 0
+	if m.screen != screenJobs && m.screen != screenLibrary {
+		m.cursor, m.top = 0, 0
+	}
+	m.tabFocus = false
+	m.detailTop = 0
 	return m.startAnim()
 }
 
@@ -760,11 +823,13 @@ func (m Model) enter() (tea.Model, tea.Cmd) {
 	case screenJobs:
 		if _, ok := m.selectedJob(); ok {
 			m.screen = screenJob
+			m.detailTop = 0
 			return m, nil
 		}
 	case screenLibrary:
 		if _, ok := m.selectedCollection(); ok {
 			m.screen = screenCollection
+			m.detailRow, m.syncRow, m.syncMenu = 0, 0, false
 			return m, nil
 		}
 	case screenDestination:

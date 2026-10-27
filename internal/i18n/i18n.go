@@ -57,6 +57,7 @@ const (
 	HomeHint         Key = "home_hint"
 	JobKeys          Key = "job_keys"
 	CollKeys         Key = "collection_keys"
+	DetailKeys       Key = "detail_navigation"
 	DestKeys         Key = "dest_keys"
 	AccountKeys      Key = "account_keys"
 	SettingsKeys     Key = "settings_keys"
@@ -263,7 +264,8 @@ var VI = map[Key]string{
 	ItemsUnknown:    "mục: %d xong · chưa rõ tổng",
 	HomeHint:        "Dán link bằng `502drive copy`, hoặc chọn màn bên dưới.",
 	JobKeys:         "p tạm dừng · u tiếp tục · c huỷ · t thử lại · R báo cáo · E xuất CSV · esc quay lại",
-	CollKeys:        "d hằng ngày · h mỗi giờ · e mỗi 6 giờ · t realtime · n chạy ngay · p tạm dừng · x dừng · esc quay lại",
+	DetailKeys:      "↑↓ chọn · enter mở · ← / esc quay lại",
+	CollKeys:        "↑↓ chọn · enter mở · ← / esc quay lại · d hằng ngày · h mỗi giờ · e mỗi 6 giờ · t realtime · n chạy ngay · p tạm dừng · x dừng",
 	DestKeys:        "enter đặt mặc định · esc quay lại",
 	AccountKeys:     "l đăng nhập / kết nối lại Google · d chạy kiểm tra offline",
 	SettingsKeys:    "l đổi ngôn ngữ · esc quay lại",
@@ -422,7 +424,8 @@ var EN = map[Key]string{
 	ItemsUnknown:    "items: %d done · total unknown",
 	HomeHint:        "Paste a link with `502drive copy`, or pick a screen below.",
 	JobKeys:         "p pause · u resume · c cancel · t retry · R report · E export CSV · esc back",
-	CollKeys:        "d daily · h hourly · e every 6h · t realtime · n run now · p pause · x stop · esc back",
+	DetailKeys:      "↑↓ select · enter open · ← / esc back",
+	CollKeys:        "↑↓ select · enter open · ← / esc back · d daily · h hourly · e every 6h · t realtime · n run now · p pause · x stop",
 	DestKeys:        "enter set as default · esc back",
 	AccountKeys:     "l sign in / reconnect Google · d run the offline doctor checks",
 	SettingsKeys:    "l switch language · esc back",

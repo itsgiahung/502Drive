@@ -745,7 +745,7 @@ func (m Model) copyScreenKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyCtrlC:
 		m.quits = true
 		return m, tea.Quit
-	case tea.KeyEsc:
+	case tea.KeyEsc, tea.KeyLeft:
 		if m.cp != nil && m.cp.choose { // cancel the question, keep the dialog
 			m.cp.choose = false
 			return m, nil

@@ -63,6 +63,9 @@ func jobDTO(j state.Job) map[string]any {
 	if j.AfterCopySync != "" {
 		out["after_copy_sync_mode"] = j.AfterCopySync
 	}
+	if j.SnapshotID != "" {
+		out["snapshot_id"] = j.SnapshotID
+	}
 	if j.Filter.Active() {
 		out["filter"] = j.Filter
 	}
@@ -210,6 +213,10 @@ func optionalTime(t *time.Time) any {
 
 func syncDTO(v app.SyncView) map[string]any {
 	sub := v.Subscription
+	deletionPolicy := "preserve_destination"
+	if v.Mirror {
+		deletionPolicy = "mirror_owned"
+	}
 	var sched any
 	if sub.Schedule != nil {
 		sched = scheduleDTO(*sub.Schedule)
@@ -220,7 +227,7 @@ func syncDTO(v app.SyncView) map[string]any {
 	}
 	return map[string]any{
 		"id": sub.ID, "collection_id": sub.CollectionID, "mode": sub.Mode, "state": sub.State, "revision": sub.Revision,
-		"schedule": sched, "content_policy": sub.ContentPolicy, "deletion_policy": "preserve_destination",
+		"schedule": sched, "content_policy": sub.ContentPolicy, "deletion_policy": deletionPolicy,
 		"last_attempt_at": optionalTime(sub.LastAttemptAt), "last_success_at": optionalTime(sub.LastSuccessAt),
 		"next_run_at": optionalTime(sub.NextDue), "active_job_id": active, "last_error": failureDTO(sub.LastError),
 	}
@@ -242,6 +249,7 @@ func (s *Server) collectionDTO(ctx context.Context, c state.Collection) (map[str
 		"destination_id": c.DestinationID, "destination_root_id": c.RootID, "root_name": c.RootName, "result_url": c.ResultURL, "baseline_job_id": c.BaselineJobID,
 		"state": collectionState(c.State), "retired_at": tsPtr(c.RetiredAt), "revision": c.Revision, "sync": sync,
 		"filter": c.Filter, "on_conflict": nonEmpty(c.OnConflict, "rename"),
+		"protection": c.Protection.Defaults(),
 	}, nil
 }
 

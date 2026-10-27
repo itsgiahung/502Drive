@@ -553,6 +553,9 @@ func (m Model) auditLines(c Collection) []string {
 		title = i18n.LastAuditTitle
 	}
 	lines := []string{"", m.bold(m.t(title))}
+	if m.screen == screenCollection {
+		lines[1] = m.collectionKV(4, m.t(title), "")
+	}
 	switch {
 	case a == nil || (a.report == nil && !a.starting):
 		return append(lines, "  "+m.dim(m.t(i18n.AuditNone)))
