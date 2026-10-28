@@ -21,14 +21,12 @@ func TestManyKeysSwitchTheSameTabs(t *testing.T) {
 		want screen
 	}{
 		{tea.KeyMsg{Type: tea.KeyTab}, screenJobs},
-		{tea.KeyMsg{Type: tea.KeyLeft}, screenJobs}, // ← steps out to the tab bar, same tab
-		{tea.KeyMsg{Type: tea.KeyRight}, screenLibrary},
+		{tea.KeyMsg{Type: tea.KeyRight}, screenLibrary}, // a new tab leaves the cursor on the bar
 		{key("]"), screenDestination},
 		{tea.KeyMsg{Type: tea.KeyShiftTab}, screenLibrary},
-		{tea.KeyMsg{Type: tea.KeyLeft}, screenLibrary}, // out to the bar again
-		{tea.KeyMsg{Type: tea.KeyRight}, screenDestination},
-		{tea.KeyMsg{Type: tea.KeyLeft}, screenLibrary},
-		{key("["), screenJobs},
+		{tea.KeyMsg{Type: tea.KeyLeft}, screenJobs},
+		{tea.KeyMsg{Type: tea.KeyRight}, screenLibrary},
+		{tea.KeyMsg{Type: tea.KeyLeft}, screenJobs},
 		{key("["), screenHome},
 		{key("5"), screenAccount},
 	}
@@ -57,11 +55,13 @@ func TestArrowsKeepTheirJobWhereTheyAreNeeded(t *testing.T) {
 	m := tabModel(t, 100, 30)
 	m, cmd := update(t, m, key("7")) // Drive: arrows go through folders
 	m = run(t, m, cmd)
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // into the page
 	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyRight})
 	if m.screen != screenDrive {
 		t.Fatalf("→ in the Drive browser must not leave it: %v", m.screen)
 	}
 	m, _ = update(t, m, key("6")) // Settings: arrows change the value
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown})
 	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyRight})
 	if m.screen != screenSettings {
 		t.Fatalf("→ in Settings changes the language, it must not switch tab: %v", m.screen)
@@ -108,8 +108,8 @@ func TestTheTabBarFitsEveryWidthAndNamesTheActiveTab(t *testing.T) {
 	}
 	m := tabModel(t, 100, 30)
 	m, _ = update(t, m, key("2"))
-	if bar := lines(m.View())[0]; !strings.Contains(bar, "[2 Jobs]") {
-		t.Fatalf("without colour the active tab is bracketed: %q", bar)
+	if bar := lines(m.View())[0]; !strings.Contains(bar, "2 Jobs") {
+		t.Fatalf("the active tab is named: %q", bar)
 	}
 }
 
@@ -181,8 +181,12 @@ func TestHomeShowsGoogleThrottlingOnlyWhenItHappens(t *testing.T) {
 func TestArrowsOpenRowsInThePageAndSwitchTabsOnlyFromTheBar(t *testing.T) {
 	m := tabModel(t, 100, 30)
 	m, _ = update(t, m, key("2"))
+	if !m.tabFocus {
+		t.Fatal("a digit leaves the cursor on the tab bar")
+	}
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown})
 	if m.tabFocus {
-		t.Fatal("a digit must leave the cursor in the page")
+		t.Fatal("↓ must move the cursor into the page")
 	}
 	before := m.cursor
 	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyRight})
@@ -218,5 +222,19 @@ func TestArrowsOpenRowsInThePageAndSwitchTabsOnlyFromTheBar(t *testing.T) {
 	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyRight})
 	if m.screen == screenDestination {
 		t.Fatal("→ from the page switched tab; it must open the selected row")
+	}
+}
+
+func TestSwitchingTabsSelectsNoRowUntilYouGoDown(t *testing.T) {
+	for _, k := range []tea.KeyMsg{{Type: tea.KeyTab}, key("2")} {
+		m := tabModel(t, 100, 30)
+		m, _ = update(t, m, k)
+		if m.screen != screenJobs || !m.tabFocus {
+			t.Fatalf("%v: the cursor must sit on the tab bar: screen=%v tabFocus=%v", k, m.screen, m.tabFocus)
+		}
+		m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown})
+		if m.tabFocus {
+			t.Fatal("↓ must move into the page")
+		}
 	}
 }

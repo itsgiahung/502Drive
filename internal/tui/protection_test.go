@@ -11,7 +11,7 @@ import (
 // openProtectionScreen drives the collection detail to the Protection row.
 func openProtectionScreen(t *testing.T, m Model) Model {
 	t.Helper()
-	m = sendKeys(t, m, "3", "enter", "end")
+	m = sendKeys(t, m, "3", "down", "enter", "end")
 	if !strings.Contains(m.View(), "> Protection") {
 		t.Fatalf("the detail screen has no Protection row:\n%s", m.View())
 	}

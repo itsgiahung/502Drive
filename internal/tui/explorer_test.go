@@ -114,6 +114,7 @@ func TestDriveBrowserNavigatesFoldersWithBreadcrumbAndInfo(t *testing.T) {
 	m := driveModel(t, d, 100, 30)
 	m, cmd := update(t, m, key("7"))
 	m = run(t, m, cmd)
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // off the tab bar
 	view := m.View()
 	for _, want := range []string{"My Drive", "Projects/", "report.pdf", "2.0 KB"} {
 		if !strings.Contains(view, want) {
@@ -145,6 +146,7 @@ func TestDriveBrowserCreatesAFolderAndFocusesIt(t *testing.T) {
 	m := driveModel(t, d, 100, 30)
 	m, cmd := update(t, m, key("7"))
 	m = run(t, m, cmd)
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // off the tab bar
 	m, _ = update(t, m, key("n"))
 	if !m.typing() {
 		t.Fatal("n should open the folder name prompt")
@@ -163,6 +165,7 @@ func TestQDoesNotQuitWhileTypingAFolderName(t *testing.T) {
 	m := driveModel(t, d, 100, 30)
 	m, cmd := update(t, m, key("7"))
 	m = run(t, m, cmd)
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // off the tab bar
 	m, _ = update(t, m, key("n"))
 	m = typeText(t, m, "quiet q")
 	if m.quits || !m.typing() {
@@ -197,6 +200,7 @@ func TestCopyFlowFromHomeChoosesNamesAndDestination(t *testing.T) {
 	}
 	// 3: a typed name.
 	m, _ = update(t, m, key("3"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown})    // the cursor starts on the tab bar
 	m, _ = pressKey(t, m, tea.KeyMsg{Type: tea.KeyCtrlU}) // clear the prefilled name
 	m = typeText(t, m, "My copy")
 	m, cmd = update(t, m, key("enter"))
@@ -231,7 +235,8 @@ func TestCopyStartSubmitsThePlanAndOpensJobs(t *testing.T) {
 	m := driveModel(t, d, 100, 30)
 	m, cmd := update(t, m, key("7"))
 	m = run(t, m, cmd)
-	m, cmd = update(t, m, key("c")) // copy the highlighted item (Projects)
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // off the tab bar
+	m, cmd = update(t, m, key("c"))                    // copy the highlighted item (Projects)
 	m = run(t, m, cmd)
 	if m.screen != screenCopy || m.cp.plan == nil || m.cp.source != "p1" {
 		t.Fatalf("c in the browser should preview the highlighted item: screen=%v", m.screen)
@@ -251,6 +256,7 @@ func TestBrowserDMakesTheHighlightedFolderTheDefaultDestination(t *testing.T) {
 	m := driveModel(t, d, 100, 30)
 	m, cmd := update(t, m, key("7"))
 	m = run(t, m, cmd)
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // off the tab bar
 	m, cmd = update(t, m, key("d"))
 	m = run(t, m, cmd)
 	got := strings.Join(d.calls, " ")
@@ -284,6 +290,7 @@ func TestStaleBrowseAnswersAreIgnored(t *testing.T) {
 	m := driveModel(t, d, 100, 30)
 	m, cmd := update(t, m, key("7"))
 	m = run(t, m, cmd)
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // off the tab bar
 	m, _ = update(t, m, browseMsg{req: 0, page: d.folders["p1"]})
 	if m.drv.page.Folder.ID != "root" {
 		t.Fatal("an answer for an older request replaced the current folder")
@@ -302,6 +309,7 @@ func TestLongFoldersAreWindowedAndLoadMorePages(t *testing.T) {
 	m := driveModel(t, d, 80, 20)
 	m, cmd := update(t, m, key("7"))
 	m = run(t, m, cmd)
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // off the tab bar
 	loaded := false
 	for i := 0; i < 60; i++ {
 		m, cmd = update(t, m, key("down"))
@@ -375,6 +383,7 @@ func TestSettingsChangeLanguageAtOnce(t *testing.T) {
 	d := newDriveFake()
 	m := driveModel(t, d, 100, 30)
 	m, _ = update(t, m, key("6"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	if v := m.View(); !strings.Contains(v, "● English") {
 		t.Fatalf("English is the starting language:\n%s", v)
 	}
@@ -396,6 +405,7 @@ func TestOpeningAFolderTwiceIsInstantAndKeepsTheCursor(t *testing.T) {
 	m := driveModel(t, d, 100, 30)
 	m, cmd := update(t, m, key("7"))
 	m = run(t, m, cmd)
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // off the tab bar
 	m, cmd = update(t, m, key("down"))
 	if cmd != nil {
 		_ = cmd

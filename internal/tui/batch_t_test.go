@@ -323,6 +323,7 @@ func TestSignInAgainKeyWorksWhereTheBannerShows(t *testing.T) {
 	m = run(t, m, m.fetch())
 	for _, tab := range []string{"2", "3", "4"} {
 		m, _ = update(t, m, key(tab))
+		m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown})
 		var cmd tea.Cmd
 		m, cmd = update(t, m, key("l"))
 		m = run(t, m, cmd)
@@ -337,6 +338,7 @@ func TestSignInAgainKeyWorksWhereTheBannerShows(t *testing.T) {
 	f.snap.Status.Lifecycle = "running"
 	m = refresh(t, m)
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	if _, cmd := update(t, m, key("l")); cmd != nil {
 		t.Fatal("l is not a Jobs key when no sign-in is needed")
 	}
@@ -369,6 +371,7 @@ func TestBlockedJobShowsWhenQuotaReturnsAndOffersNoRetry(t *testing.T) {
 	f.snap.Status.Blocked = 1
 	m := tModel(t, f, "en", 100, 30)
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	if v := m.View(); !strings.Contains(v, "Waiting for quota until 14:05") {
 		t.Fatalf("the Jobs list must say when the job continues:\n%s", v)
 	}
@@ -408,6 +411,7 @@ func TestBlockedJobWithoutAFutureTimeCanStillBeRetried(t *testing.T) {
 	f.snap.Jobs = []Job{j}
 	m := tModel(t, f, "en", 100, 30)
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	if strings.Contains(m.View(), "Waiting for quota") {
 		t.Fatal("a time in the past is not a wait")
 	}
@@ -426,6 +430,7 @@ func TestQuotaWaitInVietnameseHomeAndNarrowWidths(t *testing.T) {
 		t.Fatalf("Home's recent list must show the wait:\n%s", v)
 	}
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	for w, v := range fitsEverywhere(t, m, 30) {
 		if w >= 60 && !strings.Contains(v, "Chờ quota tới 14:05") {
 			t.Errorf("width %d: %s", w, v)
@@ -443,6 +448,7 @@ func TestJobDetailListsSkippedItemsByReason(t *testing.T) {
 		SkippedByCode: map[string]int{"filtered": 12, "conflict": 3, "future_code": 1, "cannot_copy": 0}}}
 	m := tModel(t, f, "en", 100, 30)
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, _ = update(t, m, key("enter"))
 	v := m.View()
 	for _, want := range []string{"Skipped", "12  excluded by the filter", "3  name taken, skipped", "1  future_code", "3.0 MB"} {
@@ -458,6 +464,7 @@ func TestJobDetailListsSkippedItemsByReason(t *testing.T) {
 	}
 	vi := tModel(t, f, "vi", 60, 30)
 	vi, _ = update(t, vi, key("2"))
+	vi, _ = update(t, vi, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	vi, _ = update(t, vi, key("enter"))
 	if !strings.Contains(vi.View(), "bị bộ lọc loại") || !strings.Contains(vi.View(), "Bỏ qua") {
 		t.Fatalf("Vietnamese labels missing:\n%s", vi.View())
@@ -484,6 +491,7 @@ func TestAuditAndCleanupJobsShowTheirKindAndBytes(t *testing.T) {
 	f.snap.Jobs = []Job{{ID: "job_c", SourceName: "Archive", State: "succeeded", Kind: "cleanup", Revision: 3, Total: &total, Completed: 0, Bytes: 1536}}
 	m := tModel(t, f, "en", 100, 30)
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, _ = update(t, m, key("enter"))
 	v := m.View()
 	if !strings.Contains(v, "destination cleanup") || !strings.Contains(v, "1.5 KB") {
@@ -648,6 +656,7 @@ func openCollection(t *testing.T, f *tFake, lang string, w, h int) Model {
 	t.Helper()
 	m := tModel(t, f, lang, w, h)
 	m, _ = update(t, m, key("3"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, _ = update(t, m, key("enter"))
 	if m.screen != screenCollection {
 		t.Fatalf("enter must open the collection, got %v", m.screen)
@@ -965,6 +974,7 @@ func TestRetiredSourcesAreHiddenUntilAsked(t *testing.T) {
 	f.snap.Collections = []Collection{libCollection(f)}
 	m := tModel(t, f, "en", 100, 30)
 	m, _ = update(t, m, key("3"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	if strings.Contains(m.View(), "showing retired") {
 		t.Fatal("retired sources are not listed by default")
 	}
@@ -1052,6 +1062,7 @@ func TestLibraryKeysAreInertWithoutTheirActions(t *testing.T) {
 	d.snap.Collections = []Collection{libCollection(&tFake{})}
 	m := driveModel(t, d, 100, 30)
 	m, _ = update(t, m, key("3"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, _ = update(t, m, key("enter"))
 	for _, k := range []string{"a", "v", "f", "F", "b", "o", "u", "w", "c", "C"} {
 		var cmd tea.Cmd
@@ -1071,6 +1082,7 @@ func settingsModel(t *testing.T, f *tFake, lang string, w, h int) Model {
 	t.Helper()
 	m := tModel(t, f, lang, w, h)
 	m, _ = update(t, m, key("6"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	return m
 }
 
@@ -1238,6 +1250,7 @@ func TestSettingsLanguageCyclesEnglishVietnameseAuto(t *testing.T) {
 	f.snap.Prefs.Language = "en"
 	m := tModel(t, f, "", 100, 30, func(o *Options) { o.Language = "" })
 	m, _ = update(t, m, key("6"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m = sendKeys(t, m, "enter")
 	m = sendKeys(t, m, "enter")
 	m = sendKeys(t, m, "enter")
@@ -1267,6 +1280,7 @@ func TestAutoLanguageFollowsTheMachineLocale(t *testing.T) {
 			f.snap.Prefs.Language = "auto"
 			m := tModel(t, f, "", 100, 30, func(o *Options) { o.Language = "" })
 			m, _ = update(t, m, key("6"))
+			m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 			if v := m.View(); !strings.Contains(v, want) {
 				t.Fatalf("auto under %s should show %q:\n%s", locale, want, v)
 			}
@@ -1304,6 +1318,7 @@ func TestSettingsWithoutTheNewActionsKeepsOnlyLanguage(t *testing.T) {
 	d := newDriveFake()
 	m := driveModel(t, d, 100, 30)
 	m, _ = update(t, m, key("6"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	v := m.View()
 	if strings.Contains(v, "Quiet hours") || strings.Contains(v, "Start on login") {
 		t.Fatalf("rows without an action must not appear:\n%s", v)
@@ -1335,6 +1350,7 @@ func TestNewScreensReadWithoutColourOrUnicodeBars(t *testing.T) {
 	}
 	// The wait is readable as words, not only as a colour.
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	if !strings.Contains(m.View(), "Waiting for quota until 14:05") {
 		t.Fatalf("plain text must carry the meaning:\n%s", m.View())
 	}

@@ -30,6 +30,7 @@ func sized(t *testing.T, snap Snapshot, w, h int, opt Options) Model {
 	m = run(t, m, m.fetch())
 	m, _ = update(t, m, tea.WindowSizeMsg{Width: w, Height: h})
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	return m
 }
 
@@ -128,6 +129,7 @@ func TestBulkActionsReachTheDaemonOnceEachAndFailuresDoNotStopTheRest(t *testing
 	m := New(fake.Actions(), Options{Width: 80, Height: 24, Language: "en"})
 	m = run(t, m, m.fetch())
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, _ = update(t, m, key("a"))
 	m, cmd := update(t, m, key("p"))
 	_ = run(t, m, cmd)
@@ -239,6 +241,7 @@ func TestSpeedAndETAFollowSuccessiveSnapshots(t *testing.T) {
 		t.Fatalf("eta = %v, want about 8s", eta)
 	}
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	v := m.View()
 	if !strings.Contains(v, "100.0/s") || !strings.Contains(v, "8s left") {
 		t.Fatalf("jobs list lacks speed/eta:\n%s", v)

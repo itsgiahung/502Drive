@@ -196,10 +196,10 @@ func (m Model) gotoTab(i int) (tea.Model, tea.Cmd) {
 		m.drv, m.cp = nil, nil
 		next, cmd = m.goTo(tabs[i].screen)
 	}
-	// Where ←/→ also act inside the page, the cursor stays on the tab bar until
-	// ↓ or Enter goes into the page, so the arrows keep switching tabs.
+	// Switching tabs leaves the cursor on the tab bar (no row is selected) until
+	// ↓ or Enter goes into the page. Home keeps its prompt.
 	if nm, ok := next.(Model); ok {
-		nm.tabFocus = tabs[i].screen == screenSettings || tabs[i].screen == screenDrive
+		nm.tabFocus = tabs[i].screen != screenHome
 		return nm, cmd
 	}
 	return next, cmd

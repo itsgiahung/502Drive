@@ -710,20 +710,8 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.moveTab(1)
 	case "[":
 		return m.moveTab(-1)
-	case "1":
-		return m.goTo(screenHome)
-	case "2":
-		return m.goTo(screenJobs)
-	case "3":
-		return m.goTo(screenLibrary)
-	case "4":
-		return m.goTo(screenDestination)
-	case "5":
-		return m.goTo(screenAccount)
-	case "6":
-		return m.goTo(screenSettings)
-	case "7":
-		return m.openDrive(false)
+	case "1", "2", "3", "4", "5", "6", "7":
+		return m.gotoTab(int(msg.String()[0] - '1'))
 	case "up", "k":
 		if m.screen == screenJob {
 			m.detailTop = max(0, m.detailTop-1)

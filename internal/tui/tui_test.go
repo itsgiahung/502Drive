@@ -238,10 +238,12 @@ func TestTUIRendersVietnameseFromPreferences(t *testing.T) {
 		}
 	}
 	m, _ = update(t, m, key("6"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	if !strings.Contains(m.View(), "Múi giờ") || !strings.Contains(m.View(), "Asia/Ho_Chi_Minh") {
 		t.Fatalf("vi settings:\n%s", m.View())
 	}
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	if !strings.Contains(m.View(), "space chọn") {
 		t.Fatalf("vi footer:\n%s", m.View())
 	}
@@ -263,6 +265,7 @@ func TestHomeRendersStatusAndMascot(t *testing.T) {
 func TestNavigationKeys(t *testing.T) {
 	m, _ := newTestModel(t, Options{Width: 80})
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	if !strings.Contains(m.View(), "Jobs") || m.screen != screenJobs {
 		t.Fatalf("screen = %v\n%s", m.screen, m.View())
 	}
@@ -280,6 +283,7 @@ func TestNavigationKeys(t *testing.T) {
 		t.Fatalf("arrow keys did not move: %d", m.cursor)
 	}
 	m, _ = update(t, m, key("3"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	if m.screen != screenLibrary {
 		t.Fatalf("screen = %v", m.screen)
 	}
@@ -303,6 +307,7 @@ func TestNavigationKeys(t *testing.T) {
 func TestJobDetailActions(t *testing.T) {
 	m, fake := newTestModel(t, Options{Width: 80})
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, _ = update(t, m, key("enter"))
 	if m.screen != screenJob {
 		t.Fatalf("screen = %v", m.screen)
@@ -324,6 +329,7 @@ func TestJobDetailActions(t *testing.T) {
 func TestLibraryPresetsAndSyncActions(t *testing.T) {
 	m, fake := newTestModel(t, Options{Width: 80})
 	m, _ = update(t, m, key("3"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, _ = update(t, m, key("enter"))
 	if m.screen != screenCollection {
 		t.Fatalf("screen = %v", m.screen)
@@ -345,6 +351,7 @@ func TestLibraryPresetsAndSyncActions(t *testing.T) {
 func TestDestinationSetDefault(t *testing.T) {
 	m, fake := newTestModel(t, Options{Width: 80})
 	m, _ = update(t, m, key("4"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, cmd := update(t, m, key("enter"))
 	_ = run(t, m, cmd)
 	if got := fake.recorded(); len(got) != 1 || got[0] != "dest:dst_1:1" {
@@ -355,12 +362,14 @@ func TestDestinationSetDefault(t *testing.T) {
 func TestAccountDoctorAndSettingsLanguage(t *testing.T) {
 	m, fake := newTestModel(t, Options{Width: 80})
 	m, _ = update(t, m, key("5"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, cmd := update(t, m, key("d"))
 	m = run(t, m, cmd)
 	if !strings.Contains(m.View(), "database") {
 		t.Fatalf("doctor results not shown:\n%s", m.View())
 	}
 	m, _ = update(t, m, key("6"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, cmd = update(t, m, key("l"))
 	_ = run(t, m, cmd)
 	if got := fake.recorded(); got[len(got)-1] != "lang:vi" { // the model starts in English (override), so the switch goes to vi
@@ -372,6 +381,7 @@ func TestOfflineKeepsLastData(t *testing.T) {
 	m, _ := newTestModel(t, Options{Width: 80})
 	m, _ = update(t, m, snapshotMsg{err: errors.New("connection refused")})
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	view := m.View()
 	if !strings.Contains(view, "OFFLINE") || !strings.Contains(view, "Project Alpha") {
 		t.Fatalf("offline view lost data:\n%s", view)
@@ -386,6 +396,7 @@ func TestResizeWidths(t *testing.T) {
 		m, _ := newTestModel(t, Options{Width: width})
 		m, _ = update(t, m, tea.WindowSizeMsg{Width: width, Height: 24})
 		m, _ = update(t, m, key("2"))
+		m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 		view := m.View()
 		for _, line := range strings.Split(view, "\n") {
 			if n := len([]rune(line)); n > width {
@@ -445,6 +456,7 @@ func TestNoMotionNeverAnimates(t *testing.T) {
 		t.Fatal("the home screen should animate when motion and colour are on")
 	}
 	moving, _ = update(t, moving, key("2"))
+	moving, _ = update(t, moving, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	if moving.animating() {
 		t.Fatal("only the home screen animates; other screens must stay still")
 	}
@@ -503,6 +515,7 @@ func TestActionErrorIsShown(t *testing.T) {
 	m, fake := newTestModel(t, Options{Width: 80})
 	fake.actErr = errors.New("sync is off for this collection")
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, _ = update(t, m, key("enter"))
 	m, cmd := update(t, m, key("p"))
 	m = run(t, m, cmd)

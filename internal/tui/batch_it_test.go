@@ -205,11 +205,11 @@ func TestPastingSeveralLinksMakesABatchWithoutPreviewingEachOne(t *testing.T) {
 		}
 	}
 	// A batch cannot take one typed name, and a full scan has no single plan.
-	m = sendKeys(t, m, "3", "i", "x")
+	m = sendKeys(t, m, "3", "down", "i", "x")
 	if m.cp.typing != "" || m.cp.opt.Deep {
 		t.Fatalf("name 3 and deep are for a single link: %+v", m.cp)
 	}
-	m = sendKeys(t, m, "2", "f", "o") // auto name, filter, name clash apply to every link
+	m = sendKeys(t, m, "2", "down", "f", "o") // auto name, filter, name clash apply to every link
 	m = sendKeys(t, m, "enter")
 	want := "submitbatch:https://drive.google.com/drive/folders/AAAAAAAAAAAAAAAAAAAA,https://drive.google.com/drive/folders/BBBBBBBBBBBBBBBBBBBB,https://drive.google.com/drive/folders/CCCCCCCCCCCCCCCCCCCC:dest=:auto=true:sync=:filter=no_video:conflict=skip"
 	if !f.has(want) {
@@ -284,7 +284,7 @@ func TestBatchProgressShowsOnJobRowsAndTheJobScreen(t *testing.T) {
 	}
 	f.batch = BatchProgress{ID: "batch-abcdef123456", Total: 3, CompletedJobs: 1, ByState: map[string]int{"succeeded": 1, "running": 1, "queued": 1}}
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "2")
+	m = sendKeys(t, m, "2", "down")
 	m = refresh(t, m)
 	if !f.has("batch:batch-abcdef123456") {
 		t.Fatalf("the batch is read: %v", f.recorded())
@@ -314,7 +314,7 @@ func TestQueuedJobsShowTheirPositionAndMoveEarlierOrLater(t *testing.T) {
 	f := newIFake()
 	f.jobs = queuedJobs(3) // newest first: q3, q2, q1; queue order q1, q2, q3
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "2")
+	m = sendKeys(t, m, "2", "down")
 	v := m.View()
 	for _, want := range []string{"Queued"} {
 		if !strings.Contains(v, want) {
@@ -349,7 +349,7 @@ func TestMovingNeedsAQueuedJobAndReportsARefusal(t *testing.T) {
 	f := newIFake()
 	f.jobs = append([]Job{{ID: "job_run", SourceName: "Running", State: "running", Revision: 1}}, queuedJobs(2)...)
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "2")
+	m = sendKeys(t, m, "2", "down")
 	for _, k := range []string{"K", "J", "+", "-"} {
 		m = sendKeys(t, m, k)
 		if f.count("move:") != 0 || !strings.Contains(m.status, "waiting (queued)") {
@@ -372,7 +372,7 @@ func TestPriorityKeysStayInRangeAndShowOnTheRow(t *testing.T) {
 	f.jobs = queuedJobs(1)
 	f.jobs[0].Priority = 4
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "2")
+	m = sendKeys(t, m, "2", "down")
 	m = sendKeys(t, m, "+")
 	if !f.has("move:job_q1:1:before=:after=:prio=5") {
 		t.Fatalf("+ raises by one: %v", f.recorded())
@@ -417,7 +417,7 @@ func TestPausingTheQueueNeedsAYesResumingDoesNot(t *testing.T) {
 	f := newIFake()
 	f.jobs = queuedJobs(2)
 	m := iModel(t, f, "vi", 80, 30)
-	m = sendKeys(t, m, "2")
+	m = sendKeys(t, m, "2", "down")
 	m = sendKeys(t, m, "P")
 	if m.confirm == nil || !strings.Contains(m.View(), "Tạm dừng tất cả?") || f.has("queue:") {
 		t.Fatalf("P asks first: confirm %v, calls %v", m.confirm, f.recorded())
@@ -465,7 +465,7 @@ func TestJobFilterIsAskedOfTheServerNotAppliedHere(t *testing.T) {
 		{ID: "job_3", CollectionID: "col_2", SourceName: "Beta again", State: "failed", Revision: 1},
 	}
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "2")
+	m = sendKeys(t, m, "2", "down")
 	if len(m.snap.Jobs) != 3 {
 		t.Fatalf("jobs = %d", len(m.snap.Jobs))
 	}
@@ -504,7 +504,7 @@ func TestAFilterWithNoMatchSaysSoAndLeavingJobsDropsTheFilter(t *testing.T) {
 	f := newIFake()
 	f.jobs = []Job{{ID: "job_1", SourceName: "Alpha", State: "running", Revision: 1}}
 	m := iModel(t, f, "vi", 80, 30)
-	m = sendKeys(t, m, "2", "f") // queued: none
+	m = sendKeys(t, m, "2", "down", "f") // queued: none
 	if v := m.View(); !strings.Contains(v, "Không có job nào khớp bộ lọc") || !strings.Contains(v, "Lọc: Đã xếp hàng") {
 		t.Fatalf("empty result of a filter:\n%s", v)
 	}
@@ -523,7 +523,7 @@ func TestScrollingToTheEndLoadsTheNextCursorPage(t *testing.T) {
 		f.jobs = append(f.jobs, Job{ID: fmt.Sprintf("job_%02d", i), SourceName: fmt.Sprintf("S%02d", i), State: "succeeded", Revision: 1})
 	}
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "2")
+	m = sendKeys(t, m, "2", "down")
 	if len(m.snap.Jobs) != 20 || m.snap.JobsNext == "" {
 		t.Fatalf("first page: %d next %q", len(m.snap.Jobs), m.snap.JobsNext)
 	}
@@ -559,7 +559,7 @@ func TestJobsListWindowCountsTheMoreLineAndTheFilterLines(t *testing.T) {
 	}
 	f.paused = true
 	m := iModel(t, f, "vi", 60, 14)
-	m = sendKeys(t, m, "2", "s", "end")
+	m = sendKeys(t, m, "2", "down", "s", "end")
 	for w, v := range fitsEverywhere(t, m, 14) {
 		if !strings.Contains(v, ">") {
 			t.Errorf("width %d: the cursor row must stay in view:\n%s", w, v)

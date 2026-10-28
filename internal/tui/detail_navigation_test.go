@@ -11,6 +11,7 @@ func TestCollectionArrowsFocusSyncWithoutChangingTheCollection(t *testing.T) {
 	m, fake := newTestModel(t, Options{Width: 100, Language: "en"})
 	m.snap.Collections = append(m.snap.Collections, Collection{ID: "col_other", SourceName: "Other"})
 	m, _ = update(t, m, key("3"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, _ = update(t, m, key("enter"))
 	m, _ = update(t, m, key("down"))
 	c, ok := m.currentCollection()
@@ -36,6 +37,7 @@ func TestCollectionArrowsFocusSyncWithoutChangingTheCollection(t *testing.T) {
 func TestCollectionDetailSurvivesSnapshotReordering(t *testing.T) {
 	m, _ := newTestModel(t, Options{Width: 100, Language: "en"})
 	m, _ = update(t, m, key("3"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, _ = update(t, m, key("enter"))
 	snap := m.snap
 	snap.Collections = append([]Collection{{ID: "col_other", SourceName: "Other"}}, snap.Collections...)
@@ -48,6 +50,7 @@ func TestCollectionDetailSurvivesSnapshotReordering(t *testing.T) {
 func TestDetailArrowsNeverSelectAnotherJobAndLeftGoesBack(t *testing.T) {
 	m, _ := newTestModel(t, Options{Width: 80})
 	m, _ = update(t, m, key("2"))
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyDown}) // the cursor starts on the tab bar
 	m, _ = update(t, m, key("enter"))
 	for _, k := range []string{"down", "j", "pgdown", "end", "up"} {
 		m, _ = update(t, m, key(k))
@@ -63,7 +66,7 @@ func TestDetailArrowsNeverSelectAnotherJobAndLeftGoesBack(t *testing.T) {
 
 func TestRemovedJobDetailNeverTargetsItsReplacement(t *testing.T) {
 	m, _ := newTestModel(t, Options{Width: 80})
-	m = sendKeys(t, m, "2", "enter")
+	m = sendKeys(t, m, "2", "down", "enter")
 	snap := m.snap
 	snap.Jobs = snap.Jobs[1:]
 	m, _ = update(t, m, snapshotMsg{snap: snap})
@@ -74,7 +77,7 @@ func TestRemovedJobDetailNeverTargetsItsReplacement(t *testing.T) {
 
 func TestLeftClosesSyncChoicesBeforeLeavingCollection(t *testing.T) {
 	m, _ := newTestModel(t, Options{Width: 100, Language: "en"})
-	m = sendKeys(t, m, "3", "enter", "down", "enter")
+	m = sendKeys(t, m, "3", "down", "enter", "down", "enter")
 	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyLeft})
 	if m.screen != screenCollection || !strings.Contains(m.View(), "> Sync") {
 		t.Fatalf("left must return from sync choices to their row:\n%s", m.View())
@@ -83,7 +86,7 @@ func TestLeftClosesSyncChoicesBeforeLeavingCollection(t *testing.T) {
 
 func TestCollectionFocusStaysVisibleInAShortTerminal(t *testing.T) {
 	m, _ := newTestModel(t, Options{Width: 50, Height: 10, Language: "en"})
-	m = sendKeys(t, m, "3", "enter", "end")
+	m = sendKeys(t, m, "3", "down", "enter", "end")
 	if !strings.Contains(m.View(), "> Protection") {
 		t.Fatalf("the selected row was clipped:\n%s", m.View())
 	}

@@ -194,7 +194,7 @@ func TestAfterCopySyncRowInSettingsSavesAtOnce(t *testing.T) {
 	f := newIFake()
 	f.snap.Prefs.AfterCopySync = afterOff
 	m := iModel(t, f, "vi", 100, 30)
-	m = sendKeys(t, m, "6")
+	m = sendKeys(t, m, "6", "down")
 	for i := 0; i < 7; i++ {
 		m = sendKeys(t, m, "down")
 	}
@@ -248,7 +248,7 @@ func reportFake() *iFake {
 func TestJobReportListsProblemsByCodeAndGoesBackToTheJob(t *testing.T) {
 	f := reportFake()
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "2", "enter")
+	m = sendKeys(t, m, "2", "down", "enter")
 	m = sendKeys(t, m, "R")
 	if !f.has("report:job_9") || m.screen != screenReport {
 		t.Fatalf("R opens the report: %v screen %v", f.recorded(), m.screen)
@@ -277,7 +277,7 @@ func TestJobReportStatesEmptyLoadingErrorAndCut(t *testing.T) {
 	f := reportFake()
 	f.rep = JobReport{}
 	m := iModel(t, f, "vi", 80, 30)
-	m = sendKeys(t, m, "2", "enter", "R")
+	m = sendKeys(t, m, "2", "down", "enter", "R")
 	if !strings.Contains(m.View(), "Không có mục lỗi, bị chặn hay bị bỏ qua") {
 		t.Fatalf("empty report:\n%s", m.View())
 	}
@@ -302,7 +302,7 @@ func TestJobReportStatesEmptyLoadingErrorAndCut(t *testing.T) {
 func TestReportExportAsksForAPathNeverSendsWithoutOne(t *testing.T) {
 	f := reportFake()
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "2", "enter", "R", "E")
+	m = sendKeys(t, m, "2", "down", "enter", "R", "E")
 	if m.exp == nil || !strings.Contains(m.View(), "Save the CSV report to path") || !strings.Contains(m.View(), "502drive-report-9.csv") {
 		t.Fatalf("E asks for a path with a suggestion:\n%s", m.View())
 	}
@@ -342,7 +342,7 @@ func TestReportExportAsksForAPathNeverSendsWithoutOne(t *testing.T) {
 func TestExportKeysAreTypingNotNavigation(t *testing.T) {
 	f := reportFake()
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "2", "enter", "E")
+	m = sendKeys(t, m, "2", "down", "enter", "E")
 	m = typeText(t, m, "q1R7")
 	if m.quits || m.screen != screenJob || m.exp == nil {
 		t.Fatalf("letters go to the path field: quit %v screen %v", m.quits, m.screen)
@@ -355,7 +355,7 @@ func TestExportKeysAreTypingNotNavigation(t *testing.T) {
 func TestHistoryExportFromTheJobsList(t *testing.T) {
 	f := reportFake()
 	m := iModel(t, f, "vi", 100, 30)
-	m = sendKeys(t, m, "2", "E")
+	m = sendKeys(t, m, "2", "down", "E")
 	if !strings.Contains(m.View(), "Lưu lịch sử 30 ngày") {
 		t.Fatalf("E on the list exports the history:\n%s", m.View())
 	}
@@ -377,7 +377,7 @@ func TestReportAndExportFitEveryWidthInBothLanguages(t *testing.T) {
 			f.rep.Items = append(f.rep.Items, ProblemItem{State: "skipped", Code: "filtered", Path: fmt.Sprintf("thư mục dài/tệp số %d với một cái tên rất dài.mp4", i)})
 		}
 		m := iModel(t, f, lang, 100, 24, func(o *Options) { o.ASCII = true })
-		m = sendKeys(t, m, "2", "enter", "R")
+		m = sendKeys(t, m, "2", "down", "enter", "R")
 		m = sendKeys(t, m, "end")
 		fitsEverywhere(t, m, 24)
 		m = sendKeys(t, m, "E")
@@ -406,7 +406,7 @@ func searchFake() *iFake {
 func TestSlashSearchesDriveByNameAndCopiesAResult(t *testing.T) {
 	f := searchFake()
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "7")
+	m = sendKeys(t, m, "7", "down")
 	m = sendKeys(t, m, "/")
 	if m.drv.prompt == nil || !strings.Contains(m.View(), "Search Drive by name") {
 		t.Fatalf("/ asks for the words:\n%s", m.View())
@@ -432,7 +432,7 @@ func TestSlashSearchesDriveByNameAndCopiesAResult(t *testing.T) {
 func TestSearchEscGoesBackToTheFolderItBeganIn(t *testing.T) {
 	f := searchFake()
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "7")
+	m = sendKeys(t, m, "7", "down")
 	m = sendKeys(t, m, "enter") // open Projects
 	m = sendKeys(t, m, "/")
 	m = typeText(t, m, "x")
@@ -464,7 +464,7 @@ func TestOpeningAFolderFromResultsLeavesTheSearch(t *testing.T) {
 	f := searchFake()
 	f.folders["s1"] = FolderPage{Folder: DriveItem{ID: "s1", Name: "Báo cáo 2026", Kind: "folder"}, Path: []DriveItem{{ID: "root", Name: "My Drive"}, {ID: "s1", Name: "Báo cáo 2026"}}}
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "7", "/")
+	m = sendKeys(t, m, "7", "down", "/")
 	m = typeText(t, m, "bao")
 	m, cmd := update(t, m, key("enter"))
 	m = run(t, m, cmd)
@@ -513,7 +513,7 @@ func TestSearchFitsEveryWidthInBothLanguages(t *testing.T) {
 			f.items = append(f.items, DriveItem{ID: fmt.Sprintf("x%d", i), Name: fmt.Sprintf("Tệp báo cáo số %d dài dài dài dài dài", i), Kind: "binary"})
 		}
 		m := iModel(t, f, lang, 100, 24)
-		m = sendKeys(t, m, "7", "/")
+		m = sendKeys(t, m, "7", "down", "/")
 		m = typeText(t, m, "báo")
 		m, cmd := update(t, m, key("enter"))
 		m = run(t, m, cmd)
@@ -543,7 +543,7 @@ func auditFake() *iFake {
 func TestLibraryShowsTheNewestAuditOfEachVisibleRow(t *testing.T) {
 	f := auditFake()
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "3")
+	m = sendKeys(t, m, "3", "down")
 	m = refresh(t, m)
 	for _, id := range []string{"col_1", "col_2", "col_3"} {
 		if !f.has("latest:" + id) {
@@ -561,7 +561,7 @@ func TestLibraryShowsTheNewestAuditOfEachVisibleRow(t *testing.T) {
 	}
 	for _, lang := range []string{"en", "vi"} {
 		ml := iModel(t, f, lang, 100, 30)
-		ml = sendKeys(t, ml, "3")
+		ml = sendKeys(t, ml, "3", "down")
 		ml = refresh(t, ml)
 		fitsEverywhere(t, ml, 30)
 	}
@@ -584,7 +584,7 @@ func TestLibraryShowsTheNewestAuditOfEachVisibleRow(t *testing.T) {
 func TestCollectionScreenStartsFromTheLatestAuditAndCanPlanARepair(t *testing.T) {
 	f := auditFake()
 	m := iModel(t, f, "vi", 100, 40)
-	m = sendKeys(t, m, "3", "enter")
+	m = sendKeys(t, m, "3", "down", "enter")
 	m = refresh(t, m)
 	v := m.View()
 	for _, want := range []string{"Lần kiểm tra gần nhất", "3 sai lệch (2 sửa được)"} {
@@ -615,7 +615,7 @@ func TestLibraryWithoutTheActionDoesNotAskForAudits(t *testing.T) {
 	acts.LatestAudit = nil
 	m := New(acts, Options{Width: 100, Height: 30, Language: "en", NoMotion: true, Now: func() time.Time { return tNow }})
 	m = settle(t, m, m.fetch())
-	m = sendKeys(t, m, "3")
+	m = sendKeys(t, m, "3", "down")
 	if f.has("latest:") || strings.Contains(m.View(), "check:") {
 		t.Fatalf("no action, no audit line: %v", f.recorded())
 	}
@@ -624,7 +624,7 @@ func TestLibraryWithoutTheActionDoesNotAskForAudits(t *testing.T) {
 func TestShowRetiredStillWorksWithTheIncludeRetiredRead(t *testing.T) {
 	f := auditFake()
 	m := iModel(t, f, "en", 100, 30)
-	m = sendKeys(t, m, "3", "H")
+	m = sendKeys(t, m, "3", "down", "H")
 	if !f.has("retired:true") || !m.showRetired {
 		t.Fatalf("H asks the client to include retired sources: %v", f.recorded())
 	}
@@ -678,7 +678,7 @@ func TestBatchITScreensReadWithoutColourOrUnicodeBars(t *testing.T) {
 		}
 	}
 	m := iModel(t, f, "en", 80, 40, func(o *Options) { o.ASCII = true })
-	m = sendKeys(t, m, "2")
+	m = sendKeys(t, m, "2", "down")
 	m = refresh(t, m)
 	check("jobs", m, "The queue is paused")
 	m = sendKeys(t, m, "f")
@@ -688,10 +688,10 @@ func TestBatchITScreensReadWithoutColourOrUnicodeBars(t *testing.T) {
 	check("report", m, "Failed and skipped items", "excluded by the filter", "FAILED")
 	m = sendKeys(t, m, "E")
 	check("export", m, "Save the CSV report to path")
-	m = sendKeys(t, m, "esc", "esc", "esc", "3")
+	m = sendKeys(t, m, "esc", "esc", "esc", "3", "down")
 	m = refresh(t, m)
 	check("library", m, "check: 3 finding(s) (2 repairable)", "check: clean")
-	m = sendKeys(t, m, "7", "/")
+	m = sendKeys(t, m, "7", "down", "/")
 	m = typeText(t, m, "bao")
 	m, cmd := update(t, m, key("enter"))
 	m = run(t, m, cmd)
