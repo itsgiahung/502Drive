@@ -21,10 +21,14 @@ func TestManyKeysSwitchTheSameTabs(t *testing.T) {
 		want screen
 	}{
 		{tea.KeyMsg{Type: tea.KeyTab}, screenJobs},
+		{tea.KeyMsg{Type: tea.KeyLeft}, screenJobs}, // ← steps out to the tab bar, same tab
 		{tea.KeyMsg{Type: tea.KeyRight}, screenLibrary},
 		{key("]"), screenDestination},
 		{tea.KeyMsg{Type: tea.KeyShiftTab}, screenLibrary},
-		{tea.KeyMsg{Type: tea.KeyLeft}, screenJobs},
+		{tea.KeyMsg{Type: tea.KeyLeft}, screenLibrary}, // out to the bar again
+		{tea.KeyMsg{Type: tea.KeyRight}, screenDestination},
+		{tea.KeyMsg{Type: tea.KeyLeft}, screenLibrary},
+		{key("["), screenJobs},
 		{key("["), screenHome},
 		{key("5"), screenAccount},
 	}
@@ -168,5 +172,51 @@ func TestHomeShowsGoogleThrottlingOnlyWhenItHappens(t *testing.T) {
 	m = run(t, m, m.fetch())
 	if !strings.Contains(m.View(), "Workers: 2") {
 		t.Fatalf("throttle line missing:\n%s", m.View())
+	}
+}
+
+// The cursor is in the tab bar or in the page, and the screen says which. From
+// the page, → opens the selected row and ← steps out to the bar; ←/→ switch tabs
+// only while the bar has the cursor.
+func TestArrowsOpenRowsInThePageAndSwitchTabsOnlyFromTheBar(t *testing.T) {
+	m := tabModel(t, 100, 30)
+	m, _ = update(t, m, key("2"))
+	if m.tabFocus {
+		t.Fatal("a digit must leave the cursor in the page")
+	}
+	before := m.cursor
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.screen != screenJob {
+		t.Fatalf("→ on a selected job must open it, got %v", m.screen)
+	}
+	if got := m.snap.Jobs[m.cursor].ID; got != m.snap.Jobs[before].ID {
+		t.Fatal("→ opened a different job than the selected one")
+	}
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyLeft})
+	if m.screen != screenJobs {
+		t.Fatalf("← from a job must return to the list, got %v", m.screen)
+	}
+
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyLeft})
+	if !m.tabFocus || m.screen != screenJobs {
+		t.Fatal("← from the list must step out to the tab bar without changing tab")
+	}
+	if strings.Contains(m.View(), "> ") && strings.Contains(strings.Join(lines(m.View())[3:], "\n"), "> SUCC") {
+		t.Fatalf("with the cursor on the tab bar no row may look selected:\n%s", m.View())
+	}
+	if !strings.Contains(m.View(), "‹2") {
+		t.Fatalf("the bar must show it has the cursor:\n%s", m.View())
+	}
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.screen != screenLibrary {
+		t.Fatalf("→ on the bar must switch tab, got %v", m.screen)
+	}
+	m, _ = update(t, m, key("down"))
+	if m.tabFocus {
+		t.Fatal("↓ must go from the bar into the page")
+	}
+	m, _ = update(t, m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.screen == screenDestination {
+		t.Fatal("→ from the page switched tab; it must open the selected row")
 	}
 }

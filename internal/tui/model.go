@@ -627,9 +627,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			return m, nil
 		case "h":
-			return m.moveTab(-1)
+			return m.stepTab(-1)
 		case "l":
-			return m.moveTab(1)
+			return m.stepTab(1)
 		}
 	}
 	switch msg.Type {
@@ -639,11 +639,18 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.moveTab(-1)
 	case tea.KeyRight:
 		if m.arrowsSwitchTabs() {
-			return m.moveTab(1)
+			return m.stepTab(1)
+		}
+		if m.screen == screenJobs || m.screen == screenLibrary {
+			return m.enter() // → goes into the selected row, like Enter
 		}
 	case tea.KeyLeft:
 		if m.arrowsSwitchTabs() {
-			return m.moveTab(-1)
+			return m.stepTab(-1)
+		}
+		if m.topList() && m.activeTab() >= 0 {
+			m.tabFocus = true // ← steps out of the list, up to the tab bar
+			return m, nil
 		}
 		if m.screen == screenJob || m.screen == screenCollection || m.screen == screenReport || m.screen == screenHelp {
 			return m.back()

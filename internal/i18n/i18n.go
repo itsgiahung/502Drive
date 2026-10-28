@@ -667,7 +667,10 @@ func HelpLines(lang string) []string {
 		return []string{
 			"1..6     chuyển màn (Trang chính, Công việc, Thư viện, Đích, Tài khoản, Cài đặt)",
 			"↑↓ / j k di chuyển lựa chọn",
-			"enter    mở job, nguồn hoặc thư mục đang chọn",
+			"enter / →  mở job, nguồn hoặc thư mục đang chọn (dòng chọn có dấu > nền xanh)",
+			"←        ra một cấp: từ chi tiết về danh sách, từ danh sách lên thanh tab",
+			"Thanh tab (tab sáng xanh, dạng ‹3 Library›): ←/→ đổi tab · ↓ hoặc Enter vào nội dung",
+			"Tab / Shift+Tab / [ ] / 1-7 đổi tab từ bất cứ đâu",
 			"esc      quay lại màn trước",
 			"q        thoát (daemon vẫn chạy)",
 			"?        trợ giúp này",
@@ -694,7 +697,10 @@ func HelpLines(lang string) []string {
 	return []string{
 		"1..6     switch screen (Home, Jobs, Library, Destination, Account, Settings)",
 		"↑↓ / j k move the selection",
-		"enter    open the selected job, collection or destination",
+		"enter / →  open the selected job, source or folder (the row has a cyan > marker)",
+		"←        step out one level: detail to list, list up to the tab bar",
+		"Tab bar (the tab is cyan, shown ‹3 Library›): ←/→ switch tab · ↓ or Enter go into the page",
+		"Tab / Shift+Tab / [ ] / 1-7 switch tab from anywhere",
 		"esc      back to the previous screen",
 		"q        quit (the daemon keeps running)",
 		"?        this help",

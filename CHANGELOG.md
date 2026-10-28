@@ -4,6 +4,20 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
+## 0.4.1 — 2026-10-28
+
+### Fixed
+
+- Terminal app: pressing `→` on a selected job or source switched to the next tab
+  instead of opening it. The cursor now always sits in one of two places and the
+  screen shows which: on the tab bar (the tab is cyan and drawn `‹3 Library›`, no
+  row looks selected) or in the page (the selected row has a cyan `>` marker, the
+  current tab is grey). In the page `→`/Enter opens the row and `←` steps out one
+  level (detail to list, list up to the tab bar); `←`/`→` switch tabs only while the
+  bar has the cursor and keep it there while you walk across the tabs.
+  Tab, Shift+Tab, `[` `]`, `1`-`7` and clicking the bar still switch tabs anywhere.
+  The help screen explains it.
+
 ## 0.4.0 — 2026-10-28
 
 Protection, updates and a friendlier first run. Mirror and snapshots, new in

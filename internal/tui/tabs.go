@@ -101,8 +101,10 @@ func (m Model) tabBar() string {
 	active := m.activeTab()
 	for i, l := range labels {
 		switch {
+		case i == active && m.opt.Color && m.tabFocus:
+			sb.WriteString(m.accentBG(l)) // the cursor is here
 		case i == active && m.opt.Color:
-			sb.WriteString(m.accentBG(l))
+			sb.WriteString(m.paintBG("238", "255", l)) // current page, cursor is below
 		case i == active:
 			sb.WriteString("[" + strings.TrimSpace(l) + "]")
 		default:
@@ -167,6 +169,18 @@ func (m Model) moveTab(delta int) (tea.Model, tea.Cmd) {
 	return m.gotoTab((cur + delta + len(tabs)) % len(tabs))
 }
 
+// stepTab is moveTab for ←/→ and h/l: when the cursor is on the tab bar it stays
+// there, so the arrows keep walking across the tabs instead of falling into a page.
+func (m Model) stepTab(delta int) (tea.Model, tea.Cmd) {
+	onBar := m.tabFocus
+	next, cmd := m.moveTab(delta)
+	if nm, ok := next.(Model); ok && onBar {
+		nm.tabFocus = true
+		return nm, cmd
+	}
+	return next, cmd
+}
+
 func (m Model) gotoTab(i int) (tea.Model, tea.Cmd) {
 	if i < 0 || i >= len(tabs) {
 		return m, nil
@@ -188,17 +202,30 @@ func (m Model) gotoTab(i int) (tea.Model, tea.Cmd) {
 	return next, cmd
 }
 
+// The cursor is always in one of two places, and the screen shows which:
+//
+//   - the tab bar (the active tab is cyan and drawn ‹like this›, rows show no
+//     marker): ←/→ switch tabs, ↓ or Enter goes into the page;
+//   - the page (the selected row has a cyan marker, the active tab is grey):
+//     →/Enter opens the selected row, ←/Esc steps back out (from a top-level
+//     list that means up to the tab bar). ←/→ never switch tabs from here.
+//
+// Tab, Shift+Tab, [ ], 1-7 and a click on the bar switch tabs from anywhere.
+
 // arrowsSwitchTabs says whether ←/→ mean "previous/next tab" on this screen:
-// not where they already move through folders or change a setting.
+// only with the cursor on the tab bar, and on Home (no rows) while the prompt is empty.
 func (m Model) arrowsSwitchTabs() bool {
 	if m.tabFocus {
 		return true
 	}
+	return m.screen == screenHome && m.cmd.Value() == ""
+}
+
+// topList says whether the screen is a top-level list whose rows open with →.
+func (m Model) topList() bool {
 	switch m.screen {
 	case screenJobs, screenLibrary, screenDestination, screenAccount, screenHelp:
 		return true
-	case screenHome:
-		return m.cmd.Value() == ""
 	}
 	return false
 }

@@ -311,8 +311,8 @@ func (m Model) jobsMoreLines() int {
 // marker is the cursor and selection column of a list row.
 func (m Model) marker(i int, id string) string {
 	cursor, mark := " ", " "
-	if i == m.cursor {
-		cursor = m.accent(">")
+	if i == m.cursor && !m.tabFocus { // with the cursor on the tab bar no row is "selected"
+		cursor = m.paintBG("39", "16", ">")
 	}
 	if m.selected[id] {
 		mark = m.good("●")
