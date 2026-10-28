@@ -7,6 +7,11 @@ service and authorization as HTTP/CLI; bot failure does not stop core copy work.
 
 ## Setup and identity
 
+Easiest: run `502drive onboard --telegram`. It opens @BotFather, checks the pasted token with
+Telegram, reads your numeric id from the first private message you send the bot (or asks for it
+by hand), and saves both privately. Restart the service (`502drive stop`, `502drive up`) so the
+bot starts. For scripts use `502drive setup --telegram-token-file FILE --telegram-owner-id ID`.
+
 Provide a private `telegram_token_file` and numeric `telegram_owner_id` through
 setup. Bot states are `disabled`, `starting`, `polling`, `error`. There is one
 poller per bot token. Incoming updates commit to the durable inbox **before**

@@ -7,6 +7,11 @@ cùng cách phân quyền với CLI/HTTP; bot lỗi không làm dừng việc co
 
 ## Thiết lập và danh tính
 
+Dễ nhất: chạy `502drive onboard --telegram`. Nó mở @BotFather, kiểm token bạn dán với Telegram,
+đọc ID số của bạn từ tin nhắn riêng đầu tiên bạn gửi cho bot (hoặc hỏi để bạn tự nhập), rồi lưu
+cả hai ở nơi riêng tư. Khởi động lại dịch vụ (`502drive stop`, `502drive up`) để bot bắt đầu chạy.
+Với script dùng `502drive setup --telegram-token-file FILE --telegram-owner-id ID`.
+
 Khi thiết lập, cung cấp một file token riêng tư (`telegram_token_file`) và ID số của
 chủ sở hữu (`telegram_owner_id`). Trạng thái bot: `disabled`, `starting`, `polling`,
 `error`. Mỗi token bot chỉ có một tiến trình nhận tin. Tin đến được ghi bền vào hộp thư
