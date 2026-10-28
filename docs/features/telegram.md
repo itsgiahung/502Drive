@@ -46,6 +46,11 @@ Operators may move only their own queued jobs. Queue positions are live estimate
 fair admission and other work can change them. Stale revision callbacks refresh
 the card rather than forcing a move.
 
+The job management page has a **Clear history** button: pick a range (older than 7 or
+30 or 90 days, or every finished job), read the dry-run preview, then confirm once. An
+operator can only clear their own finished jobs. Collections, mappings and Drive files
+are never touched.
+
 Job management filters server-side and applies bulk actions only to eligible jobs.
 Bulk cancel requires confirmation; quota-waiting jobs are excluded from immediate
 bulk retry. Results count succeeded, skipped and failed operations separately.

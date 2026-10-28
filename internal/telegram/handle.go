@@ -273,6 +273,12 @@ func (t *Telegram) act(ctx context.Context, p app.Principal, st state.Callback, 
 		return t.cancelAllAsk(ctx, p, st.ChatID, st.MessageID)
 	case "cancelall_do":
 		return t.cancelAllDo(ctx, p, st)
+	case "hist_pick":
+		return t.historyPick(ctx, p, st.ChatID, st.MessageID)
+	case "hist_ask":
+		return t.historyAsk(ctx, p, st)
+	case "hist_do":
+		return t.historyDo(ctx, p, st)
 	case "preview_opt":
 		return t.actPreviewOpt(ctx, p, st, tx)
 	case "copy_update":

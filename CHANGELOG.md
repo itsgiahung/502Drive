@@ -4,6 +4,13 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
+## Unreleased
+
+### Added
+
+- Telegram: a **Clear history** button on the job management page (range picker, dry-run
+  preview, one confirmation; operators clear only their own finished jobs).
+
 ## 0.4.7 — 2026-10-28
 
 ### Added

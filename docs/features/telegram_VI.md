@@ -45,6 +45,11 @@ Chỉ chủ sở hữu mới tạm dừng/tiếp tục được cả hàng đợ
 khác). Operator chỉ đổi thứ tự job của chính mình. Vị trí trong hàng đợi chỉ là ước
 tính. Nút đã cũ sẽ làm thẻ tải lại thay vì ép di chuyển.
 
+Trang quản lý job có nút **Xóa lịch sử**: chọn phạm vi (cũ hơn 7, 30, 90 ngày hoặc tất cả
+job đã xong), xem bản xem trước (chạy thử), rồi xác nhận một lần. Operator chỉ xóa được
+job đã xong của chính mình. Các bản copy, thư mục đang theo dõi và file trên Drive không bị
+đụng tới.
+
 Danh sách job được lọc ở phía dịch vụ, và thao tác hàng loạt chỉ áp dụng cho job đủ điều
 kiện. Hủy hàng loạt cần xác nhận; job đang chờ hạn mức không bị gộp vào thử lại ngay.
 Kết quả đếm riêng số thành công, bỏ qua và thất bại.

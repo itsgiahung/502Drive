@@ -162,6 +162,7 @@ func (t *Telegram) manageCard(ctx context.Context, p app.Principal, chatID int64
 	if n := countEligible("cancel", jobs); n > 0 {
 		rows = append(rows, []button{styled(act(fmt.Sprintf(g.batchCancel, n), "batch_cancel_ask", "", 0, mp.json()), "danger")})
 	}
+	rows = append(rows, []button{act(tx.hist().btn, "hist_pick", "", 0, "")})
 	rows = append(rows, []button{nav(tx.jobs, "jobs"), nav(tx.back, "home")})
 	return t.showCard(ctx, p, chatID, messageID, b.String(), rows...)
 }

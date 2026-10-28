@@ -302,6 +302,7 @@ func (t *Telegram) jobsPage(ctx context.Context, p app.Principal, chatID int64, 
 			break
 		}
 	}
+	rows = append(rows, []button{act(tx.hist().btn, "hist_pick", "", 0, "")})
 	if line, queueRow := t.queueControls(ctx, p, tx, ""); line != "" || queueRow != nil {
 		if line != "" {
 			b.WriteString(line + "\n")
