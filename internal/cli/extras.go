@@ -416,7 +416,10 @@ func (a *App) restartWith(ctx context.Context, target, tag string) error {
 	if err := run("stop", "--yes"); err != nil {
 		return localErr(ExitInternal, "update_restart_failed", "Could not stop the daemon: "+err.Error())
 	}
-	backup := filepath.Join(filepath.Dir(a.configPath()), "backups", "before-"+tag+"-"+time.Now().Format("20060102-150405"))
+	backup, err := updateBackupPath(filepath.Dir(a.configPath()), tag, time.Now())
+	if err != nil {
+		return localErr(ExitInternal, "update_restart_failed", "The daemon is stopped; cannot prepare a backup folder ("+err.Error()+"). Start it again with: 502drive up")
+	}
 	if err := run("backup", backup); err != nil {
 		return localErr(ExitInternal, "update_restart_failed", "The daemon is stopped but the backup failed ("+err.Error()+"); start it again with: 502drive up")
 	}
@@ -427,4 +430,15 @@ func (a *App) restartWith(ctx context.Context, target, tag string) error {
 		fmt.Fprintf(a.out(), "Restarted on %s. A backup of the previous data is in %s.\n", tag, backup)
 	}
 	return nil
+}
+
+// updateBackupPath is where `update --restart` backs the data up: a new folder
+// under <config>/backups. The backup command creates only the last path
+// element, so the backups folder (private, 0700) must exist first.
+func updateBackupPath(configDir, tag string, now time.Time) (string, error) {
+	dir := filepath.Join(configDir, "backups")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "before-"+tag+"-"+now.Format("20060102-150405")), nil
 }

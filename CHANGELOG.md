@@ -4,6 +4,15 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
+## 0.4.3 — 2026-10-28
+
+### Fixed
+
+- `502drive update --install --restart` stopped the daemon, then failed to back up
+  because the `backups` folder did not exist, leaving the daemon stopped (found by
+  its first real run). The folder is now created first (private, mode 0700). The
+  data was never touched; `502drive up` starts it again.
+
 ## 0.4.2 — 2026-10-28
 
 (0.4.1 was tagged but never published: its release build caught the race below.)

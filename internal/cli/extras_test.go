@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLogsPrintsTheTailAndSanitizes(t *testing.T) {
@@ -220,5 +221,29 @@ func TestUpdateInstallVerifiesAndSwapsTheBinary(t *testing.T) {
 
 	if code, _, errOut := runUpdate(t, good, "/usr/bin/502drive", "--install", "--yes"); code != ExitUsage || !strings.Contains(errOut, "package") {
 		t.Fatalf("package-managed path: %d %q", code, errOut)
+	}
+}
+
+// `update --restart` backs up into <config>/backups/before-TAG-…; the backup
+// command creates only the last element, so the folder must be made first
+// (the first real run failed here and left the daemon stopped).
+func TestUpdateBackupPathCreatesThePrivateBackupsFolder(t *testing.T) {
+	cfg := t.TempDir()
+	got, err := updateBackupPath(cfg, "v1.2.3", time.Date(2026, 10, 28, 12, 43, 53, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(cfg, "backups", "before-v1.2.3-20261028-124353"); got != want {
+		t.Fatalf("path = %s, want %s", got, want)
+	}
+	st, err := os.Stat(filepath.Join(cfg, "backups"))
+	if err != nil || !st.IsDir() {
+		t.Fatalf("backups folder missing: %v", err)
+	}
+	if runtime.GOOS != "windows" && st.Mode().Perm() != 0o700 {
+		t.Fatalf("backups folder mode = %o, want 700", st.Mode().Perm())
+	}
+	if _, err = os.Stat(got); err == nil {
+		t.Fatal("the backup folder itself must be left for the backup command to create")
 	}
 }
