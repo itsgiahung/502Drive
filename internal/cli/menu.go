@@ -138,13 +138,14 @@ func (a *App) openUI(ctx context.Context) error {
 		return a.runLineMenu(ctx)
 	}
 	return tui.Run(ctx, a.tuiActions(), tui.Options{JobID: a.focusJob,
-		NoMotion: a.g.noMotion,
-		ASCII:    a.g.ascii,
-		Color:    a.style.Color,
-		Width:    a.io.Width,
-		Version:  Version,
-		Profile:  a.style.Profile,
-		Dark:     a.style.Dark,
+		NoMotion:    a.g.noMotion,
+		ASCII:       a.g.ascii,
+		Color:       a.style.Color,
+		Width:       a.io.Width,
+		Version:     Version,
+		Profile:     a.style.Profile,
+		Dark:        a.style.Dark,
+		UpdateCheck: a.menuUpdateCheck,
 	})
 }
 
@@ -619,4 +620,14 @@ func presetSchedule(name, timezone string) *schedule.Spec {
 		return &schedule.Spec{Kind: schedule.KindInterval, IntervalMinutes: 60, AnchorAt: time.Now().UTC()}
 	}
 	return nil
+}
+
+// menuUpdateCheck is the TUI's once-per-start look for a newer release: one
+// GET to the public releases API, nothing about the user is sent. Set
+// DRIVE502_NO_UPDATE_CHECK=1 to turn it off.
+func (a *App) menuUpdateCheck(ctx context.Context) (string, error) {
+	if a.env("DRIVE502_NO_UPDATE_CHECK") != "" {
+		return "", nil
+	}
+	return a.trayUpdateNote(ctx)
 }

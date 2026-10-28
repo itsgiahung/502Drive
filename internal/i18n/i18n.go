@@ -140,6 +140,7 @@ const (
 	SyncOption       Key = "sync_option"
 	SettingsKeys2    Key = "settings_keys2"
 	PanelStart       Key = "panel_start"
+	UpdateLine       Key = "update_line"
 	PanelTip1        Key = "panel_tip1"
 	PanelTip2        Key = "panel_tip2"
 	PanelRecent      Key = "panel_recent"
@@ -350,6 +351,7 @@ var VI = map[Key]string{
 	SyncOption:      `Đồng bộ sau khi copy`,
 	SettingsKeys2:   `←/→ hoặc Enter đổi ngay · ↑ lên thanh tab · esc quay lại`,
 	PanelStart:      `Bắt đầu`,
+	UpdateLine:      "Có bản mới %s\nGõ: 502drive update --install",
 	PanelTip1:       `Dán link Drive vào ô dưới, nhấn Enter để copy`,
 	PanelTip2:       `Gõ / xem lệnh · nhấn 1–7 để chuyển màn`,
 	PanelRecent:     `Hoạt động gần đây`,
@@ -510,6 +512,7 @@ var EN = map[Key]string{
 	SyncOption:      `Keep in sync after copy`,
 	SettingsKeys2:   `←/→ or Enter changes it at once · ↑ to the tab bar · esc back`,
 	PanelStart:      `Get started`,
+	UpdateLine:      "New version %s\nRun: 502drive update --install",
 	PanelTip1:       `Paste a Drive link below, press Enter to copy`,
 	PanelTip2:       `Type / for commands · 1–7 switch screens`,
 	PanelRecent:     `Recent activity`,

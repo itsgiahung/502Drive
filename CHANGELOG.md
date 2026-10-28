@@ -4,6 +4,14 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
+## Unreleased
+
+### Added
+
+- The TUI Home screen shows "New version vX.Y.Z — run `502drive update --install`" when a
+  newer release exists. It is one background GET to the public releases API per start
+  (nothing about you is sent); set `DRIVE502_NO_UPDATE_CHECK=1` to turn it off.
+
 ## 0.4.5 — 2026-10-28
 
 ### Added

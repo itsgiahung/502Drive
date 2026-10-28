@@ -153,3 +153,14 @@ func TestTheTransferStripShowsOnlyWhileSomethingCopies(t *testing.T) {
 		t.Fatalf("a running job should show the transfer block:\n%s", v)
 	}
 }
+
+func TestHomeShowsANewerVersionWhenTheCheckFindsOne(t *testing.T) {
+	m := homeModel(t, newDriveFake(), 100, 30)
+	if strings.Contains(ansi.Strip(m.homeFrame()), "update --install") {
+		t.Fatal("no notice before a newer release is found")
+	}
+	m, _ = update(t, m, updateMsg{tag: "v9.9.9"})
+	if out := ansi.Strip(m.homeFrame()); !strings.Contains(out, "v9.9.9") || !strings.Contains(out, "502drive update --install") {
+		t.Fatalf("home should tell how to update:\n%s", out)
+	}
+}

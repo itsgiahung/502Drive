@@ -170,6 +170,12 @@ func (m Model) homeView() []string {
 	if m.snap.Status.QueuePaused {
 		lines = append(lines, "", m.warn(m.t(i18n.QueuePausedBanner)))
 	}
+	if m.newVersion != "" {
+		lines = append(lines, "")
+		for _, l := range strings.Split(fmt.Sprintf(m.t(i18n.UpdateLine), Sanitize(m.newVersion)), "\n") {
+			lines = append(lines, m.good(l))
+		}
+	}
 	return lines
 }
 

@@ -63,6 +63,9 @@ type Options struct {
 	Profile termenv.Profile
 	Dark    bool
 	Now     func() time.Time
+	// UpdateCheck returns the newer release tag, or "" when this build is
+	// current. Nil turns the check off. It runs once, in the background.
+	UpdateCheck func(context.Context) (string, error)
 }
 
 func (o Options) now() time.Time {
@@ -81,9 +84,10 @@ type confirmation struct {
 // tests can drive it without a terminal. The maps and the animation are
 // shared between copies on purpose: only Update touches them.
 type Model struct {
-	acts Actions
-	opt  Options
-	ctx  context.Context
+	newVersion string // newer release tag found by Options.UpdateCheck
+	acts       Actions
+	opt        Options
+	ctx        context.Context
 
 	width, height int
 	screen        screen
@@ -177,10 +181,19 @@ func (m Model) Init() tea.Cmd {
 	if m.animating() {
 		cmds = append(cmds, animTick())
 	}
+	if check := m.opt.UpdateCheck; check != nil {
+		cmds = append(cmds, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			tag, _ := check(ctx)
+			return updateMsg{tag: tag}
+		})
+	}
 	return tea.Batch(cmds...)
 }
 
 // messages
+type updateMsg struct{ tag string }
 type snapshotMsg struct {
 	snap Snapshot
 	err  error
@@ -275,6 +288,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.fixTop()
+		return m, nil
+	case updateMsg:
+		m.newVersion = msg.tag
 		return m, nil
 	case snapshotMsg:
 		return m.onSnapshot(msg)

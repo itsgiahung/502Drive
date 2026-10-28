@@ -326,6 +326,11 @@ func (m Model) infoColumn() []string {
 	if m.needsGoogle() {
 		lines = append(lines, "", m.warn(m.t(i18n.LoginHome)))
 	}
+	if m.newVersion != "" {
+		for _, l := range strings.Split(fmt.Sprintf(m.t(i18n.UpdateLine), Sanitize(m.newVersion)), "\n") {
+			lines = append(lines, m.good(l))
+		}
+	}
 	return lines
 }
 
