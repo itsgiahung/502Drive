@@ -199,11 +199,17 @@ func (s *Service) deepEstimate(ctx context.Context, prov drive.Provider, plan st
 // but with no goroutine behind it was cut short by a restart and is reported
 // as interrupted; the stored record is not changed.
 func (s *Service) Plan(ctx context.Context, p Principal, id string) (PlanView, error) {
+	// Ask whether the scan is alive BEFORE reading its record. A scan saves its
+	// final state and only then deregisters, so "not running" followed by a read
+	// can only see a final state or a real interruption. The other order could
+	// read "running", lose a race with a scan that just finished, and report a
+	// healthy scan as interrupted.
+	running := s.deepRunning(id)
 	plan, err := s.Store.GetPlan(ctx, p.ID, id)
 	if err != nil {
 		return PlanView{}, err
 	}
-	if plan.Deep != nil && plan.Deep.State == "running" && !s.deepRunning(id) {
+	if plan.Deep != nil && plan.Deep.State == "running" && !running {
 		d := *plan.Deep
 		d.State = "interrupted"
 		plan.Deep = &d
