@@ -4,6 +4,16 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
+## 0.4.5 — 2026-10-28
+
+### Added
+
+- Releases are signed. The release workflow signs `checksums.txt` with Sigstore
+  (keyless, bound to the workflow's identity, no key to leak), verifies the
+  signature before publishing, and attaches `checksums.txt.sigstore.json`.
+  `install.sh` verifies it when `cosign` is installed (`REQUIRE_SIGNATURE=1` makes it
+  mandatory). Instructions: "Verify a release" in `docs/install-linux.md`.
+
 ## 0.4.4 — 2026-10-28
 
 ### Fixed

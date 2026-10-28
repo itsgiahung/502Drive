@@ -50,7 +50,11 @@ curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/in
 irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex
 ```
 
-Both scripts check the download against the published checksums.
+Both scripts check the download against the published checksums. Releases from
+0.4.5 on also carry a signature of those checksums, made by this project's release
+workflow; the Linux/macOS script verifies it when [`cosign`](https://docs.sigstore.dev/cosign/installation/)
+is installed (`REQUIRE_SIGNATURE=1` makes it mandatory). To check a download by
+hand, see [Verify a release](docs/install-linux.md#verify-a-release).
 
 **2. Make a Google key (once, about five minutes).** Google requires every app
 that copies Drive files to have a key. You create your own in Google Cloud, so

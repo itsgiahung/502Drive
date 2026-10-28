@@ -49,7 +49,12 @@ curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/in
 irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex
 ```
 
-Cả hai script đều kiểm tra file tải về với checksum đã công bố.
+Cả hai script đều kiểm tra file tải về với checksum đã công bố. Từ bản 0.4.5, mỗi
+bản phát hành còn có chữ ký cho các checksum đó, do quy trình phát hành của dự án
+tạo ra; script Linux/macOS tự kiểm chữ ký nếu máy có
+[`cosign`](https://docs.sigstore.dev/cosign/installation/) (đặt `REQUIRE_SIGNATURE=1`
+để bắt buộc). Muốn tự kiểm thủ công: xem
+[Verify a release](docs/install-linux.md#verify-a-release) (tiếng Anh).
 
 **2. Tạo khóa Google (làm một lần, khoảng 5 phút).** Google yêu cầu mọi ứng dụng
 copy file Drive phải có khóa. Bạn tự tạo khóa của mình trên Google Cloud, nên file

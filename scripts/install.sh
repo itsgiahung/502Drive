@@ -7,6 +7,9 @@
 # Environment:
 #   VERSION=v1.2.3   install this release instead of the latest
 #   PREFIX=DIR       install into DIR/bin (default: $HOME/.local)
+#   REQUIRE_SIGNATURE=1  refuse to install unless the Sigstore signature of
+#                    checksums.txt verifies (needs `cosign`; by default it is
+#                    checked when cosign is installed and the release has one)
 #
 # Installs `502drive` and the short alias `502d`. It never uses sudo; for a
 # system-wide install use the .rpm/.deb package instead.
@@ -58,6 +61,26 @@ trap 'rm -rf "$tmp"' EXIT INT TERM
 
 say "Fetching checksums..."
 fetch "$base/checksums.txt" "$tmp/checksums.txt" || die "cannot download $base/checksums.txt (is there a published release?)"
+# The checksums only protect against a corrupted download. Their Sigstore
+# signature shows they were produced by this project's release workflow.
+identity='^https://github\.com/itsgiahung/502Drive/\.github/workflows/go-release\.yml@refs/tags/v.+$'
+if command -v cosign >/dev/null 2>&1; then
+  if fetch "$base/checksums.txt.sigstore.json" "$tmp/checksums.txt.sigstore.json" 2>/dev/null; then
+    cosign verify-blob --bundle "$tmp/checksums.txt.sigstore.json" \
+      --certificate-identity-regexp "$identity" \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      "$tmp/checksums.txt" >/dev/null 2>&1 \
+      || die "the signature of checksums.txt does not verify; nothing was installed"
+    say "Signature verified (Sigstore)."
+  elif [ "${REQUIRE_SIGNATURE:-}" = 1 ]; then
+    die "this release has no signature and REQUIRE_SIGNATURE=1; nothing was installed"
+  else
+    say "No signature published for this release; checking checksums only."
+  fi
+elif [ "${REQUIRE_SIGNATURE:-}" = 1 ]; then
+  die "REQUIRE_SIGNATURE=1 needs cosign (https://docs.sigstore.dev/cosign/installation/)"
+fi
+
 line="$(grep "_${os}_${arch}\.tar\.gz\$" "$tmp/checksums.txt" | head -n1 || true)"
 [ -n "$line" ] || die "no $os/$arch archive in this release"
 want="${line%% *}"

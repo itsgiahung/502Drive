@@ -27,6 +27,14 @@ for reviewing what is staged.
 4. Master key: reauthorize the Google account to establish new token material;
    keep old backups private if they are still needed.
 
+## Verifying releases
+
+From 0.4.5 each release includes `checksums.txt.sigstore.json`, a keyless Sigstore
+signature of `checksums.txt` made by the release workflow; see
+[Verify a release](docs/install-linux.md#verify-a-release). Windows installers are
+not yet code-signed. If a release ever fails this check, do not install it and
+report it as described above.
+
 ## Boundaries
 
 The API binds to loopback and requires a bearer token. Container deployments bind
