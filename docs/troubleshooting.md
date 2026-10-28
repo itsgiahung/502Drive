@@ -1,5 +1,7 @@
 # Troubleshooting
 
+English · [Tiếng Việt](troubleshooting_VI.md)
+
 Start with `502drive status`, `502drive doctor` and daemon logs. `doctor --online`
 contacts Google; ordinary Doctor checks are local.
 

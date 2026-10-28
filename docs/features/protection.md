@@ -1,5 +1,7 @@
 # Mirror, snapshots and restore
 
+English · [Tiếng Việt](protection_VI.md)
+
 **Mirror and automatic snapshots are off by default.** Configure each collection
 explicitly from the CLI, the collection detail screen of the TUI or the Telegram
 collection card.

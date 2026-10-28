@@ -13,6 +13,16 @@ before 1.0 a minor version may change behaviour, and every such change is listed
   signature before publishing, and attaches `checksums.txt.sigstore.json`.
   `install.sh` verifies it when `cosign` is installed (`REQUIRE_SIGNATURE=1` makes it
   mandatory). Instructions: "Verify a release" in `docs/install-linux.md`.
+- Vietnamese versions (`*_VI.md`) of the user guides: OAuth setup, Linux, Windows and
+  Docker install, troubleshooting, protection and Telegram. Technical docs stay English.
+
+### Fixed
+
+- TUI: choosing "Keep empty folders" in the filter editor no longer panics (a cursor
+  blink reached a row that has no text field). The row is now a Yes/No switch.
+- TUI: only one cursor is shown. The tab bar and the page are separate focus zones:
+  `←`/`→` switch tabs only from the bar, `→`/Enter opens the selected row, `←` steps out
+  to the bar. The current tab on a page is underlined, not highlighted.
 
 ## 0.4.4 — 2026-10-28
 

@@ -1,5 +1,7 @@
 # Google OAuth setup
 
+English · [Tiếng Việt](oauth-setup_VI.md)
+
 502Drive uses your own Google **Desktop app** OAuth client and a PKCE loopback
 callback. The daemon holds the credentials; clients and operators do not receive them.
 

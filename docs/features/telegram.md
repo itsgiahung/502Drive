@@ -1,5 +1,7 @@
 # Telegram bot
 
+English · [Tiếng Việt](telegram_VI.md)
+
 Telegram is optional and runs inside the daemon. It uses the same application
 service and authorization as HTTP/CLI; bot failure does not stop core copy work.
 

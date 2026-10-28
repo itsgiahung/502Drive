@@ -1,5 +1,7 @@
 # Windows installation
 
+English · [Tiếng Việt](install-windows_VI.md)
+
 Windows releases contain `502drive.exe`, the GUI launcher `502drive-tray.exe`,
 and the `502d.cmd` shortcut. Choose the ZIP for portable use or
 `502drive-setup.exe` for installation.

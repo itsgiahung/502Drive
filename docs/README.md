@@ -1,7 +1,11 @@
 # Documentation
 
 502Drive is one Go 1.27 module. The application supports English and Vietnamese;
-public documentation is English except for the [Vietnamese README](../README_VI.md).
+technical documentation is English. User guides also have Vietnamese versions (files ending `_VI.md`): the
+[README](../README_VI.md), [OAuth](oauth-setup_VI.md), [Linux](install-linux_VI.md),
+[Windows](install-windows_VI.md), [Docker](install-docker_VI.md),
+[troubleshooting](troubleshooting_VI.md), [protection](features/protection_VI.md) and
+[Telegram](features/telegram_VI.md).
 
 ## Start here
 
