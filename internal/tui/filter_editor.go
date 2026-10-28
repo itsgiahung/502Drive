@@ -85,6 +85,7 @@ func (m Model) openFilter(c Collection) Model {
 		in.Width = max(12, m.width-28)
 		in.SetValue(v)
 		in.Placeholder = placeholders[i]
+		in.Prompt = "" // the row marker shows where the cursor is; a "> " on every field showed five
 		f.fields = append(f.fields, in)
 	}
 	f.fields[0].Focus()
@@ -210,7 +211,7 @@ func (m Model) filterEditorView() []string {
 	for i, key := range filterFields {
 		mark := "  "
 		if i == f.row {
-			mark = "> "
+			mark = m.paintBG("39", "16", ">") + " " // the one cursor, same marker as the lists
 		}
 		if i == keepRow {
 			box := "[ ] " + m.t(i18n.FilterNo)

@@ -704,6 +704,12 @@ func (m Model) good(s string) string   { return m.paint("42", false, s) }
 func (m Model) warn(s string) string   { return m.paint("214", false, s) }
 func (m Model) bad(s string) string    { return m.paint("203", false, s) }
 func (m Model) dim(s string) string    { return m.paint("244", false, s) }
+func (m Model) underline(s string) string {
+	if !m.opt.Color {
+		return s
+	}
+	return lipgloss.NewStyle().Bold(true).Underline(true).Render(s)
+}
 func (m Model) bold(s string) string {
 	if !m.opt.Color {
 		return s

@@ -373,8 +373,12 @@ func (m Model) forwardToInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch {
 	case m.screen == screenFilter && m.fe != nil:
-		m.fe.fields[m.fe.row], cmd = m.fe.fields[m.fe.row].Update(msg)
-		m = m.validateFilter()
+		// The "keep empty folders" row is a switch with no text field behind it:
+		// the blink and paste messages that reach here have nowhere to go.
+		if m.fe.row < len(m.fe.fields) {
+			m.fe.fields[m.fe.row], cmd = m.fe.fields[m.fe.row].Update(msg)
+			m = m.validateFilter()
+		}
 	case m.screen == screenCopy && m.cp != nil && m.cp.input != nil:
 		*m.cp.input, cmd = m.cp.input.Update(msg)
 	case m.screen == screenDrive && m.drv != nil && m.drv.prompt != nil:

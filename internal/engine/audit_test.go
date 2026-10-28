@@ -513,7 +513,12 @@ func TestAuditHonorsPauseAndCancel(t *testing.T) {
 	<-done
 	e.fake.Before = nil
 
-	if _, err = e.store.Action(context.Background(), "owner", "resume-key", jobB.ID, "resume", paused.Revision); err != nil {
+	// The engine saved the job once more while stopping; resume on the current revision.
+	cur, gerr := e.store.GetJob(context.Background(), "owner", jobB.ID)
+	if gerr != nil {
+		t.Fatal(gerr)
+	}
+	if _, err = e.store.Action(context.Background(), "owner", "resume-key", jobB.ID, "resume", cur.Revision); err != nil {
 		t.Fatal(err)
 	}
 	j2 := e.runUntil(jobB.ID, terminal)

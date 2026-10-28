@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"github.com/charmbracelet/bubbles/cursor"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/itsgiahung/502Drive/internal/filter"
 	"strings"
 	"testing"
@@ -70,5 +72,29 @@ func TestFilterEditorUsesASwitchAndPlainInputs(t *testing.T) {
 	m = sendKeys(t, m, "ctrl+s")
 	if !saved.KeepEmptyFolders || saved.ModifiedAfter != "2026-02-01T00:00:00Z" || saved.MinSize != 0 {
 		t.Fatalf("saved %+v", saved)
+	}
+}
+
+// The cursor-blink (and paste) messages the text field receives must not crash
+// the editor when the cursor is on the "keep empty folders" switch, which has no
+// text field behind it (a real panic: index out of range [5] with length 5).
+func TestFilterEditorSurvivesBlinkMessagesOnTheSwitchRow(t *testing.T) {
+	m := New(Actions{}, Options{Language: "en"})
+	m = m.openFilter(Collection{ID: "c", Revision: 1})
+	m = sendKeys(t, m, "tab", "tab", "tab", "tab", "tab")
+	if m.fe.row != keepRow {
+		t.Fatalf("row = %d, want the switch", m.fe.row)
+	}
+	for _, msg := range []tea.Msg{struct{}{}, cursor.BlinkMsg{}, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x"), Paste: true}} {
+		next, _ := m.Update(msg) // must not panic
+		m = next.(Model)
+	}
+	if m.fe.keep {
+		t.Fatal("stray messages must not flip the switch")
+	}
+	// Only the current row carries the cursor marker; the fields have no "> " prompt of their own.
+	view := m.View()
+	if n := strings.Count(view, ">"); n != 1 {
+		t.Fatalf("%d cursor markers on screen, want exactly 1:\n%s", n, view)
 	}
 }

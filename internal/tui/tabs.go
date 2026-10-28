@@ -104,7 +104,10 @@ func (m Model) tabBar() string {
 		case i == active && m.opt.Color && m.tabFocus:
 			sb.WriteString(m.accentBG(l)) // the cursor is here
 		case i == active && m.opt.Color:
-			sb.WriteString(m.paintBG("238", "255", l)) // current page, cursor is below
+			// The current page, with the cursor below: bold and underlined text, NOT a
+			// filled block. A filled block (cyan) always means "the cursor is here", and
+			// there is only ever one of those on screen.
+			sb.WriteString(m.underline(l))
 		case i == active:
 			sb.WriteString("[" + strings.TrimSpace(l) + "]")
 		default:
