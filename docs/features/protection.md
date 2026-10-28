@@ -58,6 +58,8 @@ treats them as deleted and moves their copies to the trash (recoverable for abou
 - Move snapshot-referenced copies into the sibling archive
   `.502drive-versions-<collection-id>` instead of trashing them. Archive creation
   records intent first; a lost response is reconciled, never blindly re-created.
+- A file whose byte-identical twin (same folder and name, skipped as a duplicate) is
+  still at the source keeps its copy; mirror waits until both are gone.
 - A returning source uses a new generation, rather than reusing a finished intent.
 
 ## Capture and restore

@@ -8,6 +8,10 @@ before 1.0 a minor version may change behaviour, and every such change is listed
 
 ### Fixed
 
+- Mirror no longer trashes the copy of a file whose byte-identical twin (same folder,
+  same name, skipped as a duplicate) still exists at the source. Before, deleting
+  whichever of two identical files the copy happened to map to made mirror trash the
+  only copy; the next run had to copy it back.
 - A finished job with skipped duplicates no longer reads "91%": skipped items count as
   settled in the Telegram bar and the Home list, so 32 copied + 3 skipped of 35 is 100%.
 - The "name taken, skipped" explanation says what really happened: a byte-identical

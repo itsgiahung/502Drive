@@ -59,6 +59,8 @@ chặn "mất hàng loạt" vẫn dừng lượt chạy khi một phần lớn n
   lại.
 - Bản copy còn được snapshot tham chiếu thì không vào thùng rác mà được chuyển sang
   thư mục lưu trữ `.502drive-versions-<mã bản copy>` nằm cạnh bản copy.
+- File có bản y hệt (cùng thư mục, cùng tên, cùng nội dung, bị bỏ qua vì trùng) còn ở nguồn thì
+  bản copy được giữ; mirror chỉ xử lý khi cả hai đã mất.
 - Nếu file quay lại ở nguồn, nó được copy lại như file mới.
 
 ## Snapshot và khôi phục

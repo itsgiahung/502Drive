@@ -388,10 +388,14 @@ func (s *Store) FreezeMirrorActions(ctx context.Context, job, col string) error 
    SELECT ?,row_number() OVER(ORDER BY depth DESC,source)-1,'remove',body FROM (
     SELECT length(rel_path)-length(replace(rel_path,'/',''))+CASE WHEN parent_source_id='' THEN 0 ELSE 1 END depth,source_id source,json_object('item',`+itemJSON+`,'identity','') body
      FROM items WHERE collection_id=? AND state='done' AND dest_id<>'' AND error_code='source_removed'
+      -- an identical twin skipped at the source (same folder, name and bytes) was listed in this very run (it still exists):
+      -- the copy holds its content too, so it stays
+      AND NOT EXISTS (SELECT 1 FROM items t WHERE t.collection_id=items.collection_id AND t.source_id<>items.source_id
+        AND t.parent_source_id=items.parent_source_id AND t.fingerprint=items.fingerprint AND t.state='skipped' AND t.error_code='conflict' AND t.seen_job=?)
     UNION ALL
     SELECT length(rel_path)-length(replace(rel_path,'/',''))+CASE WHEN parent_source_id='' THEN 0 ELSE 1 END depth,source_id source,json_object('item',`+versionItemJSON+`,'identity','') body
      FROM items `+versionJoin+` WHERE collection_id=? AND v_dest<>dest_id AND error_code='source_removed'
-   )`, job, col, col)
+   )`, job, col, job, col)
 		return err
 	})
 }
