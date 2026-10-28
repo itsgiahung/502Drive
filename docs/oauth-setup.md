@@ -3,15 +3,36 @@
 502Drive uses your own Google **Desktop app** OAuth client and a PKCE loopback
 callback. The daemon holds the credentials; clients and operators do not receive them.
 
-## Configure the client
+## Create the client (5 steps)
 
-Enable the Google Drive API in your Google Cloud project, configure the consent
-screen and create an OAuth client of type **Desktop app**. If your consent screen
-is in testing mode, add the account you will use as a test user.
+Google's console now calls this area **Google Auth Platform**. The links below
+open the current pages, and `502drive onboard` walks the same steps in a
+terminal: it opens each page and waits while you work (Enter = done, `s` = skip,
+`q` = quit; pasting the JSON path at any step finishes the guide early).
+
+1. **Project**: create one, or select an existing project —
+   <https://console.cloud.google.com/projectcreate>
+2. **Drive API**: enable it for that project —
+   <https://console.cloud.google.com/apis/library/drive.googleapis.com>
+3. **Consent screen**: under **Google Auth Platform → Branding** choose
+   **External**; under **Audience** add the address you will sign in with as a
+   **Test user** — <https://console.cloud.google.com/auth/branding>
+4. **Client**: **Google Auth Platform → Clients → Create client**, type
+   **Desktop app** — <https://console.cloud.google.com/auth/clients/create>
+5. **Download**: press **Download JSON** on the new client. The file is named
+   `client_secret….json`.
+
+Web-client JSON is rejected: the error says to create a **Desktop app** client.
+If a valid Desktop client JSON was downloaded to `~/Downloads` in the last day,
+onboard asks once whether to use it. A key that is already configured (config,
+environment variable or `.env`) means onboard asks nothing.
+
+## Configure the client
 
 Choose one setup method:
 
 ```sh
+502drive onboard   # guided above, then the readiness checklist
 502drive setup --oauth-client /path/to/client_secret.json
 ```
 
@@ -20,10 +41,9 @@ Or set `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` in your private
 folder's `.env`, or an explicit `--env-file PATH`; flags take precedence.
 Legacy `GDCLONE__GOOGLE_OAUTH__CLIENT_ID` / `CLIENT_SECRET` names remain accepted.
 
-Interactive setup can also accept the downloaded JSON path. Web-client JSON is
-rejected. Setup copies client credentials into a private file under the
-configuration directory; values are not printed. Do not commit the original JSON,
-`.env`, generated configuration or token files.
+Setup copies client credentials into a private file under the configuration
+directory; values are not printed. Do not commit the original JSON, `.env`,
+generated configuration or token files.
 
 ## Authorize your account
 

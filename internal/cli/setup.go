@@ -315,7 +315,7 @@ func validateOAuthClient(raw []byte) error {
 	c, ok := doc["installed"]
 	if !ok {
 		if _, web := doc["web"]; web {
-			return errors.New("this is a Web client; create a Desktop app client instead")
+			return errors.New(`this is a Web client, not a Desktop app; create an OAuth client of type "Desktop app" and download its JSON`)
 		}
 		return errors.New(`no "installed" section`)
 	}

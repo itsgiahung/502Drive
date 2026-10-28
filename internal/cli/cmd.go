@@ -403,9 +403,11 @@ func (a *App) serveCmd() *cobra.Command {
 	return c
 }
 
-// openBrowser launches the system browser without a shell.
+// openBrowser launches the system browser without a shell. Only Google's
+// sign-in and Cloud console origins are accepted, so no caller can turn a
+// pasted value into an arbitrary URL launch.
 func openBrowser(u string) error {
-	if !strings.HasPrefix(u, "https://accounts.google.com/") {
+	if !strings.HasPrefix(u, "https://accounts.google.com/") && !strings.HasPrefix(u, "https://console.cloud.google.com/") {
 		return errors.New("refusing to open an unexpected URL")
 	}
 	var cmd *exec.Cmd
