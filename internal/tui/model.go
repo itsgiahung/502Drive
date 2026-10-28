@@ -32,6 +32,7 @@ const (
 	screenAudit
 	screenFilter
 	screenProtect
+	screenHistory
 )
 
 const (
@@ -120,6 +121,7 @@ type Model struct {
 	showRetired bool
 	// Settings: the field being typed (quiet hours), if any.
 	setInput *textinput.Model
+	hist     *historyFlow
 	// Batch IT: the server-side job filter and its source name, the moves
 	// made in the queue, batch progress, the newest audit per collection (the
 	// maps are shared between copies), the problem report and the CSV path
@@ -328,6 +330,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onFilterEdit(msg)
 	case auditPageMsg:
 		return m.onFindings(msg)
+	case histPreviewMsg:
+		return m.onHistPreview(msg), nil
+	case histDoneMsg:
+		return m.onHistDone(msg), nil
+	case historyJobsMsg:
+		m.status = m.tf(i18n.HistJobsDone, msg.res.Hidden, msg.res.Skipped)
+		m.selected = map[string]bool{}
+		return m, m.fetch()
 	case protectLoadedMsg:
 		return m.onProtectionLoaded(msg), nil
 	case restorePreviewMsg:
@@ -628,6 +638,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.screen == screenProtect {
 		return m.protectionKey(msg.String())
 	}
+	if m.screen == screenHistory {
+		return m.histKey(msg.String())
+	}
 	if m.screen == screenCopy { // the dialog owns 1/2/3, d and enter
 		return m.copyScreenKey(msg)
 	}
@@ -823,6 +836,8 @@ func (m Model) back() (tea.Model, tea.Cmd) {
 		m.screen = screenLibrary
 		m.clean = nil
 		m.syncMenu = false
+	case screenHistory:
+		m.screen, m.hist = screenSettings, nil
 	case screenProtect:
 		if m.prot != nil {
 			return m.leaveCollectionSubview(m.prot.collectionID), nil

@@ -3198,6 +3198,87 @@
      }
     }
    }
+  },
+  "/v1/history/clear": {
+   "post": {
+    "summary": "Clear finished jobs from the history",
+    "description": "Hides finished jobs (succeeded, partial, failed, cancelled) from the job lists and lets retention delete what nothing refers to. Collections, copied-item mappings and Drive files are never touched; a hidden job can still be read by id. Give either older_than_days (0 = every finished job; owner only) or job_ids (an operator may clear their own). dry_run defaults to true: preview first.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "older_than_days": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 36500
+         },
+         "job_ids": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          },
+          "maxItems": 500
+         },
+         "dry_run": {
+          "type": "boolean",
+          "default": true
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "What was (or would be) cleared",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "data": {
+           "type": "object",
+           "properties": {
+            "dry_run": {
+             "type": "boolean"
+            },
+            "hidden": {
+             "type": "integer"
+            },
+            "skipped": {
+             "type": "integer"
+            },
+            "deleted": {
+             "type": "object",
+             "additionalProperties": true
+            }
+           },
+           "required": [
+            "dry_run",
+            "hidden",
+            "skipped",
+            "deleted"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error400"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error403"
+     },
+     "default": {
+      "$ref": "#/components/responses/DefaultError"
+     }
+    }
+   }
   }
  },
  "components": {

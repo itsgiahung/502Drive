@@ -25,10 +25,17 @@ type fakeActions struct {
 	snaps    []SnapshotInfo
 	restore  RestorePlan
 	jobState string
+	hist     HistoryClearResult // what ClearHistory answers
 }
 
 func (f *fakeActions) Actions() Actions {
 	return Actions{
+		ClearHistory: func(_ context.Context, days int, ids []string, dry bool) (HistoryClearResult, error) {
+			f.record(fmt.Sprintf("history:%d:%v:%v", days, ids, dry))
+			res := f.hist
+			res.DryRun = dry
+			return res, f.actErr
+		},
 		Snapshot: func(context.Context) (Snapshot, error) {
 			f.mu.Lock()
 			defer f.mu.Unlock()

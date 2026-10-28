@@ -488,7 +488,7 @@ func (s *Store) ListJobs(ctx context.Context, principal, state, collectionID str
 	if cursor <= 0 {
 		cursor = 1 << 62
 	}
-	query := "SELECT rowid,id FROM jobs WHERE rowid<?"
+	query := "SELECT rowid,id FROM jobs WHERE rowid<? AND json_extract(body,'$.hidden_at') IS NULL"
 	args := []any{cursor}
 	if principal != "" {
 		query += " AND principal=?"

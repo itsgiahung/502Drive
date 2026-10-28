@@ -9,7 +9,9 @@ import (
 // PruneOptions controls retention cleanup.
 type PruneOptions struct {
 	OlderThan time.Duration
-	DryRun    bool
+	// All treats every finished job as old enough (OlderThan is ignored).
+	All    bool
+	DryRun bool
 }
 
 // PruneReport summarizes the outcome of a retention pass.
@@ -34,7 +36,7 @@ type PruneReport struct {
 // keys, the ownership proof used by audit and repair), and any job still
 // referenced by items, plans, or sync occurrences.
 func (s *Store) Prune(ctx context.Context, opt PruneOptions) (PruneReport, error) {
-	if opt.OlderThan <= 0 {
+	if opt.OlderThan <= 0 && !opt.All {
 		return PruneReport{
 			OlderThan: "0s",
 			Cutoff:    time.Now().UTC(),
@@ -43,6 +45,9 @@ func (s *Store) Prune(ctx context.Context, opt PruneOptions) (PruneReport, error
 	}
 
 	cutoff := time.Now().Add(-opt.OlderThan).UTC()
+	if opt.All {
+		cutoff = time.Now().UTC()
+	}
 	cutoffStr := cutoff.Format(time.RFC3339Nano)
 	cutoffMs := cutoff.UnixMilli()
 

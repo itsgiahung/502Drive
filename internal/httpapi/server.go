@@ -134,6 +134,7 @@ func (s *Server) Handler() http.Handler {
 	s.syncRoutes(route)
 	s.lifecycleRoutes(route)
 	s.protectionRoutes(route)
+	s.historyClearRoutes(route)
 	mux.HandleFunc("/", s.wrap(true, func(http.ResponseWriter, *http.Request, app.Principal) (int, any, error) {
 		return 0, nil, app.Fail(404, "not_found", "Not found.")
 	}))

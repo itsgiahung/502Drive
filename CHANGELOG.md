@@ -6,7 +6,17 @@ before 1.0 a minor version may change behaviour, and every such change is listed
 
 ## Unreleased
 
+### Added
+
+- Clear history: `502drive history clear (--older-than 30d | --all-finished)` works while
+  the daemon runs (preview, then confirm; `--yes` for scripts), `POST /v1/history/clear`,
+  **Settings › Clear history…** and `x` on the Jobs screen in the TUI. Finished jobs leave
+  the lists and unreferenced ones are deleted; collections, mappings and Drive are untouched.
+  `502drive prune` now points to it when the daemon is running.
+
 ### Fixed
+
+- TUI: the Home activity list no longer prints a job's state twice.
 
 - TUI: switching tab with a number key, Tab or a click leaves the cursor on the tab bar
   with no row selected; ↓ or Enter goes into the page. Before, the first job/row looked

@@ -70,6 +70,14 @@ events, expired plans and notification state. Offline cleanup only removes eligi
 old app-created temporary files; it never follows symlinks or removes database/WAL,
 master keys or mappings. Vacuum checkpoints and compacts the database offline.
 
+To clear history while the daemon runs (the normal case) use
+`502drive history clear --older-than 30d` or `--all-finished`; it previews first and
+asks, and `--yes` applies it in scripts. In the app: **Settings › Clear history…**, or
+`x` on the Jobs screen for the selected finished jobs. It hides finished jobs from the
+lists (most of them still back a copied item, so the job record stays for audit and
+repair) and deletes the ones nothing refers to, with their events. It never touches
+collections, mappings or Drive files. `prune` is the same retention pass but offline.
+
 The daemon also prunes history on its own, at most once a day: it uses the
 owner's **retention days** setting (Settings in the app; 90 by default, 0 keeps
 everything) and records the last run in the database, so restarts neither skip

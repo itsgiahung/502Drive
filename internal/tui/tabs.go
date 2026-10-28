@@ -39,6 +39,8 @@ func (m Model) activeTab() int {
 		home = screenJobs
 	case screenCollection, screenAudit, screenFilter, screenProtect:
 		home = screenLibrary
+	case screenHistory:
+		home = screenSettings
 	case screenCopy:
 		home = screenHome
 	case screenHelp:

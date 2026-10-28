@@ -81,6 +81,7 @@ A source that is one file is not filtered. See [copy behavior](clone-jobs.md).
 502drive resume
 502drive jobs report ID [--format table|json|csv] [--max-rows N]
 502drive history export [--since 30d] [--format csv|json|table] [--all] [--max-rows N]
+502drive history clear (--older-than 30d | --all-finished) [--dry-run] [--yes]
 ```
 
 Job references accept full IDs, unambiguous prefixes, `@last` and `@running`.

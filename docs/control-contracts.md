@@ -74,6 +74,7 @@ no Idempotency-Key parameter is declared for that operation.
 | `POST /v1/doctor/fix` | 200 | — |
 | `POST /v1/jobs/{job_id}/move` | 200 | — |
 | `GET /v1/batches/{batch_id}` | 200 | — |
+| `POST /v1/history/clear` | 200 | — |
 | `POST /v1/queue/pause` | 200 | — |
 | `POST /v1/queue/resume` | 200 | — |
 | `POST /v1/jobs/{job_id}/pause` | 202 | — |

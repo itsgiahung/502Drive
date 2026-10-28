@@ -35,7 +35,7 @@ Bắt đầu bằng `502drive status`, `502drive doctor` và nhật ký (`502dri
 | Không có khay hệ thống (Linux) | Kiểm tra D-Bus và tiện ích AppIndicator; dùng ứng dụng terminal |
 | Bảo trì ngoại tuyến bị từ chối | Dừng dịch vụ/container; đừng xóa file khóa |
 | Doctor báo lỗi quyền file | `doctor --fix` sửa được lỗi cục bộ an toàn; đăng nhập Google thì phải đăng nhập lại |
-| Cơ sở dữ liệu phình to | Sao lưu, xem trước `prune` ngoại tuyến, rồi `vacuum` |
+| Cơ sở dữ liệu phình to hoặc danh sách job quá dài | `history clear --older-than 30d` chạy được khi dịch vụ đang chạy; muốn nén sâu thì sao lưu, xem trước `prune` ngoại tuyến, rồi `vacuum` |
 | Khôi phục báo thư mục đích đã có | Chọn thư mục mới và trống; lệnh khôi phục không ghi đè |
 | Lỗi toàn vẹn/khóa khi khôi phục sao lưu | Dùng bản sao lưu đầy đủ đã kiểm tra; thiếu khóa thì không giải mã được token |
 | Đăng nhập OAuth chờ mãi | Kiểm tra đúng cổng callback, chuyển tiếp SSH hoặc cổng container |

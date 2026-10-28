@@ -47,6 +47,7 @@ func (a *App) tuiActions() tui.Actions {
 		SetCollectionFilter:     a.tuiSetCollectionFilter,
 		PreviewCollectionFilter: a.tuiPreviewCollectionFilter,
 		Protection:              a.tuiProtection,
+		ClearHistory:            a.tuiClearHistory,
 		SetProtection:           a.tuiSetProtection,
 		ListSnapshots:           a.tuiSnapshots,
 		CreateSnapshot:          a.tuiCreateSnapshot,

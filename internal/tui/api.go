@@ -372,6 +372,10 @@ type Actions struct {
 	// capture job. PinSnapshot changes one point. RestoreSnapshot always gets
 	// dryRun=true first and RestorePlan lists the actions of that dry-run job
 	// before RestoreSnapshot(dryRun=false) is offered.
+	// ClearHistory removes finished jobs from the history: olderThanDays N>=0
+	// (0 = every finished job) or, with olderThanDays < 0, the listed jobIDs.
+	// The screen always previews (dryRun) before it clears.
+	ClearHistory    func(ctx context.Context, olderThanDays int, jobIDs []string, dryRun bool) (HistoryClearResult, error)
 	Protection      func(ctx context.Context, collectionID string) (ProtectionView, error)
 	SetProtection   func(ctx context.Context, collectionID string, revision int, opts ProtectionOptions) (ProtectionView, error)
 	ListSnapshots   func(ctx context.Context, collectionID string) ([]SnapshotInfo, error)

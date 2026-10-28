@@ -178,6 +178,21 @@ func (m Model) jobsKey(key string) (tea.Model, tea.Cmd) {
 	if next, cmd, handled := m.jobsKeyIT(key); handled {
 		return next, cmd
 	}
+	if key == "x" && m.acts.ClearHistory != nil {
+		var ids []string
+		for _, j := range m.jobRows() {
+			switch j.State {
+			case "succeeded", "partial", "failed", "cancelled":
+				ids = append(ids, j.ID)
+			}
+		}
+		if len(ids) == 0 {
+			m.status = m.t(i18n.HistJobsNone)
+			return m, nil
+		}
+		m.confirm = &confirmation{prompt: m.tf(i18n.HistJobsAsk, len(ids)), run: m.histClearJobs(ids)}
+		return m, nil
+	}
 	actions := map[string]string{"p": "pause", "u": "resume", "c": "cancel", "t": "retry"}
 	action, ok := actions[key]
 	if !ok || m.acts.JobAction == nil {

@@ -26,6 +26,7 @@ const (
 	rowNotifyFailed
 	rowNotifyAction
 	rowAfterSync
+	rowClearHistory
 )
 
 // retentionChoices are the history windows ←/→ step through (0 keeps all).
@@ -46,6 +47,9 @@ func (m Model) settingsRows() []settingsRow {
 	}
 	if m.acts.SetPreference != nil {
 		rows = append(rows, rowQuiet, rowRetention, rowNotifyDone, rowNotifyFailed, rowNotifyAction, rowAfterSync)
+	}
+	if m.acts.ClearHistory != nil {
+		rows = append(rows, rowClearHistory)
 	}
 	return rows
 }
@@ -93,6 +97,11 @@ func (m Model) settingsStep(step int) (tea.Model, tea.Cmd) {
 	case rowNotifyAction:
 		p.NotifyAction = !p.NotifyAction
 		return m, m.setPref("notify_action_required", p.NotifyAction)
+	case rowClearHistory:
+		if step < 0 {
+			return m, nil
+		}
+		return m.openHistory()
 	case rowAfterSync:
 		next := stepAfterSync(p.AfterCopySync, step)
 		p.AfterCopySync = next
@@ -282,6 +291,8 @@ func (m Model) settingsView() []string {
 			lines = append(lines, line(mark, label, check(p.NotifyAction)))
 		case rowAfterSync:
 			lines = append(lines, line(mark, label, m.afterSyncChoiceText(p.AfterCopySync)))
+		case rowClearHistory:
+			lines = append(lines, line(mark, label, m.dim("›")))
 		}
 	}
 	lines = append(lines, line("  ", m.t(i18n.Timezone), Sanitize(orDash(m.snap.Prefs.Timezone))))
@@ -318,6 +329,8 @@ func (m Model) rowLabel(row settingsRow) string {
 		return m.t(i18n.SetNotifyAction)
 	case rowAfterSync:
 		return m.t(i18n.SetAfterSync)
+	case rowClearHistory:
+		return m.t(i18n.HistRow)
 	}
 	return ""
 }

@@ -124,6 +124,8 @@ func (m Model) screenBody() []string {
 		return m.filterEditorView()
 	case screenProtect:
 		return m.protectionView()
+	case screenHistory:
+		return m.historyView()
 	case screenAudit:
 		return m.auditBrowserView()
 	case screenJobs:

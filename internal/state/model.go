@@ -190,6 +190,10 @@ type Job struct {
 	// ResumeAfter is the instant a quota-blocked job may continue on its own.
 	// It is body-only: the engine scans blocked jobs for it.
 	ResumeAfter *time.Time `json:"resume_after,omitempty"`
+	// HiddenAt is set when the owner cleared a finished job from the history.
+	// The job stays (items point at it as the live mapping) but lists skip it.
+	// Body-only: no migration.
+	HiddenAt *time.Time `json:"hidden_at,omitempty"`
 	// BatchID groups the links of one "copy many" request (S6). Empty for a
 	// lone job. Stored in the body; batch_id/fair_group columns are generated.
 	BatchID string `json:"batch_id,omitempty"`

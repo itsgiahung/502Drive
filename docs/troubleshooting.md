@@ -35,7 +35,7 @@ contacts Google; ordinary Doctor checks are local.
 | No Linux tray | Check desktop D-Bus and a StatusNotifier/AppIndicator host; use TUI headlessly |
 | Offline maintenance refused | Stop the daemon/service/container; do not remove its lock |
 | Doctor permission error | `doctor --fix` handles safe local fixes; Google credentials need reauthorization |
-| Database growth | Back up, preview prune offline, then vacuum |
+| Database growth or a long job list | `history clear --older-than 30d` works while the daemon runs; for deep compaction back up, preview `prune` offline, then `vacuum` |
 | Restore target exists | Choose a fresh empty directory; maintenance restore does not overwrite |
 | Backup integrity/key error | Use a verified complete backup; a missing key cannot decrypt its token |
 | OAuth callback waits | Verify exact callback port/namespace and SSH/container forwarding |

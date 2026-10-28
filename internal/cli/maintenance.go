@@ -30,7 +30,7 @@ func (a *App) pruneCmd() *cobra.Command {
 	var dryRun bool
 	c := &cobra.Command{
 		Use:   "prune",
-		Short: "Prune finished jobs and historical data",
+		Short: "Prune finished jobs and historical data (offline; see history clear)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			dur, err := parseRetentionDuration(olderThanStr)
@@ -45,6 +45,10 @@ func (a *App) pruneCmd() *cobra.Command {
 				OlderThan: dur,
 				DryRun:    dryRun,
 			})
+			if errors.Is(err, maintenance.ErrWriterRunning) {
+				return localErr(ExitUnavailable, "writer_running", "The daemon is running, so prune cannot open the data. "+
+					"Use `502drive history clear --older-than 30d` while it runs, or `502drive stop` first.")
+			}
 			if err != nil {
 				return maintenanceErr(err)
 			}

@@ -218,7 +218,7 @@ func parseSince(raw string, now time.Time) (time.Time, error) {
 
 func (a *App) historyCmd() *cobra.Command {
 	c := &cobra.Command{Use: "history", Short: "Job history exports", Args: cobra.NoArgs}
-	c.AddCommand(a.historyExportCmd())
+	c.AddCommand(a.historyExportCmd(), a.historyClearCmd())
 	return c
 }
 

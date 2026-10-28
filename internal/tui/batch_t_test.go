@@ -1101,14 +1101,15 @@ func TestSettingsListsTheNewRowsWithTheCursor(t *testing.T) {
 		t.Fatalf("the cursor is missing:\n%s", v)
 	}
 	// down moves through the rows, up at the first row goes to the tab bar.
-	for i := 0; i < 7; i++ {
+	last := len(m.settingsRows()) - 1
+	for i := 0; i < last; i++ {
 		m, _ = update(t, m, key("down"))
 	}
-	if m.cursor != 7 {
+	if m.cursor != last {
 		t.Fatalf("the cursor should reach the last row, got %d", m.cursor)
 	}
 	m, _ = update(t, m, key("down"))
-	if m.cursor != 7 {
+	if m.cursor != last {
 		t.Fatal("the cursor stops at the last row")
 	}
 }

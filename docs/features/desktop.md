@@ -43,6 +43,10 @@ Collection shortcuts:
   collection revision. Include/exclude accept semicolon-separated rules.
 - `b`: filter presets; lifecycle and sync letter shortcuts remain in the on-screen help.
 
+Settings ends with **Clear history…**: pick a range (older than 7, 30 or 90 days, or every
+finished job), read the preview, confirm. `x` on the Jobs screen clears the selected
+finished jobs after one confirmation. Neither touches your copies or Drive.
+
 Protection offers mirror on/off, automatic snapshots and fixed retention choices,
 capture now, pin/unpin and restore. Enabling mirror asks first and names the Drive
 trash consequence. Restore always runs a read-only preview first and shows the
