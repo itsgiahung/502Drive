@@ -17,6 +17,9 @@ func TestHistoryClearPreviewsAsksAndKeepsTheCopy(t *testing.T) {
 	if res := r.run("history", "clear"); res.code == 0 || !strings.Contains(res.errOut, "exactly one") {
 		t.Fatalf("a scope is required: %+v", res)
 	}
+	if res := r.run("history", "clear", "--older-than", "36h"); res.code == 0 || !strings.Contains(res.errOut, "whole days") {
+		t.Fatalf("36h would be rounded down to a day and clear too much: %+v", res)
+	}
 	if res := r.run("history", "clear", "--older-than", "0d"); res.code == 0 {
 		t.Fatalf("0d must be refused: %+v", res)
 	}

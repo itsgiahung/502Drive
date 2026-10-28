@@ -43,7 +43,10 @@ func (s *Service) Account(ctx context.Context) (AccountView, error) {
 	return v, nil
 }
 
-var loginKeys sync.Map // idempotency key -> session id (login URLs are not stored durably)
+var (
+	loginKeys sync.Map   // idempotency key -> session id (login URLs are not stored durably)
+	loginMu   sync.Mutex // makes look-up-or-start one step, so a key never opens two sessions
+)
 
 func (s *Service) StartLogin(ctx context.Context, p Principal, key string, port int) (drive.AuthSession, error) {
 	if err := requireOwner(p); err != nil {
@@ -55,6 +58,8 @@ func (s *Service) StartLogin(ctx context.Context, p Principal, key string, port 
 	if s.Auth == nil {
 		return drive.AuthSession{}, Fail(http.StatusConflict, "oauth_not_configured", "No Google OAuth client is configured. See docs/oauth-setup.md.")
 	}
+	loginMu.Lock()
+	defer loginMu.Unlock()
 	if id, ok := loginKeys.Load(key); ok {
 		if sess, err := s.Auth.Session(id.(string)); err == nil {
 			return sess, nil
@@ -79,7 +84,9 @@ func (s *Service) LoginStatus(ctx context.Context, p Principal, id string) (driv
 	if err != nil {
 		return drive.AuthSession{}, state.ErrNotFound
 	}
-	if sess.State == drive.SessionConnected {
+	// An old session that once connected must not clear a revoke warning after the
+	// credential was removed: only a credential that is present now counts.
+	if sess.State == drive.SessionConnected && s.Auth.Connected() {
 		_ = s.Store.SetSetting(ctx, settingRevokePending, "0")
 	}
 	return sess, nil

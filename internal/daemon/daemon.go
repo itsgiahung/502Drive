@@ -105,6 +105,9 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 		if err != nil {
 			return errors.New("oauth client file is not a valid Google client JSON")
 		}
+		if oc.Endpoint.AuthURL == "" || oc.Endpoint.TokenURL == "" { // a hand-made JSON may omit the endpoints
+			oc.Endpoint = google.Endpoint
+		}
 		secrets := filepath.Join(cfg.DataDir, "secrets")
 		validate := func(ctx context.Context, access string) error {
 			c, err := drive.NewClient(ctx, oauth2.StaticTokenSource(&oauth2.Token{AccessToken: access, TokenType: "Bearer"}), o.DriveEndpoint)

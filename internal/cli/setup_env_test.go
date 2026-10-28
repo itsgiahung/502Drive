@@ -186,3 +186,21 @@ func TestParseDotEnvHandlesQuotesCommentsAndExport(t *testing.T) {
 		t.Error("a line without = was parsed")
 	}
 }
+
+// --env-file names a file on purpose: a wrong path is an error even when the
+// process environment already holds usable values.
+func TestSetupEnvFileThatCannotBeReadIsAnErrorEvenWithAnEnvironment(t *testing.T) {
+	env := func(k string) string {
+		if k == "TELEGRAM_BOT_TOKEN" {
+			return synthToken
+		}
+		return ""
+	}
+	code, _, errb, cfgPath := setupArgs(t, env, "setup", "--env-file", filepath.Join(t.TempDir(), "missing.env"))
+	if code != ExitUsage || !strings.Contains(errb, "cannot read the .env file") {
+		t.Fatalf("exit %d: %s", code, errb)
+	}
+	if _, err := os.Stat(cfgPath); !os.IsNotExist(err) {
+		t.Fatal("a rejected setup created a config")
+	}
+}

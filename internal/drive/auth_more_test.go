@@ -182,22 +182,44 @@ func TestLoginFailuresNeverLeaveACredential(t *testing.T) {
 	}
 }
 
-func TestReloginKeepsRefreshTokenWhenGoogleOmitsIt(t *testing.T) {
+// A login that returns no refresh token must not borrow the old one: it could
+// belong to another Google account. The previous credential stays as it was.
+func TestReloginWithoutARefreshTokenNeverInheritsTheOldOne(t *testing.T) {
 	ts := newTokenServer(t, goodToken)
 	dir := t.TempDir()
 	a, _ := NewAuth(dir, cfgFor(ts), nil)
+	defer a.Close()
 	_, redirect, state := startSession(t, a)
 	get(t, redirect+"?code=x&state="+state)
-	ts.body.Store(`{"access_token":"access-2","token_type":"Bearer","expires_in":3600,"scope":"https://www.googleapis.com/auth/drive"}`)
+	ts.body.Store(`{"access_token":"access-b","token_type":"Bearer","expires_in":3600,"scope":"https://www.googleapis.com/auth/drive"}`)
 	_, redirect, state = startSession(t, a)
-	if c := get(t, redirect+"?code=y&state="+state); c != 200 {
-		t.Fatalf("relogin = %d", c)
+	if c := get(t, redirect+"?code=y&state="+state); c == 200 {
+		t.Fatal("a login without a refresh token reported success")
 	}
 	tok, _ := a.Token()
-	if tok.AccessToken != "access-2" || tok.RefreshToken != "refresh-1" {
-		t.Fatalf("%+v", tok)
+	if tok.AccessToken != "access-1" || tok.RefreshToken != "refresh-1" {
+		t.Fatalf("the previous credential must stay untouched: %+v", tok)
 	}
-	a.Close()
+}
+
+func TestCallbackRejectsAnUnexpectedHostHeader(t *testing.T) {
+	ts := newTokenServer(t, goodToken)
+	a, _ := NewAuth(t.TempDir(), cfgFor(ts), nil)
+	defer a.Close()
+	s, redirect, state := startSession(t, a)
+	req, _ := http.NewRequest(http.MethodGet, redirect+"?code=x&state="+state, nil)
+	req.Host = "other-host.example.invalid"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode == 200 {
+		t.Fatal("a callback with a foreign Host header was accepted")
+	}
+	if got, _ := a.Session(s.ID); got.State != SessionPending {
+		t.Fatalf("the refused request must leave the session pending: %+v", got)
+	}
 }
 
 func TestSaveFailureKeepsThePreviousCredential(t *testing.T) {

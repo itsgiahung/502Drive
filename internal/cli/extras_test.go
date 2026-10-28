@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -245,5 +246,75 @@ func TestUpdateBackupPathCreatesThePrivateBackupsFolder(t *testing.T) {
 	}
 	if _, err = os.Stat(got); err == nil {
 		t.Fatal("the backup folder itself must be left for the backup command to create")
+	}
+}
+
+// With no daemon running, `update --restart` still backs the data up before
+// the new version's first start (it may upgrade the database).
+func TestUpdateRestartBacksUpEvenWhenNoDaemonRuns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as the new binary")
+	}
+	dir := t.TempDir()
+	log := filepath.Join(dir, "args.log")
+	target := filepath.Join(dir, "502drive")
+	script := "#!/bin/sh\necho \"$@\" >> '" + log + "'\n"
+	if err := os.WriteFile(target, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var out, errb strings.Builder
+	cfg := filepath.Join(t.TempDir(), "config.json")
+	a := &App{io: IO{Out: &out, Err: &errb}, g: global{configPath: cfg}}
+	a.backupBeforeFirstStart(t.Context(), target, "v9.9.9")
+	b, _ := os.ReadFile(log)
+	if !strings.Contains(string(b), "backup ") || !strings.Contains(string(b), "before-v9.9.9-") {
+		t.Fatalf("the new binary was not asked to back up: %q (err %s)", b, errb.String())
+	}
+	if !strings.Contains(out.String(), "backup of the data is in") {
+		t.Fatalf("the user is told where the backup is: %q", out.String())
+	}
+}
+
+func sigApp(require string, errb *strings.Builder) *App {
+	return &App{io: IO{Out: io.Discard, Err: errb, Getenv: func(k string) string {
+		if k == "DRIVE502_REQUIRE_SIGNATURE" {
+			return require
+		}
+		return ""
+	}}}
+}
+
+// A signature bundle that cosign rejects always stops the update; a missing
+// cosign only stops it when the signature was made mandatory.
+func TestUpdateSignatureCheck(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as cosign")
+	}
+	bundle := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("{}")) }))
+	defer bundle.Close()
+
+	t.Setenv("PATH", t.TempDir()) // no cosign
+	var errb strings.Builder
+	if err := sigApp("", &errb).verifyReleaseSignature(t.Context(), bundle.URL, []byte("sums")); err != nil || !strings.Contains(errb.String(), "Signature not checked") {
+		t.Fatalf("without cosign the update proceeds with a note: %v %q", err, errb.String())
+	}
+	if err := sigApp("1", &errb).verifyReleaseSignature(t.Context(), bundle.URL, []byte("sums")); err == nil || !strings.Contains(err.Error(), "required") {
+		t.Fatalf("a required signature cannot be skipped: %v", err)
+	}
+
+	bin := t.TempDir()
+	fake := filepath.Join(bin, "cosign")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho bad signature >&2\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	if err := sigApp("", &errb).verifyReleaseSignature(t.Context(), bundle.URL, []byte("sums")); err == nil || !strings.Contains(err.Error(), "did not verify") {
+		t.Fatalf("a rejected signature must stop the update: %v", err)
+	}
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := sigApp("", &errb).verifyReleaseSignature(t.Context(), bundle.URL, []byte("sums")); err != nil {
+		t.Fatalf("a verified signature passes: %v", err)
 	}
 }

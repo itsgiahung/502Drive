@@ -29,7 +29,8 @@ func (s *Store) ClearHistory(ctx context.Context, principal string, before time.
 	where := "state IN (" + finishedStates + ") AND json_extract(body,'$.hidden_at') IS NULL AND (?='' OR principal=?)"
 	args := []any{principal, principal}
 	if !before.IsZero() {
-		where += " AND json_extract(body,'$.updated_at') < ?"
+		// julianday, not a text compare: "…00.500Z" sorts before "…00Z" as text.
+		where += " AND julianday(json_extract(body,'$.updated_at')) < julianday(?)"
 		args = append(args, before.UTC().Format(time.RFC3339Nano))
 	}
 	if len(ids) > 0 {

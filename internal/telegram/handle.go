@@ -204,7 +204,7 @@ func (t *Telegram) onCallback(ctx context.Context, cq *models.CallbackQuery) err
 		return t.answer(ctx, cq.ID, "")
 	}
 	tx := t.text(ctx, p)
-	st, err := t.store.ClaimCallback(ctx, id, p.ID, msg.Chat.ID, true, t.now())
+	st, err := t.store.ClaimCallback(ctx, id, p.ID, msg.Chat.ID, msg.ID, true, t.now())
 	if errors.Is(err, state.ErrCallbackStale) {
 		return t.answer(ctx, cq.ID, tx.expired)
 	}

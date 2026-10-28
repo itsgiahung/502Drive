@@ -187,7 +187,9 @@ func (a *App) onboardTakeOAuth(lang string, rd *bufio.Reader, oauthClient string
 // .env file. The file itself is checked when setup reads it.
 func oauthConfigured(cfg config.Config, vals map[string]string) bool {
 	if cfg.OAuthClientFile != "" {
-		return true
+		// A path to a file that is gone is not a key: the guide must run again.
+		_, err := os.Stat(cfg.OAuthClientFile)
+		return err == nil
 	}
 	if vals["oauth_client"] != "" {
 		return true

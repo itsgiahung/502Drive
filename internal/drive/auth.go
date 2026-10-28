@@ -290,6 +290,10 @@ func (a *Auth) callback(s *session, cfg oauth2.Config, w http.ResponseWriter, r 
 		reply(w, http.StatusMethodNotAllowed, "Method not allowed.")
 		return
 	}
+	if r.Host != s.listener.Addr().String() { // only the loopback address we handed to Google
+		reply(w, http.StatusBadRequest, "Invalid login request. Return to 502drive and start again if needed.")
+		return
+	}
 	q := r.URL.Query()
 	// A request that does not carry our state is noise; it must not touch
 	// the session.
@@ -344,14 +348,10 @@ func (a *Auth) finish(ctx context.Context, s *session, cfg oauth2.Config, code s
 	if granted, ok := tok.Extra("scope").(string); ok && granted != "" && !strings.Contains(" "+granted+" ", " "+Scope+" ") {
 		return errors.New("the Drive permission was not granted; sign in again and allow access to Google Drive")
 	}
-	a.mu.Lock()
-	old := a.token
-	a.mu.Unlock()
+	// A refresh token from an earlier login is never reused: it may belong to
+	// another Google account, and prompt=consent makes Google issue a new one.
 	if tok.RefreshToken == "" {
-		if old == nil || old.RefreshToken == "" {
-			return errors.New("google did not return a refresh token; revoke 502drive access in your Google account and sign in again")
-		}
-		tok.RefreshToken = old.RefreshToken
+		return errors.New("google did not return a refresh token; revoke 502drive access in your Google account and sign in again")
 	}
 	if a.validate != nil {
 		if err = a.validate(ctx, tok.AccessToken); err != nil {

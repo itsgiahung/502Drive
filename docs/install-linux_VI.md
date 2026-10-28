@@ -106,6 +106,6 @@ sha256sum --ignore-missing -c checksums.txt
 
 `cosign` miễn phí ([cách cài](https://docs.sigstore.dev/cosign/installation/)). Bộ cài
 Windows (`502drive-setup.exe`) có file `.sha256` riêng và chưa được ký số, nên Windows
-hiện cảnh báo "nhà phát hành không xác định". Lệnh `502drive update --install` chỉ kiểm
-checksum; muốn bắt buộc có chữ ký, hãy cài bằng script với `REQUIRE_SIGNATURE=1`. Các
+hiện cảnh báo "nhà phát hành không xác định". Lệnh `502drive update --install` luôn kiểm
+checksum và kiểm cả chữ ký khi máy có cosign; đặt `DRIVE502_REQUIRE_SIGNATURE=1` để bắt buộc có chữ ký (script cài dùng `REQUIRE_SIGNATURE=1`). Các
 bản trước 0.4.5 không có chữ ký.

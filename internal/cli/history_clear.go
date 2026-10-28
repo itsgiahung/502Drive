@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -48,6 +49,9 @@ func (a *App) historyClearCmd() *cobra.Command {
 				dur, err := parseRetentionDuration(olderThan)
 				if err != nil {
 					return usage("%s", err.Error())
+				}
+				if dur%(24*time.Hour) != 0 {
+					return usage("--older-than must be whole days (for example 30d); %s would be rounded", olderThan)
 				}
 				days = int(dur.Hours() / 24)
 				if days < 1 {

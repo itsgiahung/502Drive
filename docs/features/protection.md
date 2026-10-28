@@ -51,6 +51,9 @@ treats them as deleted and moves their copies to the trash (recoverable for abou
   Listing/copy/reconciliation failures and the mass-removal guard prevent mirror.
 - Trash missing-source copies only with the exact ownership intent/generation.
   No operation permanently deletes Drive files.
+- The "mass loss" guard needs at least 10 removed items (and more than 30% of the source), so in
+  a very small source folder mirror can trash every copy when the source becomes unreadable
+  (still the recoverable Drive trash, never a permanent delete).
 - Process children before parents; only move/trash empty folders. Destination
   additions are preserved, and a nonempty folder can block the job.
 - Start scans at the source root. Detached folders are no longer reachable source

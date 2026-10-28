@@ -103,3 +103,21 @@ func TestClearHistoryByAgeAndByIDsRespectsScope(t *testing.T) {
 		t.Fatalf("listed = %v", ids)
 	}
 }
+
+// The cutoff is compared as a point in time, not as text: a job updated half a
+// second after the cutoff is newer, even though its string sorts lower.
+func TestClearHistoryComparesTimesChronologically(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := t.Context()
+	cutoff := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	seedJob(t, s, "j_after", "owner", "succeeded", time.Since(cutoff.Add(500*time.Millisecond)), false)
+	seedJob(t, s, "j_before", "owner", "succeeded", time.Since(cutoff.Add(-500*time.Millisecond)), false)
+	got, err := s.ClearHistory(ctx, "", cutoff, nil, true)
+	if err != nil || got.Hidden != 1 {
+		t.Fatalf("only the job older than the cutoff counts, hidden=%d err=%v", got.Hidden, err)
+	}
+}

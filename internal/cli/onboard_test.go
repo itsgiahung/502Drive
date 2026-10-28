@@ -171,7 +171,9 @@ func TestOnboardExistingKeyAsksNothing(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	ts := onboardReadyServer(t)
-	cfg := onboardTestConfig(t, "client.json")
+	client := filepath.Join(t.TempDir(), "client.json")
+	writeClientJSON(t, client, "id.apps.googleusercontent.com", "secret")
+	cfg := onboardTestConfig(t, client)
 	noBrowser(t)
 	var out, errb strings.Builder
 	code := Execute(t.Context(), []string{"--config", cfg, "--endpoint", ts.URL, "onboard"}, onboardTestIO(panicReader{}, &out, &errb))
@@ -298,5 +300,15 @@ func TestOnboardGuideRetriesWebClientThreeTimes(t *testing.T) {
 	}
 	if !strings.Contains(errb.String(), "Desktop app") {
 		t.Fatalf("the error should say to create a Desktop app:\n%s", errb.String())
+	}
+}
+
+// A config that names a key file which is gone does not count as a key: the
+// guide asks again instead of failing later at login.
+func TestOnboardConfigPointingToAMissingKeyFileAsksAgain(t *testing.T) {
+	cfg := filepath.Join(privateDir(t), "config.json")
+	os.WriteFile(cfg, []byte(`{"listen":"127.0.0.1:5020","data_dir":"data","token_file":"api-token","oauth_client_file":"/nonexistent/client.json"}`), 0o600)
+	if oauthConfigured(loadCfg(t, cfg), nil) {
+		t.Fatal("a missing key file was treated as a configured key")
 	}
 }

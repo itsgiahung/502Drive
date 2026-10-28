@@ -354,6 +354,9 @@ func (a *App) installUpdate(ctx context.Context, rel update.Release, newer, rest
 	if err != nil {
 		return localErr(ExitUnavailable, "update_failed", err.Error())
 	}
+	if err = a.verifyReleaseSignature(ctx, base, sums); err != nil {
+		return localErr(ExitInternal, "update_signature", err.Error())
+	}
 	asset, err := update.PickAsset(sums, runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		return localErr(ExitNotFound, "update_failed", err.Error())
@@ -391,6 +394,9 @@ func (a *App) installUpdate(ctx context.Context, rel update.Release, newer, rest
 		fmt.Fprintf(a.out(), "Installed %s at %s (checksum verified). The previous binary is kept as %s.prev.\n", rel.Tag, target, target)
 	}
 	if !a.daemonUp(ctx) {
+		if restart { // nothing to restart, but the new version may upgrade the database on its first start
+			a.backupBeforeFirstStart(ctx, target, rel.Tag)
+		}
 		return nil
 	}
 	if !restart {
@@ -400,6 +406,76 @@ func (a *App) installUpdate(ctx context.Context, rel update.Release, newer, rest
 		return nil
 	}
 	return a.restartWith(ctx, target, rel.Tag)
+}
+
+// releaseIdentity is the only workflow whose signature is accepted: this
+// repository's release workflow, run for a version tag.
+const releaseIdentity = `^https://github\.com/itsgiahung/502Drive/\.github/workflows/go-release\.yml@refs/tags/v.+$`
+
+// verifyReleaseSignature checks the Sigstore signature of checksums.txt when
+// `cosign` is installed. A bad signature always stops the update. A missing
+// cosign or bundle only prints a note, unless DRIVE502_REQUIRE_SIGNATURE=1
+// makes the signature mandatory (the same switch as REQUIRE_SIGNATURE in
+// install.sh).
+func (a *App) verifyReleaseSignature(ctx context.Context, base string, sums []byte) error {
+	required := a.env("DRIVE502_REQUIRE_SIGNATURE") == "1"
+	skip := func(why string) error {
+		if required {
+			return fmt.Errorf("the release signature is required (DRIVE502_REQUIRE_SIGNATURE=1) but %s", why)
+		}
+		if !a.g.quiet {
+			fmt.Fprintf(a.errw(), "Signature not checked: %s. Only the SHA-256 checksum was verified.\n", why)
+		}
+		return nil
+	}
+	cosign, err := exec.LookPath("cosign")
+	if err != nil {
+		return skip("cosign is not installed")
+	}
+	bundle, err := update.Fetch(ctx, nil, base+"/checksums.txt.sigstore.json", 1<<20)
+	if err != nil {
+		return skip("this release has no signature bundle")
+	}
+	dir, err := os.MkdirTemp("", "502drive-sig-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	sumsPath, bundlePath := filepath.Join(dir, "checksums.txt"), filepath.Join(dir, "checksums.txt.sigstore.json")
+	if err = errors.Join(os.WriteFile(sumsPath, sums, 0o600), os.WriteFile(bundlePath, bundle, 0o600)); err != nil {
+		return err
+	}
+	c := exec.CommandContext(ctx, cosign, "verify-blob", "--bundle", bundlePath,
+		"--certificate-identity-regexp", releaseIdentity,
+		"--certificate-oidc-issuer", "https://token.actions.githubusercontent.com", sumsPath)
+	if out, err := c.CombinedOutput(); err != nil {
+		return fmt.Errorf("the release signature did not verify; nothing was installed (%s)", strings.TrimSpace(string(out)))
+	}
+	if !a.g.quiet {
+		fmt.Fprintln(a.errw(), "Release signature verified (Sigstore).")
+	}
+	return nil
+}
+
+// backupBeforeFirstStart saves the data while no daemon runs, so the next
+// `502drive up` on the new version cannot upgrade the only copy. A failure is
+// reported, not fatal: the binary is already installed.
+func (a *App) backupBeforeFirstStart(ctx context.Context, target, tag string) {
+	backup, err := updateBackupPath(filepath.Dir(a.configPath()), tag, time.Now())
+	if err == nil {
+		argv := a.childArgv(target, "backup", backup)
+		c := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		c.Stdout, c.Stderr = a.errw(), a.errw()
+		err = c.Run()
+	}
+	if a.g.quiet {
+		return
+	}
+	if err != nil {
+		fmt.Fprintf(a.errw(), "Could not back up the data before the first start of %s (%v). Run `502drive backup DIR` before `502drive up`.\n", tag, err)
+		return
+	}
+	fmt.Fprintf(a.out(), "No daemon was running. A backup of the data is in %s; start the new version with 502drive up.\n", backup)
 }
 
 // restartWith stops the daemon, backs up its data (the new version may upgrade

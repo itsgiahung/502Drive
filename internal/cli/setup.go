@@ -153,6 +153,11 @@ func (a *App) collectSetup(in *setupInput) error {
 	if in.noEnv {
 		return nil
 	}
+	if in.envFile != "" { // a file named on purpose must be readable, whatever the environment holds
+		if _, err := readSmallFile(in.envFile); err != nil {
+			return usage("cannot read the .env file %s", in.envFile)
+		}
+	}
 	vals, origin := a.setupEnv(in.envFile)
 	if in.envFile != "" && origin == "" {
 		return usage("cannot read the .env file %s", in.envFile)

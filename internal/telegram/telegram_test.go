@@ -907,6 +907,7 @@ func TestFinalNotificationSurvivesABlockedBot(t *testing.T) {
 }
 
 func TestSyncFromTheLibraryCard(t *testing.T) {
+	t.Setenv("TZ", syncTimezone) // the preview names the saved zone, which defaults to the host's TZ
 	h := newHarness(t, 100)
 	id := h.readyCollection("Library Sync")
 	ctx := context.Background()

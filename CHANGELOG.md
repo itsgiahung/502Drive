@@ -4,6 +4,30 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
+## Unreleased
+
+Fixes from an independent review (every one reproduced by a test first):
+
+### Security
+
+- Login: a sign-in that returns no refresh token no longer inherits the previous one (it could
+  belong to another Google account); the callback only accepts the loopback address it gave to
+  Google; one Idempotency-Key opens one login session even when sent at once; polling an old
+  login session can no longer clear the warning of a revoke Google did not confirm.
+- Telegram: a button only works from the message it was sent in.
+- `update --install` verifies the Sigstore signature of `checksums.txt` when `cosign` is
+  installed and stops on a bad one; `DRIVE502_REQUIRE_SIGNATURE=1` makes it mandatory.
+
+### Fixed
+
+- `history clear` and `prune` compare times as times, not as text; `history clear --older-than`
+  refuses non-whole-day values such as `36h` instead of rounding them.
+- `update --install --restart` backs the data up even when no daemon is running.
+- `setup --env-file` with an unreadable path is an error even if the environment has values;
+  a hand-made OAuth JSON without endpoints falls back to Google's; onboard asks again when the
+  configured key file is gone.
+- Documented that mirror's mass-loss guard needs at least 10 items.
+
 ## 0.4.11 — 2026-10-28
 
 ### Added

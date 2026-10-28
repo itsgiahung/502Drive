@@ -155,7 +155,7 @@ func (s *Store) BindCallbackMessage(ctx context.Context, ids []string, messageID
 // ClaimCallback authorises a click. Mutating actions are consumed inside the
 // transaction so two clicks cannot both act. Expired, consumed and foreign
 // callbacks all return ErrCallbackStale.
-func (s *Store) ClaimCallback(ctx context.Context, id, principal string, chatID int64, mutating bool, now time.Time) (Callback, error) {
+func (s *Store) ClaimCallback(ctx context.Context, id, principal string, chatID int64, messageID int, mutating bool, now time.Time) (Callback, error) {
 	var c Callback
 	err := s.tx(ctx, func(tx *sql.Tx) error {
 		var expires, created int64
@@ -170,7 +170,8 @@ func (s *Store) ClaimCallback(ctx context.Context, id, principal string, chatID 
 			return err
 		}
 		c.ID, c.ExpiresAt, c.Consumed, c.CreatedAt = id, time.UnixMilli(expires).UTC(), consumed == 1, time.UnixMilli(created).UTC()
-		if !c.ExpiresAt.After(now) || c.Principal != principal || c.ChatID != chatID {
+		// A callback is bound to the message it was sent in (0 = not yet bound).
+		if !c.ExpiresAt.After(now) || c.Principal != principal || c.ChatID != chatID || (c.MessageID != 0 && c.MessageID != messageID) {
 			return ErrCallbackStale
 		}
 		if !mutating {

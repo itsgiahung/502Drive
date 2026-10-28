@@ -101,5 +101,6 @@ sha256sum --ignore-missing -c checksums.txt
 `cosign` is free ([install](https://docs.sigstore.dev/cosign/installation/)). The
 Windows installer (`502drive-setup.exe`) has its own `.sha256` file and is not yet
 code-signed, so Windows shows an "unknown publisher" notice. `502drive update
---install` checks the checksum only; to require the signature, install with the
-script and `REQUIRE_SIGNATURE=1`. Releases before 0.4.5 have no signature.
+--install` always checks the checksum and also the signature when `cosign` is
+installed; `DRIVE502_REQUIRE_SIGNATURE=1` makes the signature mandatory (the install
+script has the same switch, `REQUIRE_SIGNATURE=1`). Releases before 0.4.5 have no signature.

@@ -61,7 +61,7 @@ func (s *Store) Prune(ctx context.Context, opt PruneOptions) (PruneReport, error
 	candidateJobsQuery := `
 		SELECT id FROM jobs
 		WHERE state IN ('succeeded', 'failed', 'cancelled')
-		  AND json_extract(body, '$.updated_at') < ?
+		  AND julianday(json_extract(body, '$.updated_at')) < julianday(?)
 		  AND id NOT IN (SELECT DISTINCT job_id FROM items)
 		  AND id NOT IN (SELECT DISTINCT scan_job FROM items WHERE scan_job <> '')
 		  AND id NOT IN (SELECT DISTINCT seen_job FROM items WHERE seen_job <> '')
