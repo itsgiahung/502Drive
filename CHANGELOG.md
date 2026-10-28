@@ -4,9 +4,15 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
-## 0.4.1 — 2026-10-28
+## 0.4.2 — 2026-10-28
+
+(0.4.1 was tagged but never published: its release build caught the race below.)
 
 ### Fixed
+
+- Engine: `Wake()` could read its wake channel while `Run()` was still creating
+  it when called from another goroutine first, a data race found by CI. Defaults
+  are now set once, by whichever of the two runs first.
 
 - Terminal app: pressing `→` on a selected job or source switched to the next tab
   instead of opening it. The cursor now always sits in one of two places and the

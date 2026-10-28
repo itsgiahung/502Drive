@@ -58,9 +58,16 @@ type Engine struct {
 	throttleSeq atomic.Int64
 	mu          sync.Mutex
 	running     map[string]bool
+	initOnce    sync.Once
 }
 
-func (e *Engine) defaults() {
+// defaults fills in unset fields once. Wake can be called from another
+// goroutine (a finished job, an HTTP request) before Run has started, so both
+// go through the same Once; without it Wake could read the wake channel while
+// Run was still creating it.
+func (e *Engine) defaults() { e.initOnce.Do(e.setDefaults) }
+
+func (e *Engine) setDefaults() {
 	if e.Jobs == 0 {
 		e.Jobs = 2
 	}
@@ -97,6 +104,7 @@ func (e *Engine) defaults() {
 
 // Wake asks the engine to look for new work now.
 func (e *Engine) Wake() {
+	e.defaults()
 	select {
 	case e.wake <- struct{}{}:
 	default:
