@@ -8,6 +8,11 @@ before 1.0 a minor version may change behaviour, and every such change is listed
 
 ### Added
 
+- TUI: a one-line explanation under the highlighted row of Settings, the collection
+  screen and the sync schedule menu, so each option says what it does.
+- TUI: errors from the daemon are shown as a plain sentence in the app's language with
+  what to do (for example "That action is not available in the current state." is now
+  explained in Vietnamese), instead of the daemon's English text.
 - Telegram: a **Clear history** button on the job management page (range picker, dry-run
   preview, one confirmation; operators clear only their own finished jobs).
 

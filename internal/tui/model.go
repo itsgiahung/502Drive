@@ -374,7 +374,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case actionMsg:
 		if msg.err != nil {
-			m.status = Sanitize(msg.err.Error())
+			m.status = m.errText(msg.err)
 		} else {
 			m.status = msg.text
 		}
@@ -838,6 +838,7 @@ func (m Model) back() (tea.Model, tea.Cmd) {
 		m.syncMenu = false
 	case screenHistory:
 		m.screen, m.hist = screenSettings, nil
+		m.cursor = max(0, len(m.settingsRows())-1) // back on the Clear history row
 	case screenProtect:
 		if m.prot != nil {
 			return m.leaveCollectionSubview(m.prot.collectionID), nil

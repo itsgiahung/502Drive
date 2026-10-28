@@ -157,5 +157,8 @@ func (m Model) collectionSyncView(c Collection) []string {
 		}
 		lines = append(lines, marker+m.t(choice.label))
 	}
+	if choices := m.collectionSyncChoices(c); len(choices) > 0 {
+		lines = append(lines, m.describe(syncChoiceDesc[choices[min(m.syncRow, len(choices)-1)].key])...)
+	}
 	return append(lines, "", m.dim(m.t(i18n.DetailKeys)))
 }

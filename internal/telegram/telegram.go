@@ -168,6 +168,9 @@ func (t *Telegram) Run(ctx context.Context) {
 		}
 		offset, err := t.store.TelegramOffset(ctx, t.instance)
 		if err != nil {
+			if ctx.Err() != nil { // shutting down: not a bot error
+				return
+			}
 			t.log.Error("telegram: cannot read offset", "err", err)
 			t.setState(StateError)
 			t.sleep(ctx, time.Second)

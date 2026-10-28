@@ -133,7 +133,7 @@ func (m Model) histKey(key string) (tea.Model, tea.Cmd) {
 			h.days, h.err, h.loading = histChoices[h.row], "", true
 			return m, m.histPreviewCmd(h.days)
 		case back:
-			m.screen, m.hist = screenSettings, nil
+			m.screen, m.hist, m.cursor = screenSettings, nil, max(0, len(m.settingsRows())-1)
 		}
 	case histAsk:
 		switch {
@@ -145,7 +145,7 @@ func (m Model) histKey(key string) (tea.Model, tea.Cmd) {
 		}
 	case histResult:
 		if key == "enter" || back || key == " " {
-			m.screen, m.hist = screenSettings, nil
+			m.screen, m.hist, m.cursor = screenSettings, nil, max(0, len(m.settingsRows())-1)
 			return m, m.fetch()
 		}
 	}

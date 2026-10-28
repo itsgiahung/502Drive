@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -476,6 +477,9 @@ func (m Model) collectionView() []string {
 			m.tf(i18n.ProtSummary, m.onOffWord(c.Protection.Mirror), m.onOffWord(c.Protection.Snapshots))))
 	}
 	lines = append(lines, m.cleanupLines(c)...)
+	if !m.tabFocus {
+		lines = append(lines, m.describe(detailRowDesc[m.detailRow])...)
+	}
 	keys := m.t(i18n.CollKeys)
 	if m.hasLibraryExt() {
 		keys += " · " + m.t(i18n.CollKeysExt)
@@ -755,4 +759,16 @@ func orDash(s string) string {
 		return "—"
 	}
 	return s
+}
+
+// errText says what went wrong in the app's language. The daemon's stable
+// error code picks a plain sentence; anything else keeps the daemon's message.
+func (m Model) errText(err error) string {
+	var coded interface{ ErrCode() string }
+	if errors.As(err, &coded) {
+		if s, ok := i18n.ErrorText(m.lang, coded.ErrCode()); ok {
+			return s
+		}
+	}
+	return Sanitize(err.Error())
 }

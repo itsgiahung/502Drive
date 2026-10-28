@@ -300,6 +300,9 @@ func (m Model) settingsView() []string {
 		lines = append(lines, "", m.accent(m.t(i18n.SetQuietPrompt)), m.setInput.View(), m.dim(m.t(i18n.SetKeysQuiet)))
 		return lines
 	}
+	if row, ok := m.currentSettingsRow(); ok && !m.tabFocus {
+		lines = append(lines, m.describe(settingsRowDesc[row])...)
+	}
 	hint := m.t(i18n.SettingsKeys2)
 	if len(rows) > 1 {
 		hint = m.t(i18n.SetKeys)

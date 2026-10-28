@@ -42,6 +42,9 @@ type APIError struct {
 
 func (e *APIError) Error() string { return e.Message }
 
+// ErrCode is the stable error code; the TUI turns it into a plain sentence.
+func (e *APIError) ErrCode() string { return e.Code }
+
 func localErr(exit int, code, msg string) *APIError {
 	return &APIError{Exit: exit, Code: code, Message: msg}
 }

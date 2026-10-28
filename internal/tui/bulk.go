@@ -295,7 +295,7 @@ func (m Model) bulk(label string, targets []target) tea.Cmd {
 			if err := t.do(ctx); err != nil {
 				res.failed++
 				if res.firstErr == "" {
-					res.firstErr = Sanitize(err.Error())
+					res.firstErr = m.errText(err)
 				}
 				continue
 			}
