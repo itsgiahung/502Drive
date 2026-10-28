@@ -12,6 +12,7 @@ func TestEveryMenuGlyphIsUsedAndDraws(t *testing.T) {
 	for _, v := range []View{
 		BuildView(Snapshot{}, false, ""),
 		BuildView(Snapshot{Status: Status{Ready: true, QueuePaused: true}}, true, ""),
+		BuildView(Snapshot{Status: Status{Ready: true, AccountStatus: "connected"}, Update: "v9.0.0"}, true, ""),
 	} {
 		for _, it := range v.Items {
 			if it.Icon != "" {

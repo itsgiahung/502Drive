@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -75,6 +76,44 @@ func TestAssetsWriteIconsAndCompletions(t *testing.T) {
 	var raw, errb2 strings.Builder
 	if code = Execute(t.Context(), []string{"assets"}, IO{In: strings.NewReader(""), Out: &raw, Err: &errb2}); code != ExitUsage {
 		t.Fatalf("missing --dir exit = %d", code)
+	}
+}
+
+func TestTrayUpdateNoteReturnsTheNewerTag(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"tag_name":"v9.0.0","html_url":"https://example.test/release"}`))
+	}))
+	defer ts.Close()
+	old := Version
+	t.Cleanup(func() { Version = old })
+	Version = "1.0.0"
+	a := &App{io: IO{Getenv: func(k string) string {
+		if k == "DRIVE502_UPDATE_API" {
+			return ts.URL
+		}
+		return ""
+	}}}
+	tag, err := a.trayUpdateNote(t.Context())
+	if err != nil || tag != "v9.0.0" {
+		t.Fatalf("note = %q, err = %v", tag, err)
+	}
+	Version = "9.0.0"
+	if tag, err = a.trayUpdateNote(t.Context()); err != nil || tag != "" {
+		t.Fatalf("current build note = %q, err = %v", tag, err)
+	}
+}
+
+func TestUpdateBinaryUsesTheCLIOnWindows(t *testing.T) {
+	cases := []struct{ goos, exe, want string }{
+		{"linux", "/usr/bin/502drive", "/usr/bin/502drive"},
+		{"windows", `C:\Program Files\502Drive\502drive.exe`, `C:\Program Files\502Drive\502drive.exe`},
+		{"windows", `C:\Program Files\502Drive\502drive-tray.exe`, `C:\Program Files\502Drive\502drive.exe`},
+		{"windows", "502drive-tray.exe", "502drive.exe"},
+	}
+	for _, c := range cases {
+		if got := updateBinary(c.goos, c.exe); got != c.want {
+			t.Fatalf("updateBinary(%q, %q) = %q, want %q", c.goos, c.exe, got, c.want)
+		}
 	}
 }
 

@@ -4,45 +4,55 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
-## Unreleased
+## 0.4.0 — 2026-10-28
+
+Protection, updates and a friendlier first run. Mirror and snapshots, new in
+this release, were exercised on a real Drive account before release (see
+`docs/verification.md`); both are off by default.
 
 ### Added
 
-- Per-collection opt-in mirror and automatic snapshots, manual capture, retention,
-  pinning and durable preview-first restore through the service, HTTP API and CLI.
-  Both automatic options default off. Restore apply pauses sync and never deletes
-  Drive objects permanently. Schema 027 is forward-only; back up before upgrade.
-- Reusable Windows Inno Setup build/checksum and isolated install/uninstall smoke
-  scripts; an optional desktop shortcut. Native installer acceptance is pending.
+- **Mirror and snapshots**, per collection and off by default: deleting a file at
+  the source can move its copy to the Drive trash (mirror), and restore points
+  keep earlier versions you can roll back to. Controls in the CLI, the TUI
+  (collection detail → Protection) and Telegram; restore always previews first,
+  applying it pauses sync, and nothing is ever deleted permanently. Schema 27.
+- **`502drive update --install [--restart]`** downloads the newer release,
+  verifies its checksum, swaps the binary (keeping `.prev`) and, with
+  `--restart`, backs up the data and restarts the daemon. Package-managed installs
+  get the package command instead. The tray shows "Update to vX…" and an opt-in
+  daily check.
+- **Guided first run**: `502drive onboard` walks through creating the Google key
+  step by step, and skips whatever you already have (existing key: no questions;
+  a key file in Downloads: one question).
+- Windows installer build script with an install/uninstall smoke test, and an
+  optional desktop shortcut.
 
 ### Changed
 
-- Collection detail arrows select rows in the open collection; Sync opens a
-  keyboard-selectable action menu. Job details scroll rather than select another job.
-- The terminal cat sleeps curled up, breathing, with a small "z" and a "Z" drawn as
-  real letters; idle moments now include playing with a ball of yarn and watching
-  a butterfly. Fixed a white square while it washed its cheek and a thin "neck"
-  when it stretched.
+- The terminal cat sleeps curled up with a small "z" and a "Z", and plays with
+  yarn and a butterfly while idle. Collection detail arrows select rows, Sync
+  opens a menu, Left returns from nested views, and views keep their object when
+  the list reorders.
 - The filter editor uses a switch for "keep empty folders", takes sizes like
-  `10MB` and dates like `2026-01-31`, and explains mistakes in words instead of
-  showing a parse error. Idle toys stay about seven seconds; eyes stay slim.
-- `502drive onboard` prints a readable checklist in a terminal (JSON stays for
-  scripts and `--json`), and Enter at the destination step means My Drive.
-- The README explains the project in plain words, with a four-step quick start.
+  `10MB` and dates like `2026-01-31`, and explains mistakes in plain words.
+- Public documentation is English, with a Vietnamese README (`README_VI.md`).
+- Daily history pruning follows the retention setting saved in the app and runs
+  once a day across restarts.
+
+### Fixed
+
 - A sync or repair no longer writes into a copy whose folder was moved to the
-  Drive trash or deleted: the job stops with `destination_root_trashed` or
-  `destination_root_missing` and says how to recover.
-- Daily history pruning now follows the retention setting saved in the app (it
-  read another settings slot) and runs once a day across restarts (it waited for
-  24 hours of uptime, which a laptop rarely reaches).
-- `502drive update --install` downloads the newer release, verifies its checksum,
-  swaps the binary (keeping `.prev`) and, with `--restart`, backs up the data and
-  restarts the daemon. Package-managed installs get the package command instead.
-- Left returns from nested views. Live refresh and returning from reports/filter
-  editors preserve object identity instead of reusing a stale list position.
-- Public Markdown is English with one Vietnamese introduction, `README_VI.md`.
-  Documentation now separates user guides, technical contracts and verification;
-  private handoffs and local collaboration settings are ignored.
+  Drive trash or deleted: it stops with a clear reason.
+- A dry-run cleanup now reports that retained snapshots protect the copy, as the
+  real run does.
+- A deep scan that finished at the instant it was polled could be shown as
+  "interrupted".
+
+### Upgrade notes
+
+- The database moves to schema 27 on first start. Back up first, or use
+  `502drive update --install --restart`, which does it for you.
 
 ## 0.3.0 — 2026-10-28
 

@@ -304,14 +304,14 @@ func (a *App) setUpdateCheck(on bool) error {
 	return nil
 }
 
-// trayUpdateNote is the tray's opt-in check: a one-line note when a newer
-// release exists, empty otherwise.
+// trayUpdateNote is the tray's opt-in check: the newer release tag when one
+// exists, empty when this build is current.
 func (a *App) trayUpdateNote(ctx context.Context) (string, error) {
 	rel, err := update.Latest(ctx, nil, a.env("DRIVE502_UPDATE_API"))
 	if err != nil || !update.Newer(Version, rel.Tag) {
 		return "", err
 	}
-	return "update available: " + rel.Tag, nil
+	return rel.Tag, nil
 }
 
 // installUpdate replaces this binary with the newer release. It never runs on

@@ -43,9 +43,18 @@ type Options struct {
 	// QuitStopsDaemon restores the old behaviour where quitting the tray also
 	// stops the daemon. Off by default: Quit leaves 502Drive running.
 	QuitStopsDaemon bool
-	// UpdateCheck, when set, is called about once a day and may return a note
-	// such as "update available: v1.4.0". It is opt-in (config check_updates).
+	// UpdateCheck, when set, is called about once a day and returns the newer
+	// release tag (for example "v1.4.0"), or "" when this build is current.
+	// It is opt-in: CheckUpdates says whether the user enabled it.
 	UpdateCheck func(ctx context.Context) (string, error)
+	// CheckUpdates is the saved opt-in preference; SetCheckUpdates persists a
+	// change (config check_updates) and is used by the Settings menu.
+	CheckUpdates    bool
+	SetCheckUpdates func(on bool) error
+	// InstallUpdate opens a terminal running `502drive update --install
+	// --restart --yes` with the running binary's path and fixed arguments.
+	// The tray calls it only after its confirmation click.
+	InstallUpdate func(ctx context.Context) error
 	// NoNotify turns off desktop notifications for finished jobs.
 	NoNotify bool
 	// Language reads the UI language preference (vi/en); nil means English.
@@ -110,6 +119,17 @@ type agent struct {
 	// click only arms it; the second one inside stopConfirmWindow stops.
 	stopArmed   bool
 	stopArmedAt time.Time
+	// update is the newer release tag from the opt-in daily check ("" when
+	// none), and checkUpdates is its saved preference. updateArmed is the
+	// same two-step confirmation for installing that release.
+	update       string
+	checkUpdates bool
+	updateArmed  bool
+	// updateArmedAt is when the update confirmation was armed.
+	updateArmedAt time.Time
+	// nextUpdateCheck is when the opt-in daily check may run again. Enabling
+	// the check moves it to now so the user does not wait a day.
+	nextUpdateCheck time.Time
 	// sig is the signature of the last View shown. An unchanged view is not
 	// pushed to the desktop again, so an idle tray does no menu work. It is
 	// only read and written inside refresh, which refreshMu serializes.
@@ -129,7 +149,7 @@ func newAgent(o Options) *agent {
 	if o.Language == nil {
 		lang = "en"
 	}
-	return &agent{o: o, lang: lang}
+	return &agent{o: o, lang: lang, checkUpdates: o.CheckUpdates, nextUpdateCheck: o.now().Add(time.Minute)}
 }
 
 // refreshLanguage picks up a changed language preference.
@@ -213,17 +233,30 @@ func (a *agent) refresh(ctx context.Context) (View, bool) {
 	if !online || a.stopArmed && now.Sub(a.stopArmedAt) > stopConfirmWindow {
 		a.stopArmed = false
 	}
+	if !online || a.updateArmed && now.Sub(a.updateArmedAt) > stopConfirmWindow {
+		a.updateArmed = false
+	}
 	armed := a.stopArmed
+	updateArmed := a.updateArmed
 	note := a.note
 	last := a.snap
+	last.Update, last.CheckUpdates = a.update, a.checkUpdates
 	a.mu.Unlock()
 
-	view := BuildViewLang(last, online, note, a.language())
+	lang := a.language()
+	view := BuildViewLang(last, online, note, lang)
 	if armed {
 		active := last.Status.Running + last.Status.Queued
 		for i := range view.Items {
 			if view.Items[i].ID == ActionStopDaemon {
-				view.Items[i].Title = i18n.Tf(a.language(), i18n.StopAppConfirm, active)
+				view.Items[i].Title = i18n.Tf(lang, i18n.StopAppConfirm, active)
+			}
+		}
+	}
+	if updateArmed {
+		for i := range view.Items {
+			if view.Items[i].ID == ActionUpdate {
+				view.Items[i].Title = i18n.Tf(lang, i18n.TrayUpdateConfirm, plain(last.Update))
 			}
 		}
 	}
@@ -239,13 +272,15 @@ func (a *agent) refresh(ctx context.Context) (View, bool) {
 // pollLoop refreshes the tray at the documented cadence.
 func (a *agent) pollLoop(ctx context.Context) {
 	failures := 0
-	nextUpdateCheck := a.o.now().Add(time.Minute)
 	for {
-		if a.o.UpdateCheck != nil && !a.o.now().Before(nextUpdateCheck) {
-			nextUpdateCheck = a.o.now().Add(24 * time.Hour)
-			if note, err := a.o.UpdateCheck(ctx); err == nil && note != "" {
-				a.setNote(note)
-			}
+		a.mu.Lock()
+		due := !a.o.now().Before(a.nextUpdateCheck)
+		if due {
+			a.nextUpdateCheck = a.o.now().Add(24 * time.Hour)
+		}
+		a.mu.Unlock()
+		if due {
+			a.checkForUpdate(ctx)
 		}
 		view, online := a.refresh(ctx)
 		if online {
@@ -261,6 +296,27 @@ func (a *agent) pollLoop(ctx context.Context) {
 		case <-time.After(wait):
 		}
 	}
+}
+
+// checkForUpdate runs the opt-in daily check and records the newer tag. An
+// error keeps the last known tag: a network failure is not "up to date".
+func (a *agent) checkForUpdate(ctx context.Context) {
+	a.mu.Lock()
+	enabled := a.checkUpdates
+	a.mu.Unlock()
+	if a.o.UpdateCheck == nil || !enabled {
+		return
+	}
+	tag, err := a.o.UpdateCheck(ctx)
+	if err != nil {
+		a.o.log().Warn("tray: update check failed", "err", err)
+		return
+	}
+	a.mu.Lock()
+	if a.checkUpdates {
+		a.update = tag
+	}
+	a.mu.Unlock()
 }
 
 // iconLoop animates the busy icon at 4 fps at most, and only when motion is on.
@@ -336,6 +392,10 @@ func (a *agent) action(ctx context.Context, id string) {
 		err = a.stopDaemonAction(ctx)
 	case ActionQueueToggle:
 		err = a.toggleQueue(ctx)
+	case ActionUpdate:
+		err = a.updateAction(ctx)
+	case ActionUpdateCheck:
+		err = a.toggleUpdateCheck(ctx)
 	case ActionOpenTUI, ActionOpenTUI + ":jobs":
 		err = a.openJob("")
 	case ActionPaste:
@@ -444,6 +504,64 @@ func (a *agent) toggleQueue(ctx context.Context) error {
 	} else {
 		a.setNote(i18n.T(a.language(), i18n.TrayPauseAll))
 	}
+	return nil
+}
+
+// updateAction implements the two-step "Update to vX…": the first click only
+// arms the confirmation; a second click inside stopConfirmWindow opens a
+// terminal running the fixed install command. The tray never passes user text.
+func (a *agent) updateAction(ctx context.Context) error {
+	a.mu.Lock()
+	version, armed, armedAt := a.update, a.updateArmed, a.updateArmedAt
+	a.mu.Unlock()
+	if version == "" {
+		return nil
+	}
+	now := a.o.now()
+	if !armed || now.Sub(armedAt) > stopConfirmWindow {
+		a.mu.Lock()
+		a.updateArmed, a.updateArmedAt = true, now
+		a.mu.Unlock()
+		a.refresh(ctx)
+		return nil
+	}
+	a.mu.Lock()
+	a.updateArmed = false
+	a.mu.Unlock()
+	if a.o.InstallUpdate == nil {
+		return errors.New("this tray cannot install updates")
+	}
+	if err := a.o.InstallUpdate(ctx); err != nil {
+		return err
+	}
+	a.setNote(i18n.Tf(a.language(), i18n.TrayUpdateStarted, version))
+	return nil
+}
+
+// toggleUpdateCheck persists the daily update-check preference. Turning it on
+// only enables the next poll; the check stays opt-in until then.
+func (a *agent) toggleUpdateCheck(context.Context) error {
+	if a.o.SetCheckUpdates == nil {
+		return errors.New("this tray cannot change the update check")
+	}
+	a.mu.Lock()
+	on := a.checkUpdates
+	a.mu.Unlock()
+	if err := a.o.SetCheckUpdates(!on); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.checkUpdates = !on
+	if !on {
+		// The user just opted in: allow the next poll to check at once.
+		a.nextUpdateCheck = a.o.now()
+	}
+	a.mu.Unlock()
+	key := i18n.TrayUpdateCheckOff
+	if !on {
+		key = i18n.TrayUpdateCheckOn
+	}
+	a.setNote(i18n.T(a.language(), key))
 	return nil
 }
 

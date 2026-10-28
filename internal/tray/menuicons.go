@@ -20,6 +20,7 @@ const (
 	glyphSettings = "settings"
 	glyphExit     = "exit"
 	glyphStop     = "stop"
+	glyphUpdate   = "update"
 )
 
 // glyphColor is a mid grey that reads on both dark and light menus.
@@ -71,6 +72,13 @@ var glyphs = map[string]func(x, y float64) bool{
 		return box(x, y, .2, .2, .8, .8) && (math.Abs(x-y) <= .07 || math.Abs(x+y-1) <= .07)
 	},
 	glyphStop: func(x, y float64) bool { return box(x, y, .22, .22, .78, .78) },
+	// A downward arrow onto a line: "install the newer release".
+	glyphUpdate: func(x, y float64) bool {
+		shaft := box(x, y, .46, .12, .54, .62)
+		head := y >= .48 && y <= .7 && math.Abs(x-.5) <= (.7-y)/(.7-.48)*.2
+		line := box(x, y, .24, .8, .76, .88)
+		return shaft || head || line
+	},
 }
 
 // glyphImage renders one glyph at size x size, or nil for an unknown key.

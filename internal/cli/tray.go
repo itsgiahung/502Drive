@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -66,6 +68,7 @@ func (a *App) runTray(ctx context.Context) error {
 	// Use the CLI's env accessor so tests (and DRIVE502_* overrides) see the
 	// same environment as the rest of the CLI.
 	host.Getenv = a.env
+	updateExe := updateBinary(runtime.GOOS, exe)
 	opts := tray.Options{
 		OpenJob: func(id string) error {
 			args := a.childArgv(exe)[1:]
@@ -77,32 +80,51 @@ func (a *App) runTray(ctx context.Context) error {
 			}
 			return tray.OpenTUIJob(host, exe, id, args...)
 		},
-		Version:       Version,
-		Motion:        !a.g.noMotion,
-		NoNotify:      a.env("DRIVE502_NO_NOTIFY") == "1",
-		Exe:           exe,
-		Host:          host,
-		Status:        a.trayStatus,
-		Jobs:          a.trayJobs,
-		Copy:          a.trayCopy,
-		Language:      a.trayLanguage,
-		QueuePause:    a.trayQueuePause,
-		Quiet:         a.trayQuiet,
-		NotifyEnabled: a.trayNotifyEnabled,
-		StartDaemon:   a.startDaemonAction,
-		StopDaemon:    a.stopDaemon,
-		Log:           slog.New(slog.NewTextHandler(a.errw(), &slog.HandlerOptions{Level: slog.LevelWarn})),
+		Version:         Version,
+		Motion:          !a.g.noMotion,
+		NoNotify:        a.env("DRIVE502_NO_NOTIFY") == "1",
+		Exe:             exe,
+		Host:            host,
+		Status:          a.trayStatus,
+		Jobs:            a.trayJobs,
+		Copy:            a.trayCopy,
+		Language:        a.trayLanguage,
+		QueuePause:      a.trayQueuePause,
+		Quiet:           a.trayQuiet,
+		NotifyEnabled:   a.trayNotifyEnabled,
+		StartDaemon:     a.startDaemonAction,
+		StopDaemon:      a.stopDaemon,
+		UpdateCheck:     a.trayUpdateNote,
+		InstallUpdate:   func(context.Context) error { return tray.OpenUpdate(host, updateExe) },
+		SetCheckUpdates: a.setUpdateCheck,
+		Log:             slog.New(slog.NewTextHandler(a.errw(), &slog.HandlerOptions{Level: slog.LevelWarn})),
 	}
 	if cfg, cerr := a.loadConfig(); cerr == nil {
 		opts.QuitStopsDaemon = cfg.TrayQuitStopsDaemon
-		if cfg.CheckUpdates {
-			opts.UpdateCheck = a.trayUpdateNote
-		}
+		opts.CheckUpdates = cfg.CheckUpdates
 	}
 	if err := tray.Run(ctx, opts); err != nil {
 		return localErr(ExitInternal, "tray_unavailable", err.Error())
 	}
 	return nil
+}
+
+// updateBinary returns the 502drive CLI binary for the tray's install action.
+// The Windows tray is a GUI shim that ignores arguments, so it uses the
+// sibling 502drive.exe; elsewhere the running binary is the CLI itself.
+func updateBinary(goos, exe string) string {
+	if goos != "windows" {
+		return exe
+	}
+	i := strings.LastIndexAny(exe, `/\`)
+	name, dir := exe, ""
+	if i >= 0 {
+		name, dir = exe[i+1:], exe[:i+1]
+	}
+	if strings.EqualFold(name, "502drive-tray.exe") {
+		return dir + "502drive.exe"
+	}
+	return exe
 }
 
 func (a *App) trayStatus(ctx context.Context) (tray.Status, error) {

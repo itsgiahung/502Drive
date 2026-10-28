@@ -41,6 +41,12 @@ func terminalSpecs(goos string) []termSpec {
 // TerminalCommand builds the fixed argv that opens `502drive menu` in a
 // terminal. It never uses a shell or user text.
 func TerminalCommand(h Host, exe string) ([]string, error) {
+	return terminalCommand(h, exe, "menu")
+}
+
+// terminalCommand builds the fixed argv that opens exe with args in a
+// terminal. Every argument is chosen by the tray, never by the user.
+func terminalCommand(h Host, exe string, args ...string) ([]string, error) {
 	specs := terminalSpecs(h.GOOS)
 	if h.GOOS != "windows" {
 		if term := h.Getenv("TERMINAL"); term != "" {
@@ -53,7 +59,7 @@ func TerminalCommand(h Host, exe string) ([]string, error) {
 				}
 			}
 			if commandExists(h, spec.name) {
-				return append(append([]string{spec.name}, spec.exec...), exe, "menu"), nil
+				return append(append(append([]string{spec.name}, spec.exec...), exe), args...), nil
 			}
 		}
 	}
@@ -62,9 +68,29 @@ func TerminalCommand(h Host, exe string) ([]string, error) {
 			continue
 		}
 		argv := append([]string{spec.name}, spec.exec...)
-		return append(argv, exe, "menu"), nil
+		return append(append(argv, exe), args...), nil
 	}
 	return nil, errors.New("no terminal emulator found (set $TERMINAL or install ghostty, kitty, konsole or gnome-terminal)")
+}
+
+// UpdateCommand builds the fixed argv that installs the newer release. The
+// arguments are constant; only the running binary's path is added.
+func UpdateCommand(h Host, exe string) ([]string, error) {
+	if exe == "" {
+		return nil, errors.New("cannot locate the 502drive binary")
+	}
+	return terminalCommand(h, exe, "update", "--install", "--restart", "--yes")
+}
+
+// OpenUpdate opens a terminal running the verified install command, so the
+// user sees the checksum, restart and package-managed messages. The tray stays
+// alive; the command keeps its own lifetime.
+func OpenUpdate(h Host, exe string) error {
+	argv, err := UpdateCommand(h, exe)
+	if err != nil {
+		return err
+	}
+	return h.Start(argv)
 }
 
 // OpenTUI starts the menu in a terminal; the tray stays alive.

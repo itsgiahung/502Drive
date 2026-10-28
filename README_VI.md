@@ -55,7 +55,7 @@ Cả hai script đều kiểm tra file tải về với checksum đã công bố
 copy file Drive phải có khóa. Bạn tự tạo khóa của mình trên Google Cloud, nên file
 của bạn không đi qua dự án của ai khác:
 [hướng dẫn từng bước](docs/oauth-setup.md) (tiếng Anh). Kết quả là một file nhỏ
-`client_secret….json`.
+`client_secret….json`; `502drive onboard` mở sẵn từng trang cho bạn.
 
 **3. Chạy trình hướng dẫn.**
 

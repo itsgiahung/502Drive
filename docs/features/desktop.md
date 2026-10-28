@@ -10,10 +10,11 @@ On a list, `↑↓` selects its rows and Enter opens a detail view. Top-level ho
 arrows switch tabs where the page does not own those arrows.
 
 Inside a collection, `↑↓` moves focus through **Copy**, **Sync**, **Output**,
-**Filter** and **Integrity check** as available. It keeps the same collection open.
-Select Sync and press Enter/Right for a vertical schedule/action menu; arrows choose,
-Enter applies, Left/Esc closes the menu. Select Output to open its URL, Filter for
-the editor or Integrity for findings/start scan. Existing letter shortcuts remain.
+**Filter**, **Integrity check** and **Protection** as available. It keeps the same
+collection open. Select Sync and press Enter/Right for a vertical schedule/action
+menu; arrows choose, Enter applies, Left/Esc closes the menu. Select Output to open
+its URL, Filter for the editor, Integrity for findings/start scan or Protection for
+the [mirror/snapshot screen](protection.md). Existing letter shortcuts remain.
 
 Left/Esc returns from a job, collection, report or audit to its parent. Left also
 cancels a non-typing copy dialog or state picker. In text fields, arrows move the
@@ -42,8 +43,11 @@ Collection shortcuts:
   collection revision. Include/exclude accept semicolon-separated rules.
 - `b`: filter presets; lifecycle and sync letter shortcuts remain in the on-screen help.
 
-Dedicated mirror/snapshot controls are not yet available in the TUI; use the
-[CLI](cli.md) and [protection guide](protection.md).
+Protection offers mirror on/off, automatic snapshots and fixed retention choices,
+capture now, pin/unpin and restore. Enabling mirror asks first and names the Drive
+trash consequence. Restore always runs a read-only preview first and shows the
+action count; apply is a second, separate confirmation that remarks sync pauses.
+See the [protection guide](protection.md).
 
 ## Tray
 
@@ -67,7 +71,15 @@ the Windows backend. macOS has CLI/daemon support, not a native tray.
 Desktop notifications currently target Linux. They respect preferences and quiet
 hours and coalesce repeated causes. A supported Open action captures a fixed job ID;
 actual desktop clicks and Windows native delivery still need acceptance.
-Update checks are opt-in, at most daily, and never install software.
+
+Update checks stay opt-in and run at most daily. When one finds a newer release,
+the tray shows `Update to vX…` and the tooltip adds `New release available: vX`.
+The row is hidden otherwise. A second click inside ten seconds confirms; it opens
+a terminal running `502drive update --install --restart --yes` with the running
+binary's path and fixed arguments. The tray never installs software itself, and a
+package-managed install (rpm/deb, Windows installer) reports `update_package_managed`
+in that terminal so the package manager keeps ownership. **Settings › Check for
+updates daily** turns the check on or off and saves `check_updates`.
 
 ## Startup and shutdown
 

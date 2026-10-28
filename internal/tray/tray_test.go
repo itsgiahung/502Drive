@@ -263,9 +263,9 @@ func TestBuildViewKeepsAStableStructure(t *testing.T) {
 			ids = append(ids, c.ID)
 		}
 	}
-	// Grouped: status, clone/open, jobs, queue pause, settings, quit and stop.
+	// Grouped: status, clone/open, jobs, queue pause, update, settings, quit and stop.
 	want := []string{"status", "status:work", "status:attention", ActionDaemon, ActionPaste, ActionOpenTUI, "jobs", "job:0", "job:1", "job:2",
-		ActionOpenAll, ActionOpenResult, ActionQueueToggle, "settings", ActionAutostart, ActionQuit, ActionStopDaemon}
+		ActionOpenAll, ActionOpenResult, ActionQueueToggle, ActionUpdate, "settings", ActionAutostart, ActionUpdateCheck, ActionQuit, ActionStopDaemon}
 	if strings.Join(ids, ",") != strings.Join(want, ",") {
 		t.Fatalf("ids = %v, want %v", ids, want)
 	}
@@ -417,6 +417,179 @@ func TestQueueToggleCallsTheDaemonWithTheOppositeState(t *testing.T) {
 	a.action(context.Background(), ActionQueueToggle)
 	if len(calls) != 2 || calls[0] != true || calls[1] != false {
 		t.Fatalf("toggle calls = %v, want [true false]", calls)
+	}
+}
+
+// The update row and tooltip appear only when the opt-in check found a newer
+// release, and the Settings row shows whether the check is on.
+func TestBuildViewShowsAnAvailableUpdate(t *testing.T) {
+	snap := snapOf(0, 0, 0, "connected")
+	snap.Update, snap.CheckUpdates = "v9.0.0", true
+	v := BuildView(snap, true, "")
+	if row := menuRow(t, v, ActionUpdate); row.Hidden || !strings.Contains(row.Title, "v9.0.0") {
+		t.Fatalf("update row = %+v", row)
+	}
+	if !strings.Contains(v.Tooltip, "New release available: v9.0.0") {
+		t.Fatalf("tooltip = %q", v.Tooltip)
+	}
+	if row := menuRow(t, v, ActionUpdateCheck); !strings.Contains(row.Title, "✓") {
+		t.Fatalf("update check row = %+v", row)
+	}
+
+	none := BuildView(snapOf(0, 0, 0, "connected"), true, "")
+	if row := menuRow(t, none, ActionUpdate); !row.Hidden {
+		t.Fatalf("update row without a release = %+v", row)
+	}
+	if row := menuRow(t, none, ActionUpdateCheck); strings.Contains(row.Title, "✓") {
+		t.Fatalf("disabled check is marked on: %+v", row)
+	}
+}
+
+// The update row needs a second click; only that second click opens the fixed
+// install command.
+func TestUpdateNeedsConfirmationAndRunsTheFixedCommand(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	installs := 0
+	a := newAgent(Options{
+		Now: func() time.Time { return now },
+		Status: func(context.Context) (Status, error) {
+			return Status{Ready: true, AccountStatus: "connected"}, nil
+		},
+		Jobs: func(context.Context) ([]Job, error) { return nil, nil },
+		Copy: func(context.Context, string) (string, error) { return "job_1", nil },
+		InstallUpdate: func(context.Context) error {
+			installs++
+			return nil
+		},
+	})
+	p := &fakePresenter{}
+	a.p = p
+	a.mu.Lock()
+	a.update = "v9.0.0"
+	a.mu.Unlock()
+	a.refresh(t.Context())
+
+	a.action(t.Context(), ActionUpdate)
+	if installs != 0 {
+		t.Fatal("the first click installed a release")
+	}
+	row := itemByID(p.last(), ActionUpdate)
+	if row == nil || row.Hidden || !strings.Contains(row.Title, "Confirm") || !strings.Contains(row.Title, "v9.0.0") {
+		t.Fatalf("confirmation row = %+v", row)
+	}
+
+	now = now.Add(time.Second)
+	a.action(t.Context(), ActionUpdate)
+	if installs != 1 {
+		t.Fatalf("installs = %d after the confirmation click", installs)
+	}
+	if row := itemByID(p.last(), ActionUpdate); row == nil || !strings.Contains(row.Title, "Update to") {
+		t.Fatalf("row after install = %+v", row)
+	}
+}
+
+func TestUpdateConfirmationExpires(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	installs := 0
+	a := newAgent(Options{
+		Now: func() time.Time { return now },
+		Status: func(context.Context) (Status, error) {
+			return Status{Ready: true, AccountStatus: "connected"}, nil
+		},
+		Jobs:          func(context.Context) ([]Job, error) { return nil, nil },
+		Copy:          func(context.Context, string) (string, error) { return "", nil },
+		InstallUpdate: func(context.Context) error { installs++; return nil },
+	})
+	a.p = &fakePresenter{}
+	a.mu.Lock()
+	a.update = "v9.0.0"
+	a.mu.Unlock()
+	a.action(t.Context(), ActionUpdate) // armed
+	now = now.Add(11 * time.Second)     // past the window
+	a.action(t.Context(), ActionUpdate)
+	if installs != 0 {
+		t.Fatal("a stale confirmation installed a release")
+	}
+	now = now.Add(time.Second)
+	a.action(t.Context(), ActionUpdate)
+	if installs != 1 {
+		t.Fatalf("installs = %d after re-arming", installs)
+	}
+}
+
+func TestUpdateCheckTogglePersistsThePreference(t *testing.T) {
+	var calls []bool
+	a := newAgent(Options{
+		Status: func(context.Context) (Status, error) {
+			return Status{Ready: true, AccountStatus: "connected"}, nil
+		},
+		Jobs:            func(context.Context) ([]Job, error) { return nil, nil },
+		Copy:            func(context.Context, string) (string, error) { return "", nil },
+		SetCheckUpdates: func(on bool) error { calls = append(calls, on); return nil },
+	})
+	p := &fakePresenter{}
+	a.p = p
+	a.refresh(t.Context())
+	a.action(t.Context(), ActionUpdateCheck)
+	a.action(t.Context(), ActionUpdateCheck)
+	if len(calls) != 2 || calls[0] != true || calls[1] != false {
+		t.Fatalf("setter calls = %v, want [true false]", calls)
+	}
+	if row := menuRow(t, p.last(), ActionUpdateCheck); strings.Contains(row.Title, "✓") {
+		t.Fatalf("check still marked on: %+v", row)
+	}
+}
+
+// The daily check is opt-in: it never runs while the preference is off and an
+// error keeps the last known tag.
+func TestCheckForUpdateHonoursOptIn(t *testing.T) {
+	calls, fail := 0, false
+	a := newAgent(Options{UpdateCheck: func(context.Context) (string, error) {
+		calls++
+		if fail {
+			return "", errors.New("offline")
+		}
+		return "v9.0.0", nil
+	}})
+	a.checkForUpdate(t.Context())
+	if calls != 0 {
+		t.Fatal("the check ran while it was disabled")
+	}
+	a.mu.Lock()
+	a.checkUpdates = true
+	a.mu.Unlock()
+	a.checkForUpdate(t.Context())
+	if calls != 1 {
+		t.Fatalf("checks = %d, want 1", calls)
+	}
+	a.mu.Lock()
+	tag := a.update
+	a.mu.Unlock()
+	if tag != "v9.0.0" {
+		t.Fatalf("tag = %q", tag)
+	}
+	fail = true
+	a.checkForUpdate(t.Context())
+	a.mu.Lock()
+	tag = a.update
+	a.mu.Unlock()
+	if tag != "v9.0.0" {
+		t.Fatalf("a failed check cleared the tag: %q", tag)
+	}
+}
+
+// The install command is fixed; only the running binary's path is inserted.
+func TestUpdateCommandUsesFixedArguments(t *testing.T) {
+	h := Host{GOOS: "linux", Getenv: func(string) string { return "" },
+		LookPath: func(name string) (string, error) { return "/usr/bin/" + name, nil }}
+	argv, err := UpdateCommand(h, "/opt/502drive/502drive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(argv[len(argv)-5:], " ")
+	want := "/opt/502drive/502drive update --install --restart --yes"
+	if got != want {
+		t.Fatalf("tail = %q, want %q (argv %v)", got, want, argv)
 	}
 }
 

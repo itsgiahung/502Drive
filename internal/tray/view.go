@@ -26,6 +26,12 @@ const (
 	// ActionQueueToggle pauses the whole queue, or resumes it when it is paused
 	// (the POST /v1/queue/pause|resume API of S6).
 	ActionQueueToggle = "queue-toggle"
+	// ActionUpdate installs the release found by the opt-in update check: the
+	// first click only confirms, the second runs `update --install --restart
+	// --yes` with the running binary's path and fixed arguments.
+	ActionUpdate = "update"
+	// ActionUpdateCheck turns the daily opt-in update check on or off.
+	ActionUpdateCheck = "update-check"
 	// ActionOpenAll opens the full library in the TUI.
 	ActionOpenAll = ActionOpenTUI + ":jobs"
 	// Job slots are informational menu rows, addressed by index.
@@ -71,6 +77,10 @@ type Snapshot struct {
 	Status Status
 	Jobs   []Job
 	At     time.Time
+	// Update is the newer release tag found by the opt-in daily check; empty
+	// means none is known. CheckUpdates is whether that check is enabled.
+	Update       string
+	CheckUpdates bool
 }
 
 // Item is one menu row. The structure is fixed (see BuildView); only titles,
@@ -206,20 +216,26 @@ func BuildViewLang(snap Snapshot, online bool, note string, lang string) View {
 		{ID: "jobs", Title: i18n.T(lang, i18n.JobsLibrary), Enabled: true, Icon: glyphList, Children: jobItems(snap, lang, result)},
 		{Separator: true},
 		{ID: ActionQueueToggle, Title: toggleTitle, Enabled: online, Icon: toggleGlyph},
+		{ID: ActionUpdate, Title: i18n.Tf(lang, i18n.TrayUpdateTo, plain(snap.Update)), Enabled: snap.Update != "", Hidden: snap.Update == "", Icon: glyphUpdate},
 		{ID: "settings", Title: i18n.T(lang, i18n.MenuSettings), Enabled: true, Icon: glyphSettings, Children: []Item{
 			{ID: ActionAutostart, Title: autostartTitle(lang), Enabled: true},
+			{ID: ActionUpdateCheck, Title: updateCheckTitle(lang, snap.CheckUpdates), Enabled: true},
 		}},
 		{Separator: true},
 		{ID: ActionQuit, Title: i18n.T(lang, i18n.Quit), Enabled: true, Icon: glyphExit},
 		{ID: ActionStopDaemon, Title: i18n.T(lang, i18n.StopApp), Enabled: online, Icon: glyphStop},
 	}...)
-	return View{State: state, Title: title, StatusLine: line, Tooltip: tooltip(title, line, status, online, lang) + progressTooltip(snap, lang), Items: items}
+	return View{State: state, Title: title, StatusLine: line, Tooltip: tooltip(title, line, status, online, lang, snap.Update) + progressTooltip(snap, lang), Items: items}
 }
 
 // tooltip is the detail shown on hover: account, counts, progress when the
-// total is known, and what to do when something needs the user.
-func tooltip(title, line string, status Status, online bool, lang string) string {
+// total is known, an available release, and what to do when something needs
+// the user.
+func tooltip(title, line string, status Status, online bool, lang, update string) string {
 	parts := []string{title, line}
+	if update != "" {
+		parts = append(parts, i18n.Tf(lang, i18n.TrayUpdateAvailable, plain(update)))
+	}
 	if status.Quota != nil {
 		loc, _ := time.LoadLocation(status.Timezone)
 		if loc == nil {
@@ -239,6 +255,15 @@ func tooltip(title, line string, status Status, online bool, lang string) string
 func autostartTitle(lang string) string {
 	on, _ := autostart.Status()
 	title := i18n.T(lang, i18n.Autostart)
+	if on {
+		title += " ✓"
+	}
+	return title
+}
+
+// updateCheckTitle marks the daily check when the opt-in preference is on.
+func updateCheckTitle(lang string, on bool) string {
+	title := i18n.T(lang, i18n.TrayCheckUpdates)
 	if on {
 		title += " ✓"
 	}

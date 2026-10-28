@@ -56,7 +56,7 @@ Both scripts check the download against the published checksums.
 that copies Drive files to have a key. You create your own in Google Cloud, so
 your files are never shared with anyone else's project:
 [step-by-step guide](docs/oauth-setup.md). You end up with a small
-`client_secret….json` file.
+`client_secret….json` file; `502drive onboard` opens each page for you.
 
 **3. Run the setup guide.**
 
