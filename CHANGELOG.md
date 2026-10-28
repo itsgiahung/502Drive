@@ -11,6 +11,7 @@ before 1.0 a minor version may change behaviour, and every such change is listed
 - The tray icon disappeared when the daemon was stopped: the "offline" icon was
   drawn half transparent, and the Linux tray conversion drops pixels below half
   opacity. It is now the same logo in grey.
+- The animated cat in the README shows the new sleeping cat and its "z Z".
 
 ## 0.4.3 — 2026-10-28
 

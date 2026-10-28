@@ -34,6 +34,31 @@ func previewTerminalDraw(dst draw.Image, f *Frame, cr crop, ox, oy, pw, ph int, 
 	bg := o.background()
 	for y := 0; y < cr.h; y++ {
 		for x := 0; x < cr.w; x++ {
+			// A terminal letter (the sleeping "z Z") takes the whole text cell, which
+			// is two pixel rows: draw it from the bitmap font on the plain background
+			// instead of two coloured half blocks.
+			ty := (cr.y0 + y) &^ 1
+			if l := f.cv[ty][cr.x0+x]; l.ch != 0 || f.cv[ty+1][cr.x0+x].ch != 0 {
+				if l.ch == 0 {
+					l = f.cv[ty+1][cr.x0+x]
+				}
+				draw.Draw(dst, image.Rect(ox+x*pw, oy+y*ph, ox+(x+1)*pw, oy+(y+1)*ph), &image.Uniform{C: previewBG(o.Dark)}, image.Point{}, draw.Src)
+				if cr.y0+y == ty+1 { // the second row: both background fills are down
+					lc := color.RGBA{uint8(l.c.r), uint8(l.c.g), uint8(l.c.b), 255}
+					bits, gw, gh := previewFont['Z'], 3, 5
+					bw, bh := max(1, pw/gw), max(1, 2*ph/(gh+3))
+					if l.ch == 'z' { // the same glyph, smaller: a 3x3 "z" reads as an "I"
+						bh = max(1, bh*2/3)
+					}
+					x0, y0 := ox+x*pw+(pw-bw*gw)/2, oy+(y-1)*ph+(2*ph-bh*gh)/2
+					for i, bit := range bits {
+						if bit == '1' {
+							draw.Draw(dst, image.Rect(x0+(i%gw)*bw, y0+(i/gw)*bh, x0+(i%gw+1)*bw, y0+(i/gw+1)*bh), &image.Uniform{C: lc}, image.Point{}, draw.Src)
+						}
+					}
+				}
+				continue
+			}
 			c, ok := final(f.cv[cr.y0+y][cr.x0+x], bg)
 			col := previewBG(o.Dark)
 			if ok {

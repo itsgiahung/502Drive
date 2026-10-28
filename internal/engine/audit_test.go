@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/itsgiahung/502Drive/internal/drive"
 	"github.com/itsgiahung/502Drive/internal/state"
@@ -486,8 +488,21 @@ func TestAuditHonorsPauseAndCancel(t *testing.T) {
 	done := make(chan struct{})
 	eng := e.engine()
 	go func() { eng.Run(ctx); close(done) }()
-	if _, err = e.store.Action(context.Background(), "owner", "pause-key", jobB.ID, "pause", jobB.Revision); err != nil {
-		t.Fatal(err)
+	// The engine may claim the job (bumping its revision) before this request
+	// lands: a stale revision is a legitimate conflict, so retry on the current one.
+	for attempt := 0; ; attempt++ {
+		cur, gerr := e.store.GetJob(context.Background(), "owner", jobB.ID)
+		if gerr != nil {
+			t.Fatal(gerr)
+		}
+		_, err = e.store.Action(context.Background(), "owner", fmt.Sprintf("pause-key-%d", attempt), jobB.ID, "pause", cur.Revision)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, state.ErrStale) || attempt >= 20 {
+			t.Fatal(err)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	close(release)
 	paused := e.runUntil(jobB.ID, func(j state.Job) bool { return j.State == state.JobPaused })
