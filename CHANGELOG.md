@@ -4,6 +4,21 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
+## Unreleased
+
+### Added
+
+- `502drive onboard --telegram`: a guided Telegram setup. It opens @BotFather, validates the
+  pasted token with Telegram, then reads your numeric id from the first private message you
+  send the bot (or asks for it by hand), and saves both privately. The normal onboard now
+  ends with a one-line tip about it.
+
+### Changed
+
+- README (English and Vietnamese) rewritten for a first-time reader: what it does and does
+  not do, what you need and how long it takes, a 4-step setup that includes the Google
+  key and **Publish app**, the optional Telegram step, safety, and a short fix table.
+
 ## 0.4.10 — 2026-10-28
 
 ### Fixed

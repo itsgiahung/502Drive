@@ -12,73 +12,115 @@
 [English](README.md) · Tiếng Việt
 </div>
 
-Dán một link Google Drive, 502Drive sẽ copy cả thư mục vào Drive của bạn, giữ
-nguyên cây thư mục và tên file. Việc copy diễn ra **ngay trong Google**: không có
-gì bị tải về máy rồi tải lên lại, nên một thư mục 50 GB gần như không tốn mạng của
-bạn. Nếu laptop ngủ hay mất mạng, việc copy chạy tiếp từ chỗ dừng. Sau đó 502Drive
-có thể giữ bản copy luôn khớp với bản gốc.
+## Nó làm gì
 
-Chương trình chạy trên máy của bạn, đăng nhập bằng tài khoản Google của bạn.
-Không có máy chủ 502Drive nào, cũng không cần tạo tài khoản.
+Dán một link Google Drive. 502Drive tạo bản sao của cả thư mục đó trong **Drive của
+chính bạn**, giữ nguyên thư mục con và tên file. Việc sao chép diễn ra **bên trong
+Google**: không có gì được tải về máy rồi tải lên lại, nên thư mục 50 GB gần như không
+tốn mạng của bạn.
 
-## Vì sao dùng
+```
+ một link Drive  ──►  502Drive nhờ Google sao chép  ──►  thư mục xuất hiện trong Drive của bạn
+ (thư mục của người khác)   (máy bạn chỉ gửi lệnh)        (bạn là chủ bản sao)
+```
 
-- **Thư mục lớn, mạng yếu vẫn được.** Google tự copy; máy bạn chỉ gửi lệnh.
-- **Ngắt giữa chừng cũng không sao.** Gập máy, mất Wi-Fi, khởi động lại: job chạy
-  tiếp từ chỗ dừng, và 502Drive kiểm tra trên Drive trước khi gửi lại lệnh copy,
-  nên không sinh file trùng.
-- **Tự đồng bộ.** Kiểm tra lại bản copy theo lịch (hằng ngày, vài giờ một lần)
-  hoặc gần như ngay khi bản gốc thay đổi.
-- **Không bao giờ xóa file của bạn.** Dọn dẹp chỉ đưa bản copy do 502Drive tạo vào
+Nó chạy trên máy của bạn, bằng tài khoản Google của bạn. Không có máy chủ 502Drive,
+không phải tạo tài khoản.
+
+**Hợp với:** copy thư mục chia sẻ lớn vào Drive của bạn, giữ bản sao luôn mới theo bản
+gốc, dùng bằng terminal, biểu tượng khay hệ thống hoặc bot Telegram.
+
+**Không dành cho:** sao lưu file trên máy tính, tải file Drive về ổ đĩa, hay sao chép
+những thứ Google không cho phép copy.
+
+## Vì sao nên dùng
+
+- **Thư mục lớn, mạng yếu.** Google lo việc sao chép.
+- **Ngắt giữa chừng không sao.** Đóng máy, mất Wi-Fi, khởi động lại: job tiếp tục từ chỗ
+  đã dừng, và 502Drive hỏi Drive trước khi gửi lệnh copy lại nên không sinh bản trùng.
+- **Luôn mới.** Làm mới bản sao theo lịch, hoặc gần như tức thì khi bản gốc đổi.
+- **Không xóa file của bạn.** Dọn dẹp chỉ chuyển bản copy do chính 502Drive tạo vào
   thùng rác Drive, và chỉ sau khi bạn xác nhận.
-- **Dùng theo cách bạn thích:** ứng dụng trong terminal (có mèo), lệnh cho script,
-  biểu tượng khay hệ thống, hoặc bot Telegram.
 
-## Bắt đầu nhanh
+## Trước khi bắt đầu
 
-**1. Cài đặt.** Tải gói cho máy bạn ở
-[Releases](https://github.com/itsgiahung/502Drive/releases), hoặc:
+| Bạn cần | Mất bao lâu |
+| --- | --- |
+| Một tài khoản Google (tài khoản sẽ sở hữu các bản sao) | — |
+| Khoảng **20 phút** lần đầu (khoảng 10 cho khóa Google, 5 để cài, 5 cho lần copy đầu) | một lần |
+| Biết dùng terminal ở mức dán vài lệnh | — |
+| *Tùy chọn:* tài khoản Telegram để điều khiển từ điện thoại | +5 phút |
 
-```sh
-# Linux hoặc macOS
-curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.sh | sh
-```
+## Thiết lập (4 bước)
 
-```powershell
-# Windows (PowerShell)
-irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex
-```
+### 1. Cài đặt (khoảng 5 phút)
 
-Cả hai script đều kiểm tra file tải về với checksum đã công bố. Từ bản 0.4.5, mỗi
-bản phát hành còn có chữ ký cho các checksum đó, do quy trình phát hành của dự án
-tạo ra; script Linux/macOS tự kiểm chữ ký nếu máy có
-[`cosign`](https://docs.sigstore.dev/cosign/installation/) (đặt `REQUIRE_SIGNATURE=1`
-để bắt buộc). Muốn tự kiểm thủ công: xem
-[Verify a release](docs/install-linux.md#verify-a-release) (tiếng Anh).
+Chọn một cách:
 
-**2. Tạo khóa Google (làm một lần, khoảng 5 phút).** Google yêu cầu mọi ứng dụng
-copy file Drive phải có khóa. Bạn tự tạo khóa của mình trên Google Cloud, nên file
-của bạn không đi qua dự án của ai khác:
-[hướng dẫn từng bước](docs/oauth-setup.md) (tiếng Anh). Kết quả là một file nhỏ
-`client_secret….json`; `502drive onboard` mở sẵn từng trang cho bạn.
+| Hệ điều hành | Cách dễ nhất |
+| --- | --- |
+| **Windows** | Chạy `irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 \| iex` trong PowerShell, hoặc tải `502drive-setup.exe` ở [Releases](https://github.com/itsgiahung/502Drive/releases) (xem [hướng dẫn Windows](docs/install-windows_VI.md)). |
+| **Linux** | `curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.sh \| sh`, hoặc gói `.rpm`/`.deb` (xem [hướng dẫn Linux](docs/install-linux_VI.md)). |
+| **macOS** | Dùng đúng dòng `install.sh` như Linux (chỉ Apple Silicon, chỉ dòng lệnh, [chưa kiểm thử](#đã-kiểm-thử-đến-đâu)). |
+| **Docker / máy chủ** | Xem [hướng dẫn Docker](docs/install-docker_VI.md). |
 
-**3. Chạy trình hướng dẫn.**
+Cả hai script đều kiểm tra file tải về với checksum đã công bố. Từ bản 0.4.5, mỗi bản
+phát hành còn có chữ ký của các checksum đó; script Linux/macOS kiểm chữ ký khi máy có
+[`cosign`](https://docs.sigstore.dev/cosign/installation/). Muốn tự kiểm, xem
+[Kiểm tra bản tải về](docs/install-linux_VI.md#kiểm-tra-bản-tải-về). Bộ cài Windows chưa
+được ký số nên Windows có thể cảnh báo "nhà phát hành không xác định".
+
+### 2. Tạo khóa Google (một lần, khoảng 10 phút)
+
+Google yêu cầu mọi ứng dụng copy file Drive phải có một khóa. Bạn tự tạo khóa trong
+Google Cloud, nên file của bạn không bao giờ đi qua project của người khác. Đây là bước
+duy nhất cần cẩn thận một chút. Tóm tắt:
+
+1. **Tạo project** tại <https://console.cloud.google.com/projectcreate>.
+2. **Bật Google Drive API** cho project:
+   <https://console.cloud.google.com/apis/library/drive.googleapis.com>.
+3. **Màn hình đồng ý:** ở <https://console.cloud.google.com/auth/branding> chọn
+   **External**, rồi ở mục **Audience** thêm Gmail của bạn làm *test user*.
+4. **Publish ứng dụng** (nút **Publish app**, trạng thái **In production**).
+   *Đừng bỏ qua:* ứng dụng để ở "Testing" sẽ bị Google đăng xuất sau mỗi 7 ngày. Dùng cho
+   cá nhân thì không cần Google duyệt; lúc đăng nhập Google hiện màn hình "ứng dụng chưa
+   được xác minh": chọn **Advanced → Go to … (unsafe)**. Đó là khóa của chính bạn.
+5. **Tạo khóa:** <https://console.cloud.google.com/auth/clients/create>, loại
+   **Desktop app**, rồi bấm **Download JSON**. Bạn nhận một file tên
+   `client_secret….json`.
+
+Hướng dẫn đầy đủ kèm mọi liên kết: [hướng dẫn khóa Google](docs/oauth-setup_VI.md).
+`502drive onboard` (bước kế tiếp) mở từng trang giúp bạn và chờ bạn làm xong.
+
+### 3. Chạy trình hướng dẫn (khoảng 3 phút)
 
 ```sh
 502drive onboard
 ```
 
-Trình này hỏi file JSON ở trên (kéo thả vào terminal cũng được), bật 502Drive chạy
-nền, mở trang đăng nhập Google, rồi hỏi bản copy sẽ lưu vào đâu (nhấn Enter để
-chọn My Drive). Khi nó in **Xong!** là đã sẵn sàng.
+Nó hỏi file JSON (bạn có thể kéo thả vào terminal), bật 502Drive chạy nền, mở trang đăng
+nhập Google, rồi hỏi bản sao nên nằm ở đâu (nhấn Enter để dùng Drive của tôi). Khi nó in
+**Sẵn sàng**, bạn đã xong.
 
-**4. Copy thử.**
+### 4. Copy lần đầu (khoảng 2 phút)
 
 ```sh
-502d 'https://drive.google.com/drive/folders/SOURCE_ID' --wait
+502d 'https://drive.google.com/drive/folders/ID_NGUON' --wait
 ```
 
-Hoặc chỉ cần gõ `502drive` để mở ứng dụng rồi dán link vào đó.
+Hoặc chạy `502drive` để mở ứng dụng rồi dán link vào đó. Bản sao xuất hiện trong Drive
+của bạn với cùng tên như bản gốc.
+
+### Tùy chọn: điều khiển bằng Telegram (khoảng 5 phút)
+
+```sh
+502drive onboard --telegram
+```
+
+Trình hướng dẫn mở **@BotFather** giúp bạn: gửi `/newbot`, đặt tên, rồi dán token nó trả
+về. Sau đó mở bot mới và bấm **Start**; 502Drive đọc ID số của bạn từ tin nhắn đó nên bạn
+không phải tự tra. Sau khi chạy `502drive stop` rồi `502drive up`, bot chỉ trả lời bạn.
+Xem [hướng dẫn Telegram](docs/features/telegram_VI.md).
 
 ## Dùng hằng ngày
 
@@ -87,81 +129,92 @@ Hoặc chỉ cần gõ `502drive` để mở ứng dụng rồi dán link vào �
 | Mở ứng dụng | `502drive` |
 | Copy một link và chờ xong | `502d LINK --wait` |
 | Xem trước link có gì | `502drive inspect LINK --deep` |
-| Copy nhiều link một lúc | `502d LINK1 LINK2 LINK3` |
+| Copy nhiều link cùng lúc | `502d LINK1 LINK2 LINK3` |
 | Xem các job | `502drive jobs list` |
 | Lấy danh sách file bị lỗi | `502drive jobs report JOB_ID --format csv` |
-| Xem các bản copy | `502drive collections list` |
-| Cập nhật một bản copy ngay | `502drive sync run COPY_ID` |
-| Tự cập nhật mỗi tối lúc 22:00 | `502drive sync enable COPY_ID --daily 22:00` |
-| Kiểm tra bản copy có khớp bản gốc | `502drive audit COPY_ID` |
-| Tạm dừng hoặc chạy lại tất cả | `502drive pause` · `502drive resume` |
-| Kiểm tra cài đặt có ổn không | `502drive doctor` |
-| Tắt 502Drive | `502drive stop` |
+| Xem các bản sao | `502drive collections list` |
+| Làm mới một bản sao ngay | `502drive sync run MA_BAN_SAO` |
+| Làm mới mỗi đêm lúc 22:00 | `502drive sync enable MA_BAN_SAO --daily 22:00` |
+| Kiểm tra bản sao khớp bản gốc | `502drive audit MA_BAN_SAO` |
+| Tạm dừng hoặc tiếp tục tất cả | `502drive pause` · `502drive resume` |
+| Dọn các job cũ đã xong khỏi danh sách | `502drive history clear --older-than 30d` |
+| Kiểm tra mọi thứ đã thiết lập chưa | `502drive doctor` |
 | Cập nhật lên bản mới nhất | `502drive update --install --restart` |
+| Dừng 502Drive | `502drive stop` |
 
-`COPY_ID` lấy từ `collections list`. Lệnh nào cũng có `--help`, và `--json` cho
-script. Danh sách đầy đủ ở [tài liệu CLI](docs/features/cli.md) (tiếng Anh).
+`MA_BAN_SAO` lấy từ `collections list`. Mọi lệnh đều có `--help`, và `--json` cho script.
+Danh sách đầy đủ: [tham chiếu CLI](docs/features/cli.md).
 
-### Trong ứng dụng
-
-Phím số `1`–`7` đổi tab, mũi tên để di chuyển, `Enter` để mở, `←` hoặc `Esc` để
-quay lại, `q` để đóng ứng dụng. Đóng ứng dụng không dừng việc copy: 502Drive vẫn
-chạy nền cho tới khi bạn gõ `502drive stop` hoặc chọn **Dừng 502Drive…** trên khay.
-Ứng dụng có tiếng Việt và tiếng Anh.
-
-### Telegram (tùy chọn)
-
-Gửi link Drive cho bot của riêng bạn để bắt đầu copy và nhận tin nhắn khi xong.
-Chỉ những tài khoản bạn cho phép mới dùng được. Xem
-[hướng dẫn Telegram](docs/features/telegram.md) (tiếng Anh).
+**Trong ứng dụng:** phím số `1`–`7` đổi tab, mũi tên di chuyển, `Enter` mở, `←` hoặc `Esc`
+quay lại, `q` đóng ứng dụng. Đóng ứng dụng không làm dừng việc copy; 502Drive tiếp tục
+chạy nền cho tới khi bạn chạy `502drive stop` hoặc chọn **Dừng 502Drive…** ở khay hệ
+thống. Mỗi hàng có một dòng giải thích ngay bên dưới.
 
 ## Chuyện gì xảy ra với file
 
-- **Khi bản gốc thay đổi**, lần cập nhật sau sẽ copy file mới và file đã sửa, di
-  chuyển và đổi tên theo bản gốc, và giữ lại phiên bản cũ của file đã sửa (trừ khi
-  bạn chọn thay thế).
-- **Khi một file bị xóa ở bản gốc**, bản copy vẫn giữ file đó. Nếu muốn bản copy
-  xóa theo, bật *mirror* cho bản copy đó; file bị xóa sẽ vào thùng rác Drive, không
-  bao giờ bị xóa vĩnh viễn.
-- **Khi bạn tự tay xóa file trong bản copy**, 502Drive không tự chép lại.
-  `502drive audit COPY_ID` liệt kê những gì bị thiếu, còn `audit COPY_ID --repair`
-  cho xem trước những gì sẽ khôi phục rồi mới làm.
-- **Điểm khôi phục** (*snapshot*) giữ các phiên bản cũ của bản copy để quay lại khi
-  cần. Mặc định tắt và chiếm dung lượng Drive. Xem
-  [mirror và snapshot](docs/features/protection.md) (tiếng Anh).
-- Muốn bỏ hẳn một bản copy: `502drive collections retire COPY_ID`, sau đó
-  `502drive collections cleanup COPY_ID` cho xem những gì sẽ vào thùng rác và câu
-  lệnh chính xác để xác nhận.
+- **Bản gốc thay đổi:** lần làm mới tiếp theo copy file mới và file đã sửa, theo kịp việc
+  di chuyển và đổi tên, và giữ bản cũ của file đã sửa trừ khi bạn yêu cầu thay thế.
+- **File bị xóa khỏi bản gốc:** bản sao của bạn vẫn giữ. Muốn bản sao xóa theo, bật
+  *mirror* cho bản sao đó; file bị xóa sẽ vào thùng rác Drive, không bao giờ xóa vĩnh viễn.
+- **Bạn xóa file khỏi bản sao:** 502Drive không tự đưa nó trở lại. `502drive audit
+  MA_BAN_SAO` liệt kê những gì đang thiếu, và `audit MA_BAN_SAO --repair` cho xem trước
+  những gì sẽ được khôi phục rồi bạn mới áp dụng.
+- **Hai file y hệt cùng tên trong một thư mục:** chỉ copy một bản. File cùng tên nhưng
+  khác nội dung thì cả hai đều được giữ (`tên (2).đuôi`).
+- **Điểm khôi phục** (*snapshot*) giữ các phiên bản trước của bản sao và có thể quay lại.
+  Mặc định tắt và tốn dung lượng Drive: [mirror và snapshot](docs/features/protection_VI.md).
+- **Gỡ một bản sao:** `502drive collections retire MA_BAN_SAO`, rồi
+  `502drive collections cleanup MA_BAN_SAO` cho xem những gì sẽ vào thùng rác và lệnh xác
+  nhận chính xác.
+- **Dọn danh sách job:** `502drive history clear` (hoặc Cài đặt → *Xóa lịch sử…* trong ứng
+  dụng) chỉ ẩn job đã xong khỏi danh sách. Bản sao và file Drive không bị đụng tới.
 
-## Nên biết
+## Có an toàn không?
 
-- Bản copy có ID mới và bạn là chủ sở hữu. Quyền chia sẻ, bình luận và lịch sử phiên
-  bản không được copy; Google quyết định file nào copy được.
-- Hạn mức copy hằng ngày của Google vẫn áp dụng. Khi chạm hạn mức, job tự chờ và
-  chạy tiếp khi Google cho phép.
-- Thông tin đăng nhập Google được mã hóa trên máy bạn. Bản sao lưu tạo bằng
-  `502drive backup` có chứa nó, nên hãy giữ kín.
-- 502Drive chỉ kết nối tới tài khoản Google của bạn, Telegram (nếu bạn bật) và
-  GitHub khi bạn kiểm tra cập nhật. Không gửi dữ liệu thống kê, không tự cập nhật,
-  không tạo link chia sẻ công khai.
+- Khóa bạn tạo là của bạn và nằm trên máy bạn. Đăng nhập Google được lưu **mã hóa** ở máy;
+  bản sao lưu (`502drive backup`) có chứa nó nên hãy giữ riêng tư.
+- 502Drive xin Google quyền dùng Drive của bạn (cần để copy). Nó không chia sẻ công khai
+  gì cả và không gửi dữ liệu thống kê. Nó chỉ nói chuyện với Google, với Telegram nếu bạn
+  thiết lập, và với GitHub khi kiểm tra bản mới.
+- Nó không bao giờ xóa vĩnh viễn gì trên Drive. Dọn dẹp chỉ chuyển bản copy của chính nó
+  vào thùng rác, và chỉ sau khi bạn xác nhận.
+- Bản sao có ID file mới và bạn là chủ sở hữu. Quyền chia sẻ, bình luận và lịch sử phiên
+  bản không được copy; Google quyết định cái gì copy được.
+- Hạn mức copy hằng ngày của Google vẫn áp dụng. Khi chạm hạn mức, job chờ rồi tự tiếp tục.
 
-**Đã kiểm thật:** copy, đồng bộ, phục hồi sau crash, audit và Telegram trên Linux với
-tài khoản Google thật. **Chưa kiểm thật:** cài trên Windows và macOS, Shared Drive,
-thư mục rất lớn, mirror và snapshot. Chi tiết: [verification](docs/verification.md).
+## Có sự cố?
 
-## Cho lập trình viên
+| Bạn thấy | Cách xử lý |
+| --- | --- |
+| `daemon_unavailable` | Chạy `502drive up`. |
+| Cứ khoảng 7 ngày lại bị hỏi đăng nhập | Ứng dụng Google còn ở *Testing*: Publish nó (bước 2.4), rồi chạy `502drive account login`. |
+| `account_reconnect_required` | `502drive account login`. |
+| Job báo **blocked** | `502drive jobs get JOB_ID` cho biết lý do; thường là hạn mức Google hoặc thiếu quyền. |
+| Chưa thiết lập xong | `502drive doctor` liệt kê chỗ thiếu; `502drive onboard` sửa giúp. |
 
-Bắt đầu từ [mục lục tài liệu](docs/README.md) và [kiến trúc](docs/architecture.md).
-Đóng góp: [CONTRIBUTING](CONTRIBUTING.md). Tài liệu kỹ thuật viết bằng tiếng Anh.
+Thêm: [xử lý sự cố](docs/troubleshooting_VI.md) · [gỡ cài đặt và quay lại bản cũ](docs/runbooks.md).
+
+## Đã kiểm thử đến đâu
+
+Đã thử với tài khoản Google thật trên Linux: copy, đồng bộ, phục hồi sau sập máy, kiểm tra
+toàn vẹn, mirror và snapshot, và một phiên Telegram ngắn. **Chưa thử thật:** dùng trên
+Windows và macOS, Shared Drive, thư mục rất lớn, máy ngủ rồi mở lại và mất mạng, khay hệ
+thống trên mọi môi trường desktop, và hướng dẫn tạo khóa từ một project Google còn trống.
+Chi tiết: [verification](docs/verification.md).
+
+## Dành cho lập trình viên
+
+Bắt đầu với [mục lục tài liệu](docs/README.md) và [kiến trúc](docs/architecture.md).
+Đóng góp: [CONTRIBUTING](CONTRIBUTING.md).
 
 ```sh
-make check           # format, vet và test race
-make docs            # link tài liệu và schema API
-make release-local   # build gói phát hành trên máy; không đăng gì
+make check           # định dạng, vet và test race
+make docs            # liên kết tài liệu và schema API
+make release-local   # build gói phát hành trên máy; không công bố gì
 ```
 
-[Changelog](CHANGELOG.md) · [Quyền riêng tư](PRIVACY.md) · [Bảo mật](SECURITY.md) ·
-[Thư viện bên thứ ba](THIRD_PARTY_NOTICES.md)
+[Nhật ký thay đổi](CHANGELOG.md) · [Quyền riêng tư](PRIVACY.md) · [Bảo mật](SECURITY.md) ·
+[Thông báo bên thứ ba](THIRD_PARTY_NOTICES.md)
 
-502Drive là dự án độc lập, không do Google làm hay bảo trợ. Google Drive là thương hiệu
-của Google LLC. Giấy phép [GPL-3.0-only](LICENSE).
+502Drive là dự án độc lập, không do Google tạo ra hay bảo trợ. Google Drive là nhãn hiệu của
+Google LLC. Cấp phép theo [GPL-3.0-only](LICENSE).

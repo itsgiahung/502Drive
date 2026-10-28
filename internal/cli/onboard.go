@@ -64,7 +64,11 @@ func (a *App) setupChecklist(ctx context.Context) (app.Setup, error) {
 
 func (a *App) onboardCmd() *cobra.Command {
 	var oauthClient string
+	var telegram bool
 	c := &cobra.Command{Use: "onboard", Short: "Guided first copy setup; unattended checklist exits 9 when incomplete", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		if telegram {
+			return a.onboardTelegramFlag(cmd)
+		}
 		ctx := cmd.Context()
 		interactive := a.io.StdinTTY && a.io.StdoutTTY && !a.g.noInput && !a.g.json
 		lang := "en"
@@ -141,6 +145,9 @@ func (a *App) onboardCmd() *cobra.Command {
 			}
 			if out.Ready {
 				fmt.Fprintln(a.out(), i18n.T(lang, i18n.SetupReady))
+				if cfg, e := a.loadConfig(); e == nil && cfg.TelegramTokenFile == "" {
+					fmt.Fprintln(a.out(), i18n.T(lang, i18n.OnbTgTip))
+				}
 			}
 		} else {
 			b, _ := json.Marshal(map[string]any{"data": out, "request_id": ""})
@@ -151,6 +158,7 @@ func (a *App) onboardCmd() *cobra.Command {
 		}
 		return nil
 	}}
+	c.Flags().BoolVar(&telegram, "telegram", false, "guided Telegram bot setup (token and owner id)")
 	c.Flags().StringVar(&oauthClient, "oauth-client", "", "Google OAuth Desktop client JSON (skips the guide in a terminal)")
 	return c
 }
