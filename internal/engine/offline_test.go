@@ -169,7 +169,9 @@ func TestListPageWaitsForTheNetworkInsteadOfFailingTheJob(t *testing.T) {
 	go func() { eng.Run(ctx); close(done) }()
 	defer func() { cancel(); <-done }()
 
-	time.Sleep(100 * time.Millisecond)
+	for end := time.Now().Add(5 * time.Second); gate.Online() && time.Now().Before(end); {
+		time.Sleep(5 * time.Millisecond) // a slow runner can take longer than a fixed pause
+	}
 	if gate.Online() {
 		t.Fatal("a list transport failure did not close the gate")
 	}
