@@ -20,6 +20,11 @@ type fakeActions struct {
 	err    error
 	calls  []string
 	actErr error
+	// Protection state: what the daemon would answer.
+	prot     ProtectionView
+	snaps    []SnapshotInfo
+	restore  RestorePlan
+	jobState string
 }
 
 func (f *fakeActions) Actions() Actions {
@@ -60,6 +65,71 @@ func (f *fakeActions) Actions() Actions {
 			f.record("lang:" + lang)
 			return f.actErr
 		},
+		Protection: func(_ context.Context, collectionID string) (ProtectionView, error) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			v := f.prot
+			v.CollectionID = collectionID
+			if v.Revision == 0 {
+				v.Revision = 2
+			}
+			if v.Options.KeepDays == 0 {
+				v.Options.KeepDays = 30
+			}
+			if v.Options.KeepCount == 0 {
+				v.Options.KeepCount = 10
+			}
+			return v, f.actErr
+		},
+		SetProtection: func(_ context.Context, collectionID string, revision int, opts ProtectionOptions) (ProtectionView, error) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.calls = append(f.calls, fmt.Sprintf("protect:id=%s:rev=%d:mirror=%t:snapshots=%t:days=%d:count=%d",
+				collectionID, revision, opts.Mirror, opts.Snapshots, opts.KeepDays, opts.KeepCount))
+			if f.actErr != nil {
+				return ProtectionView{}, f.actErr
+			}
+			f.prot.Options, f.prot.Revision = opts, revision+1
+			return f.prot, nil
+		},
+		ListSnapshots: func(_ context.Context, collectionID string) ([]SnapshotInfo, error) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			return append([]SnapshotInfo(nil), f.snaps...), f.actErr
+		},
+		CreateSnapshot: func(_ context.Context, collectionID string, revision int) (string, error) {
+			f.record(fmt.Sprintf("snapshot:%s:%d", collectionID, revision))
+			return "job_snap", f.actErr
+		},
+		PinSnapshot: func(_ context.Context, snapshotID string, revision int, pin bool) error {
+			f.record(fmt.Sprintf("pin:%s:%d:%t", snapshotID, revision, pin))
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			for i := range f.snaps {
+				if f.snaps[i].ID == snapshotID {
+					f.snaps[i].Pinned, f.snaps[i].Revision = pin, revision+1
+				}
+			}
+			return f.actErr
+		},
+		RestoreSnapshot: func(_ context.Context, snapshotID string, revision int, dryRun bool) (string, error) {
+			mode := "apply"
+			if dryRun {
+				mode = "dry"
+			}
+			f.record(fmt.Sprintf("restore:%s:%s:%d", mode, snapshotID, revision))
+			return "job_restore", f.actErr
+		},
+		RestorePlan: func(_ context.Context, jobID string) (RestorePlan, error) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			return f.restore, f.actErr
+		},
+		GetJob: func(_ context.Context, id string) (Job, error) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			return Job{ID: id, State: f.jobState}, f.actErr
+		},
 	}
 }
 
@@ -67,6 +137,12 @@ func (f *fakeActions) record(call string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, call)
+}
+
+func (f *fakeActions) recordedReset() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = nil
 }
 
 func (f *fakeActions) recorded() []string {

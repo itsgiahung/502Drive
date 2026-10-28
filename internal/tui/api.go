@@ -92,6 +92,8 @@ type Collection struct {
 	RootName                string
 	Filter                  FilterRules
 	OnConflict              string
+	// Protection is the opt-in mirror/snapshot policy shown on the row.
+	Protection ProtectionOptions
 }
 
 // FilterRules is the selective-sync rule of a collection (read-only here).
@@ -260,6 +262,51 @@ func (r AuditReport) Total() int {
 	return n
 }
 
+// ProtectionOptions is the opt-in mirror and automatic-snapshot policy of one
+// collection. The UI offers fixed retention choices; the daemon validates.
+type ProtectionOptions struct {
+	Mirror    bool
+	Snapshots bool
+	KeepDays  int
+	KeepCount int
+}
+
+// ProtectionView is the options of a collection plus the revision the next
+// change must match (GET /v1/collections/{id}/protection).
+type ProtectionView struct {
+	CollectionID string
+	Revision     int
+	Options      ProtectionOptions
+}
+
+// SnapshotInfo is one restore point of a collection.
+type SnapshotInfo struct {
+	ID        string
+	State     string
+	Pinned    bool
+	Revision  int
+	Items     int
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+// RestorePlan is the first page of a dry-run restore plan. Next is non-empty
+// when the plan has more actions than the model read.
+type RestorePlan struct {
+	Actions []RestoreAction
+	Next    string
+}
+
+// RestoreAction is one planned restore step. A dry run lists them before
+// anything is written.
+type RestoreAction struct {
+	Ordinal int
+	Action  string
+	State   string
+	Path    string
+	Name    string
+}
+
 // WatchEvent is one signal from the daemon's realtime stream. Connected tells
 // whether the stream is up; Changed asks the model to re-read what it shows.
 type WatchEvent struct {
@@ -320,6 +367,18 @@ type Actions struct {
 	Cleanup             func(ctx context.Context, collectionID string, revision int, dryRun bool, confirmName string) (jobID string, err error)
 	// SetFilterPreset replaces a collection's filter with a preset (S5).
 	SetFilterPreset func(ctx context.Context, collectionID, preset string, revision int) error
+	// Protection reads the mirror/snapshot options with the collection
+	// revision; SetProtection needs that revision. CreateSnapshot admits a
+	// capture job. PinSnapshot changes one point. RestoreSnapshot always gets
+	// dryRun=true first and RestorePlan lists the actions of that dry-run job
+	// before RestoreSnapshot(dryRun=false) is offered.
+	Protection      func(ctx context.Context, collectionID string) (ProtectionView, error)
+	SetProtection   func(ctx context.Context, collectionID string, revision int, opts ProtectionOptions) (ProtectionView, error)
+	ListSnapshots   func(ctx context.Context, collectionID string) ([]SnapshotInfo, error)
+	CreateSnapshot  func(ctx context.Context, collectionID string, revision int) (jobID string, err error)
+	PinSnapshot     func(ctx context.Context, snapshotID string, revision int, pin bool) error
+	RestoreSnapshot func(ctx context.Context, snapshotID string, revision int, dryRun bool) (jobID string, err error)
+	RestorePlan     func(ctx context.Context, jobID string) (RestorePlan, error)
 	// ShowRetired makes the next snapshots include retired collections.
 	ShowRetired func(on bool)
 

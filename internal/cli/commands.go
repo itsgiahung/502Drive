@@ -773,6 +773,13 @@ type collectionView struct {
 	// Filter and OnConflict are the rules later runs use (S5, N1).
 	Filter     filter.Spec `json:"filter"`
 	OnConflict string      `json:"on_conflict"`
+	// Protection is the opt-in mirror/snapshot policy of the collection.
+	Protection struct {
+		Mirror    bool `json:"mirror"`
+		Snapshots bool `json:"snapshots"`
+		KeepDays  int  `json:"keep_days"`
+		KeepCount int  `json:"keep_count"`
+	} `json:"protection"`
 }
 
 func (a *App) collectionsCmd() *cobra.Command {

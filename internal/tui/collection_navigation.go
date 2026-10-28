@@ -8,7 +8,7 @@ import (
 )
 
 func (m Model) leaveCollectionSubview(id string) Model {
-	m.fe, m.ab, m.syncMenu = nil, nil, false
+	m.fe, m.ab, m.prot, m.syncMenu = nil, nil, nil, false
 	m.top, m.cursor, m.screen = 0, 0, screenLibrary
 	for i, c := range m.snap.Collections {
 		if c.ID == id {
@@ -62,6 +62,9 @@ func (m Model) collectionNavigation(key string) (tea.Model, tea.Cmd, bool) {
 	if m.acts.StartAudit != nil {
 		rows = append(rows, 4)
 	}
+	if m.acts.Protection != nil {
+		rows = append(rows, 5)
+	}
 	index := 0
 	for i, row := range rows {
 		if row == m.detailRow {
@@ -97,6 +100,9 @@ func (m Model) collectionNavigation(key string) (tea.Model, tea.Cmd, bool) {
 				return next, cmd, true
 			}
 			next, cmd := m.startAudit(c)
+			return next, cmd, true
+		case 5:
+			next, cmd := m.openProtection(c)
 			return next, cmd, true
 		}
 	case " ":

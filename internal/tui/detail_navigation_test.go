@@ -84,7 +84,7 @@ func TestLeftClosesSyncChoicesBeforeLeavingCollection(t *testing.T) {
 func TestCollectionFocusStaysVisibleInAShortTerminal(t *testing.T) {
 	m, _ := newTestModel(t, Options{Width: 50, Height: 10, Language: "en"})
 	m = sendKeys(t, m, "3", "enter", "end")
-	if !strings.Contains(m.View(), "> Filter") {
+	if !strings.Contains(m.View(), "> Protection") {
 		t.Fatalf("the selected row was clipped:\n%s", m.View())
 	}
 }

@@ -1,8 +1,8 @@
 # Mirror, snapshots and restore
 
 **Mirror and automatic snapshots are off by default.** Configure each collection
-explicitly. Service/HTTP/CLI support is implemented; dedicated desktop/Telegram
-controls are not yet connected.
+explicitly from the CLI, the collection detail screen of the TUI or the Telegram
+collection card.
 
 ## Configure
 
@@ -19,6 +19,24 @@ Option changes require no active collection job, including paused/blocked jobs.
 Unspecified CLI flags preserve current values; `--dry-run` only previews settings.
 Mirror applies to subsequent manual, scheduled and realtime runs. Manual capture
 works even when automatic capture is disabled.
+
+## Desktop and chat controls
+
+The collection detail screen shows a **Protection** row (below Filter/Integrity)
+and the Telegram collection card has a **Protection** button. Both offer the same
+read-only menu: mirror on/off, automatic snapshots on/off, retention days (7, 30
+or 90) and unpinned points (5, 10 or 20) picked from fixed lists, capture now,
+the snapshot list with pin/unpin, and restore. No retention value is typed.
+
+Enabling mirror always asks first and names the consequence: source deletions
+move the copies to the Drive trash. Enabling it in chat is a separate
+confirmation card. Restore is always admitted as a **dry run** first; the screen
+or card shows the action count from that job and only then offers apply, which
+has its own confirmation saying that sync pauses. TUI/TG control only calls the
+existing HTTP/`app` service; TUI writes go through `PUT
+/v1/collections/{id}/protection` with the revision the screen showed. The desktop
+screen lists the newest 100 points and chat the newest 8; use the CLI to page
+through older ones.
 
 ## Mirror behavior
 

@@ -293,6 +293,40 @@ func (t *Telegram) act(ctx context.Context, p app.Principal, st state.Callback, 
 		return t.actCleanupAsk(ctx, p, st, tx)
 	case "cleanup_do":
 		return t.actCleanupDo(ctx, p, st, tx)
+	case "protect":
+		return t.actProtect(ctx, p, st, tx)
+	case "protect_mirror_ask":
+		return t.actProtectMirrorAsk(ctx, p, st, tx)
+	case "protect_mirror_on":
+		return t.actProtectMirrorOn(ctx, p, st, tx)
+	case "protect_mirror_off":
+		return t.actProtectMirrorOff(ctx, p, st, tx)
+	case "protect_snap_toggle":
+		return t.actProtectSnapToggle(ctx, p, st, tx)
+	case "protect_keep":
+		return t.actProtectKeep(ctx, p, st, tx)
+	case "protect_days":
+		return t.actProtectRetention(ctx, p, st, tx, true)
+	case "protect_counts":
+		return t.actProtectRetention(ctx, p, st, tx, false)
+	case "protect_capture":
+		return t.actProtectCapture(ctx, p, st, tx)
+	case "protect_snaps":
+		return t.actProtectSnaps(ctx, p, st, tx)
+	case "protect_snap":
+		return t.actProtectSnap(ctx, p, st, tx)
+	case "protect_pin":
+		return t.actProtectPin(ctx, p, st, tx, true)
+	case "protect_unpin":
+		return t.actProtectPin(ctx, p, st, tx, false)
+	case "protect_restore":
+		return t.actProtectRestore(ctx, p, st, tx)
+	case "protect_restore_read":
+		return t.actProtectRestoreRead(ctx, p, st, tx)
+	case "protect_restore_ask":
+		return t.actProtectRestoreAsk(ctx, p, st, tx)
+	case "protect_restore_do":
+		return t.actProtectRestoreDo(ctx, p, st, tx)
 	case "retired_list":
 		return t.retiredListCard(ctx, p, st.ChatID, st.MessageID)
 	case "notify_toggle":

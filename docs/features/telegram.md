@@ -63,8 +63,12 @@ validity window and preserve the displayed revision.
 - Operator: search only that operator's saved collection names, including retired
   entries, with read-only details and paging. It never searches the owner's Drive.
 
-Dedicated mirror/snapshot controls are not yet available in chat; use
-[protection commands](protection.md).
+The collection card has a **Protection** button for mirror, automatic snapshots,
+fixed retention choices, capture now, pin/unpin and restore. Every control is a
+one-shot callback bound to the revision the card showed. Enabling mirror has its
+own confirmation card explaining the Drive trash, and a restore is previewed as a
+dry run whose action count must be read before a second confirmation applies it
+(sync pauses). See the [protection guide](protection.md).
 
 ## Deep preview and reports
 

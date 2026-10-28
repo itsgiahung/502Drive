@@ -412,9 +412,10 @@ func (t *Telegram) collectionCard(ctx context.Context, p app.Principal, chatID i
 func (t *Telegram) collectionButtons(tx texts, id string, view app.SyncView, configured bool) [][]button {
 	var rows [][]button
 	primary := []button{act(tx.runNow, "sync_run", id, 0, "")}
+	protect := act(tx.prot().btn, "protect", id, 0, "")
 	if !configured {
 		primary = append([]button{act(tx.enableSync, "sync_presets", id, 0, "")}, primary...)
-		return [][]button{primary, {act(tx.auditCheck, "audit", id, 0, ""), act(tx.ig().colJobsBtn, "col_jobs", id, 0, "")}}
+		return [][]button{primary, {act(tx.auditCheck, "audit", id, 0, ""), act(tx.ig().colJobsBtn, "col_jobs", id, 0, "")}, {protect}}
 	}
 	sub := view.Subscription
 	switch sub.State {
@@ -429,7 +430,9 @@ func (t *Telegram) collectionButtons(tx texts, id string, view app.SyncView, con
 		secondary = append(secondary, act(tx.stopSync, "sync_stop", id, sub.Revision, ""))
 	}
 	rows = append(rows, secondary)
-	return append(rows, []button{act(tx.auditCheck, "audit", id, 0, ""), act(tx.ig().colJobsBtn, "col_jobs", id, 0, "")})
+	return append(rows,
+		[]button{act(tx.auditCheck, "audit", id, 0, ""), act(tx.ig().colJobsBtn, "col_jobs", id, 0, "")},
+		[]button{protect})
 }
 
 // syncPayload is the private intent of a preset button; revisions are read

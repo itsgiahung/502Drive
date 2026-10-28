@@ -122,6 +122,8 @@ func (m Model) screenBody() []string {
 	switch m.screen {
 	case screenFilter:
 		return m.filterEditorView()
+	case screenProtect:
+		return m.protectionView()
 	case screenAudit:
 		return m.auditBrowserView()
 	case screenJobs:
@@ -461,6 +463,10 @@ func (m Model) collectionView() []string {
 		lines = append(lines, m.kv(m.t(i18n.ConflictTitle), m.conflictLabel(c.OnConflict)))
 	}
 	lines = append(lines, m.auditLines(c)...)
+	if m.acts.Protection != nil {
+		lines = append(lines, m.collectionKV(5, m.t(i18n.ProtRow),
+			m.tf(i18n.ProtSummary, m.onOffWord(c.Protection.Mirror), m.onOffWord(c.Protection.Snapshots))))
+	}
 	lines = append(lines, m.cleanupLines(c)...)
 	keys := m.t(i18n.CollKeys)
 	if m.hasLibraryExt() {

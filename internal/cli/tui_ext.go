@@ -6,7 +6,9 @@ import (
 	"errors"
 	"net/url"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/itsgiahung/502Drive/internal/filter"
 	"github.com/itsgiahung/502Drive/internal/tui"
@@ -288,4 +290,154 @@ func (a *App) tuiSetAutostart(on bool) error {
 		return localErr(ExitInternal, "autostart_failed", err.Error())
 	}
 	return nil
+}
+
+// ---- protection: mirror, snapshots and restore ----
+
+// protectView is the JSON of GET/PUT .../protection.
+type protectView struct {
+	CollectionID string `json:"collection_id"`
+	Revision     int    `json:"revision"`
+	Options      struct {
+		Mirror    bool `json:"mirror"`
+		Snapshots bool `json:"snapshots"`
+		KeepDays  int  `json:"keep_days"`
+		KeepCount int  `json:"keep_count"`
+	} `json:"options"`
+}
+
+func (v protectView) tui() tui.ProtectionView {
+	return tui.ProtectionView{CollectionID: v.CollectionID, Revision: v.Revision,
+		Options: tui.ProtectionOptions{Mirror: v.Options.Mirror, Snapshots: v.Options.Snapshots,
+			KeepDays: v.Options.KeepDays, KeepCount: v.Options.KeepCount}}
+}
+
+// snapshotView is one restore point (GET .../snapshots).
+type snapshotView struct {
+	ID        string    `json:"id"`
+	State     string    `json:"state"`
+	Pinned    bool      `json:"pinned"`
+	Revision  int       `json:"revision"`
+	Items     int       `json:"items"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func (a *App) tuiProtection(ctx context.Context, collectionID string) (tui.ProtectionView, error) {
+	r, err := a.call(ctx, "GET", "/v1/collections/"+url.PathEscape(collectionID)+"/protection", nil, nil, "")
+	if err != nil {
+		return tui.ProtectionView{}, err
+	}
+	var v protectView
+	if err = r.Decode(&v); err != nil {
+		return tui.ProtectionView{}, err
+	}
+	return v.tui(), nil
+}
+
+func (a *App) tuiSetProtection(ctx context.Context, collectionID string, revision int, opts tui.ProtectionOptions) (tui.ProtectionView, error) {
+	body := map[string]any{"expected_revision": revision, "options": map[string]any{
+		"mirror": opts.Mirror, "snapshots": opts.Snapshots, "keep_days": opts.KeepDays, "keep_count": opts.KeepCount}}
+	r, err := a.call(ctx, "PUT", "/v1/collections/"+url.PathEscape(collectionID)+"/protection", nil, body, NewKey())
+	if err != nil {
+		return tui.ProtectionView{}, err
+	}
+	var v protectView
+	if err = r.Decode(&v); err != nil {
+		return tui.ProtectionView{}, err
+	}
+	return v.tui(), nil
+}
+
+// maxTUISnapshots bounds the new snapshot page the screen reads.
+const maxTUISnapshots = 100
+
+func (a *App) tuiSnapshots(ctx context.Context, collectionID string) ([]tui.SnapshotInfo, error) {
+	r, err := a.call(ctx, "GET", "/v1/collections/"+url.PathEscape(collectionID)+"/snapshots",
+		url.Values{"limit": {strconv.Itoa(maxTUISnapshots)}}, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	var page struct {
+		Items []snapshotView `json:"items"`
+	}
+	if err = r.Decode(&page); err != nil {
+		return nil, err
+	}
+	out := make([]tui.SnapshotInfo, 0, len(page.Items))
+	for _, s := range page.Items {
+		out = append(out, tui.SnapshotInfo{ID: s.ID, State: s.State, Pinned: s.Pinned, Revision: s.Revision,
+			Items: s.Items, CreatedAt: s.CreatedAt, ExpiresAt: s.ExpiresAt})
+	}
+	return out, nil
+}
+
+func (a *App) tuiCreateSnapshot(ctx context.Context, collectionID string, revision int) (string, error) {
+	r, err := a.call(ctx, "POST", "/v1/collections/"+url.PathEscape(collectionID)+"/snapshots", nil,
+		map[string]any{"expected_revision": revision}, NewKey())
+	if err != nil {
+		return "", err
+	}
+	var j jobView
+	if err = r.Decode(&j); err != nil {
+		return "", err
+	}
+	return j.ID, nil
+}
+
+func (a *App) tuiPinSnapshot(ctx context.Context, snapshotID string, revision int, pin bool) error {
+	method := "DELETE"
+	if pin {
+		method = "POST"
+	}
+	_, err := a.call(ctx, method, "/v1/snapshots/"+url.PathEscape(snapshotID)+"/pin", nil,
+		map[string]any{"expected_revision": revision}, NewKey())
+	return err
+}
+
+// tuiRestoreSnapshot admits the dry run (dryRun true) or applies it.
+func (a *App) tuiRestoreSnapshot(ctx context.Context, snapshotID string, revision int, dryRun bool) (string, error) {
+	r, err := a.call(ctx, "POST", "/v1/snapshots/"+url.PathEscape(snapshotID)+"/restore", nil,
+		map[string]any{"expected_revision": revision, "dry_run": dryRun}, NewKey())
+	if err != nil {
+		return "", err
+	}
+	var j jobView
+	if err = r.Decode(&j); err != nil {
+		return "", err
+	}
+	return j.ID, nil
+}
+
+// tuiRestorePlan reads the first page of a dry-run plan; Next stays set when
+// there are more actions, so the screen never claims a total it did not read.
+func (a *App) tuiRestorePlan(ctx context.Context, jobID string) (tui.RestorePlan, error) {
+	r, err := a.call(ctx, "GET", "/v1/jobs/"+url.PathEscape(jobID)+"/restore-plan", url.Values{"limit": {"100"}}, nil, "")
+	if err != nil {
+		return tui.RestorePlan{}, err
+	}
+	var page struct {
+		Next  *string `json:"next_cursor"`
+		Items []struct {
+			Ordinal int    `json:"ordinal"`
+			Action  string `json:"action"`
+			State   string `json:"state"`
+			Target  struct {
+				Path string `json:"path"`
+				Name string `json:"name"`
+			} `json:"target"`
+		} `json:"items"`
+	}
+	if err = r.Decode(&page); err != nil {
+		return tui.RestorePlan{}, err
+	}
+	out := tui.RestorePlan{}
+	if page.Next != nil {
+		out.Next = *page.Next
+	}
+	for _, it := range page.Items {
+		out.Actions = append(out.Actions, tui.RestoreAction{Ordinal: it.Ordinal, Action: it.Action, State: it.State,
+			Path: it.Target.Path, Name: it.Target.Name})
+	}
+	return out, nil
 }

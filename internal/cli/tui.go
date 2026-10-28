@@ -46,6 +46,13 @@ func (a *App) tuiActions() tui.Actions {
 		SetFilterPreset:         a.tuiSetFilterPreset,
 		SetCollectionFilter:     a.tuiSetCollectionFilter,
 		PreviewCollectionFilter: a.tuiPreviewCollectionFilter,
+		Protection:              a.tuiProtection,
+		SetProtection:           a.tuiSetProtection,
+		ListSnapshots:           a.tuiSnapshots,
+		CreateSnapshot:          a.tuiCreateSnapshot,
+		PinSnapshot:             a.tuiPinSnapshot,
+		RestoreSnapshot:         a.tuiRestoreSnapshot,
+		RestorePlan:             a.tuiRestorePlan,
 		ShowRetired:             func(on bool) { a.showRetired.Store(on) },
 		SetPreference:           a.tuiSetPreference,
 		SetAutostart:            a.tuiSetAutostart,
@@ -432,7 +439,9 @@ func (a *App) tuiCollections(ctx context.Context, snap *tui.Snapshot) {
 	for _, c := range items {
 		coll := tui.Collection{SourceID: c.SourceID, DestinationID: c.DestinationID, ID: c.ID, SourceName: c.SourceName, State: c.State, Revision: c.Revision, RootName: c.RootName,
 			OnConflict: c.OnConflict,
-			Filter:     c.Filter}
+			Filter:     c.Filter,
+			Protection: tui.ProtectionOptions{Mirror: c.Protection.Mirror, Snapshots: c.Protection.Snapshots,
+				KeepDays: c.Protection.KeepDays, KeepCount: c.Protection.KeepCount}}
 		if c.ResultURL != nil {
 			coll.ResultURL = *c.ResultURL
 		}

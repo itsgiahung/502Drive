@@ -31,6 +31,7 @@ const (
 	screenReport
 	screenAudit
 	screenFilter
+	screenProtect
 )
 
 const (
@@ -128,6 +129,7 @@ type Model struct {
 	rep        *reportView
 	ab         *auditBrowser
 	fe         *filterEditor
+	prot       *protectFlow
 	exp        *exportFlow
 
 	watching bool // the realtime stream is connected
@@ -310,6 +312,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onFilterEdit(msg)
 	case auditPageMsg:
 		return m.onFindings(msg)
+	case protectLoadedMsg:
+		return m.onProtectionLoaded(msg), nil
+	case restorePreviewMsg:
+		return m.onRestorePreview(msg), nil
 	case auditMsg:
 		return m.onAudit(msg)
 	case repairMsg:
@@ -599,6 +605,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.screen == screenAudit {
 		return m.auditBrowserKey(msg.String())
 	}
+	if m.screen == screenProtect {
+		return m.protectionKey(msg.String())
+	}
 	if m.screen == screenCopy { // the dialog owns 1/2/3, d and enter
 		return m.copyScreenKey(msg)
 	}
@@ -744,6 +753,7 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) goTo(s screen) (tea.Model, tea.Cmd) {
 	m.screen, m.cursor, m.top = s, 0, 0
 	m.detailRow, m.detailTop, m.syncRow, m.syncMenu = 0, 0, 0, false
+	m.prot = nil
 	m.tabFocus = false
 	m.selected = map[string]bool{}
 	return m.startAnim()
@@ -798,6 +808,11 @@ func (m Model) back() (tea.Model, tea.Cmd) {
 		m.screen = screenLibrary
 		m.clean = nil
 		m.syncMenu = false
+	case screenProtect:
+		if m.prot != nil {
+			return m.leaveCollectionSubview(m.prot.collectionID), nil
+		}
+		m.screen = screenLibrary
 	case screenReport:
 		return m.leaveReport()
 	case screenHome:
