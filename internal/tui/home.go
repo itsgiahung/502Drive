@@ -372,7 +372,7 @@ func (m Model) jobBrief(j Job) string {
 	if j.Total != nil && *j.Total > 0 {
 		return fmt.Sprintf("%d%%", min(100, j.Completed*100 / *j.Total))
 	}
-	return stateWord(j.State)
+	return "" // the state word is already printed before the brief
 }
 
 func (m Model) stateGlyph(state string) string {
