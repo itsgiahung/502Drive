@@ -10,7 +10,7 @@ contacts Google; ordinary Doctor checks are local.
 | `daemon_unavailable` | Start `502drive up`; check endpoint and private token-file configuration |
 | `unauthenticated` | Use the daemon's current token file, not a copied obsolete token |
 | `not_ready` | Check data-directory writer lock, permissions and binary/schema compatibility |
-| `account_reconnect_required` | Run `account login`; restore consent if revoked |
+| `account_reconnect_required` | Run `account login`; restore consent if revoked. If it returns about every 7 days, the Google app is still in Testing: publish it (see [OAuth setup](oauth-setup.md)) and sign in again |
 | `destination_required` | Add a folder, then choose its 502Drive destination ID |
 | Destination inside source / unverifiable | Choose another destination; ancestry validation fails closed |
 | `destination_not_writable` | Obtain add-child permission or choose a writable folder |

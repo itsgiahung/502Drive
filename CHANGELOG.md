@@ -4,6 +4,15 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
+## Unreleased
+
+### Fixed
+
+- Setup guide and OAuth docs now say to **Publish app (In production)** after adding the
+  test user. A Google app left in Testing makes the sign-in expire every 7 days
+  (`account_reconnect_required`); the guide, `docs/oauth-setup*.md` and troubleshooting
+  explain it and the "app not verified" screen.
+
 ## 0.4.9 — 2026-10-28
 
 ### Fixed

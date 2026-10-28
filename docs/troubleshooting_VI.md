@@ -10,7 +10,7 @@ Bắt đầu bằng `502drive status`, `502drive doctor` và nhật ký (`502dri
 | `daemon_unavailable` | Chạy `502drive up`; kiểm tra địa chỉ và file token riêng tư |
 | `unauthenticated` | Dùng đúng file token hiện tại của dịch vụ, đừng dùng token cũ đã chép |
 | `not_ready` | Kiểm tra khóa thư mục dữ liệu, quyền file, và phiên bản chương trình có khớp dữ liệu |
-| `account_reconnect_required` | Chạy `account login`; cấp lại quyền nếu đã bị thu hồi |
+| `account_reconnect_required` | Chạy `account login`; cấp lại quyền nếu đã bị thu hồi. Nếu cứ khoảng 7 ngày lại bị, ứng dụng Google còn ở trạng thái Testing: hãy Publish (xem [hướng dẫn OAuth](oauth-setup_VI.md)) rồi đăng nhập lại |
 | `destination_required` | Thêm một thư mục rồi chọn nó làm đích mặc định |
 | Đích nằm trong nguồn / không xác minh được | Chọn đích khác; 502Drive từ chối khi không chắc chắn |
 | `destination_not_writable` | Xin quyền thêm file hoặc chọn thư mục ghi được |

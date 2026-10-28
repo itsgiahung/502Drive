@@ -18,7 +18,8 @@ terminal: it opens each page and waits while you work (Enter = done, `s` = skip,
    <https://console.cloud.google.com/apis/library/drive.googleapis.com>
 3. **Consent screen**: under **Google Auth Platform → Branding** choose
    **External**; under **Audience** add the address you will sign in with as a
-   **Test user** — <https://console.cloud.google.com/auth/branding>
+   **Test user**, then press **Publish app** so the status is **In production** —
+   <https://console.cloud.google.com/auth/branding>
 4. **Client**: **Google Auth Platform → Clients → Create client**, type
    **Desktop app** — <https://console.cloud.google.com/auth/clients/create>
 5. **Download**: press **Download JSON** on the new client. The file is named
@@ -28,6 +29,14 @@ Web-client JSON is rejected: the error says to create a **Desktop app** client.
 If a valid Desktop client JSON was downloaded to `~/Downloads` in the last day,
 onboard asks once whether to use it. A key that is already configured (config,
 environment variable or `.env`) means onboard asks nothing.
+
+**Why publish?** While the app stays in **Testing**, Google expires the refresh token
+after 7 days, so you would have to sign in again every week (`account_reconnect_required`).
+Publishing it ("In production") is fine for personal use: the key is yours, only you
+use it, and Google does not review it for personal use. At sign-in Google then shows an
+"app not verified" screen: choose **Advanced → Go to … (unsafe)**. If you published
+after signing in once, run `502drive account login` again so the new token has no
+7-day limit.
 
 ## Configure the client
 

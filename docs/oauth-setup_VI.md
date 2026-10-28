@@ -20,7 +20,8 @@ nó tự mở từng trang rồi chờ bạn làm xong (Enter = đã xong, `s` =
    <https://console.cloud.google.com/apis/library/drive.googleapis.com>
 3. **Màn hình đồng ý**: trong **Google Auth Platform → Branding** chọn
    **External**; trong **Audience** thêm địa chỉ Gmail bạn sẽ đăng nhập vào mục
-   **Test user** — <https://console.cloud.google.com/auth/branding>
+   **Test user**, rồi bấm **Publish app** để trạng thái là **In production** —
+   <https://console.cloud.google.com/auth/branding>
 4. **Client**: **Google Auth Platform → Clients → Create client**, loại
    **Desktop app** — <https://console.cloud.google.com/auth/clients/create>
 5. **Tải về**: bấm **Download JSON** trên client vừa tạo. File có tên dạng
@@ -30,6 +31,14 @@ Nếu bạn tải nhầm loại **Web application**, 502Drive từ chối và n�
 **Desktop app**. Nếu trong thư mục `~/Downloads` có file JSON Desktop hợp lệ vừa tải
 trong vòng một ngày, `onboard` chỉ hỏi một câu "dùng file này không?". Nếu khóa đã được
 cấu hình (trong cấu hình, biến môi trường hoặc `.env`) thì `onboard` không hỏi gì.
+
+**Vì sao phải Publish?** Khi ứng dụng còn ở trạng thái **Testing**, Google cho phép
+đăng nhập chỉ trong 7 ngày rồi hết hạn, nên mỗi tuần bạn phải đăng nhập lại
+(`account_reconnect_required`). Publish ("In production") dùng cho cá nhân thì ổn: khóa là
+của bạn, chỉ bạn dùng, Google không duyệt cho dùng cá nhân. Lúc đăng nhập, Google hiện
+màn hình "ứng dụng chưa được xác minh": chọn **Advanced → Go to … (unsafe)**. Nếu bạn
+đã đăng nhập rồi mới Publish, hãy chạy lại `502drive account login` để token mới không
+bị giới hạn 7 ngày.
 
 ## Nạp khóa vào 502Drive
 
