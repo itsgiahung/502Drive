@@ -187,8 +187,13 @@ func drawIcon(st State, frame, size int) (*image.NRGBA, error) {
 	case StateError:
 		dot(img, s*0.78, s*0.78, s*0.17, color.NRGBA{R: 0xff, G: 0x4d, B: 0x4d, A: 0xff})
 	case StateOffline:
-		for i := 3; i < len(img.Pix); i += 4 {
-			img.Pix[i] /= 2
+		// Grey, not faded: the Linux tray layer drops pixels below half
+		// opacity (see opaqueEdges), so a translucent icon vanished. Keep the
+		// alpha and drain the colour instead.
+		for i := 0; i+3 < len(img.Pix); i += 4 {
+			l := .299*float64(img.Pix[i]) + .587*float64(img.Pix[i+1]) + .114*float64(img.Pix[i+2])
+			g := uint8(l*.7 + 40) // a flat, lighter grey so it reads on dark and light panels
+			img.Pix[i], img.Pix[i+1], img.Pix[i+2] = g, g, g
 		}
 	case StatePaused:
 		// Two bars in the corner: they stay readable at 16px, unlike a thin symbol.

@@ -1097,13 +1097,12 @@ func TestIconIsTheProjectLogoWithStateOverlays(t *testing.T) {
 	if _, _, _, a := img.At(0, 0).RGBA(); a != 0 {
 		t.Fatal("logo corner should be transparent")
 	}
-	// offline halves the opacity of everything
+	// offline is the same logo, visible, in grey (see TestOfflineIconStaysVisibleAndGrey)
 	off, _ := PNG(StateOffline, 0, 64)
 	oi, _ := decodeIcon(off)
-	_, _, _, a1 := img.At(32, 32).RGBA()
-	_, _, _, a2 := oi.At(32, 32).RGBA()
-	if a2 == 0 || a2 >= a1 {
-		t.Fatalf("offline alpha %d vs idle %d", a2, a1)
+	r2, g2, b2, a2 := oi.At(32, 32).RGBA()
+	if a2 == 0 || r2 != g2 || g2 != b2 {
+		t.Fatalf("offline centre = %d,%d,%d alpha %d: want visible grey", r2, g2, b2, a2)
 	}
 	// every ICO size renders without error, including odd ones
 	for _, size := range []int{16, 24, 32, 48, 64, 128, 256} {

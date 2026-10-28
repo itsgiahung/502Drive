@@ -81,3 +81,41 @@ func TestFirstRowIsPaddedToTheSubmenuWidth(t *testing.T) {
 }
 
 func ptr(n int) *int { return &n }
+
+// The offline icon is the logo in grey: as visible as the idle one (same
+// silhouette, nothing dropped by the Linux tray's hard-edge conversion) and
+// without colour, so it reads as "switched off" rather than disappearing.
+func TestOfflineIconStaysVisibleAndGrey(t *testing.T) {
+	count := func(st State) (opaque, coloured int) {
+		data, err := trayPNG(st, 0, 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		img, err := decodeIcon(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b := img.Bounds()
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			for x := b.Min.X; x < b.Max.X; x++ {
+				r, g, bl, a := img.At(x, y).RGBA()
+				if a == 0 {
+					continue
+				}
+				opaque++
+				if d := int(r>>8) - int(g>>8); d > 6 || d < -6 || int(g>>8)-int(bl>>8) > 6 || int(bl>>8)-int(g>>8) > 6 {
+					coloured++
+				}
+			}
+		}
+		return
+	}
+	idle, _ := count(StateIdle)
+	off, coloured := count(StateOffline)
+	if off < idle*9/10 {
+		t.Fatalf("offline icon has %d visible pixels, idle %d: it vanishes", off, idle)
+	}
+	if coloured != 0 {
+		t.Fatalf("offline icon still has %d coloured pixels", coloured)
+	}
+}

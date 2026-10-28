@@ -4,6 +4,14 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
+## 0.4.4 — 2026-10-28
+
+### Fixed
+
+- The tray icon disappeared when the daemon was stopped: the "offline" icon was
+  drawn half transparent, and the Linux tray conversion drops pixels below half
+  opacity. It is now the same logo in grey.
+
 ## 0.4.3 — 2026-10-28
 
 ### Fixed
