@@ -91,3 +91,11 @@ func TestOperatorClearsOnlyTheirOwnFinishedJobs(t *testing.T) {
 		t.Fatalf("the operator cleared their job only: %v", ids)
 	}
 }
+
+func TestFinishedJobWithSkippedDuplicatesReadsOneHundredPercent(t *testing.T) {
+	total := 35
+	j := state.Job{State: state.JobSucceeded, RootName: "Folder", Counts: state.Counts{Completed: 32, Skipped: 3, Total: &total}}
+	if got := jobText(vietnamese, j); !strings.Contains(got, "100%") {
+		t.Fatalf("32 copied + 3 skipped of 35 is settled, got:\n%s", got)
+	}
+}

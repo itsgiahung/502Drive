@@ -370,7 +370,7 @@ func (m Model) jobBrief(j Job) string {
 		return m.tf(i18n.QuotaWaitShot, m.when(j.ResumeAfter))
 	}
 	if j.Total != nil && *j.Total > 0 {
-		return fmt.Sprintf("%d%%", min(100, j.Completed*100 / *j.Total))
+		return fmt.Sprintf("%d%%", min(100, (j.Completed+j.Skipped)*100 / *j.Total))
 	}
 	return "" // the state word is already printed before the brief
 }

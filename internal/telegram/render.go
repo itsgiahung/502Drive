@@ -395,7 +395,8 @@ func jobTextView(tx texts, j state.Job, frame int, v jobView) string {
 		fmt.Fprintf(&b, "%s\n", wait)
 	}
 	if j.Counts.Total != nil {
-		if bar := progressBar(j.Counts.Completed, *j.Counts.Total); bar != "" {
+		// Skipped items are settled too, so a finished job with duplicates reads 100%.
+		if bar := progressBar(j.Counts.Completed+j.Counts.Skipped, *j.Counts.Total); bar != "" {
 			fmt.Fprintf(&b, "%s\n", bar)
 		}
 	}

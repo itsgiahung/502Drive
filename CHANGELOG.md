@@ -4,6 +4,16 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
+## Unreleased
+
+### Fixed
+
+- A finished job with skipped duplicates no longer reads "91%": skipped items count as
+  settled in the Telegram bar and the Home list, so 32 copied + 3 skipped of 35 is 100%.
+- The "name taken, skipped" explanation says what really happened: a byte-identical
+  file (same name and content) already copied, or the `skip` policy. It no longer says
+  only "by policy" when the policy is `rename`.
+
 ## 0.4.8 — 2026-10-28
 
 ### Added
