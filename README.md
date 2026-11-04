@@ -60,12 +60,25 @@ or copying things Google does not allow to be copied.
 
 Pick one:
 
-| Your system | Easiest way |
-| --- | --- |
-| **Windows** | Run `irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 \| iex` in PowerShell, or download `502drive-setup.exe` from [Releases](https://github.com/itsgiahung/502Drive/releases) (see [Windows guide](docs/install-windows.md)). |
-| **Linux** | `curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.sh \| sh`, or the `.rpm`/`.deb` package (see [Linux guide](docs/install-linux.md)). |
-| **macOS** | The same `install.sh` line as Linux (Apple Silicon only, command line only, [not tested yet](#whats-tested)). |
-| **Docker / server** | See the [Docker guide](docs/install-docker.md). |
+**Windows — PowerShell:**
+
+```powershell
+irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex
+```
+
+Or download `502drive-setup.exe` from [Releases](https://github.com/itsgiahung/502Drive/releases)
+(see [Windows guide](docs/install-windows.md)).
+
+**Linux / macOS — terminal:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.sh | sh
+```
+
+Linux also offers `.rpm`/`.deb` packages (see [Linux guide](docs/install-linux.md)).
+macOS supports Apple Silicon only, command line only, and is [not tested yet](#whats-tested).
+
+**Docker / server:** see the [Docker guide](docs/install-docker.md).
 
 Both scripts verify the download against the published checksums. Releases from
 0.4.5 on also carry a signature of those checksums; the Linux/macOS script checks it
@@ -129,23 +142,104 @@ numeric id from that message, so you do not need to look it up. After
 
 ## Everyday use
 
-| I want to… | Command |
-| --- | --- |
-| Open the app | `502drive` |
-| Copy a link and wait for it | `502d LINK --wait` |
-| See what a link contains first | `502drive inspect LINK --deep` |
-| Copy several links at once | `502d LINK1 LINK2 LINK3` |
-| See my jobs | `502drive jobs list` |
-| Get a list of files that failed | `502drive jobs report JOB_ID --format csv` |
-| See my copies | `502drive collections list` |
-| Refresh a copy now | `502drive sync run COPY_ID` |
-| Refresh it every night at 22:00 | `502drive sync enable COPY_ID --daily 22:00` |
-| Check a copy matches the original | `502drive audit COPY_ID` |
-| Pause or resume everything | `502drive pause` · `502drive resume` |
-| Clear old finished jobs from the list | `502drive history clear --older-than 30d` |
-| Check that everything is set up | `502drive doctor` |
-| Update to the latest release | `502drive update --install --restart` |
-| Stop 502Drive | `502drive stop` |
+On GitHub, hover over a command block and use its copy button at the top right.
+Replace `LINK`, `JOB_ID` and copy IDs with your own values before running.
+
+**Open the app:**
+
+```sh
+502drive
+```
+
+**Copy a link and wait for it:**
+
+```sh
+502d LINK --wait
+```
+
+**See what a link contains first:**
+
+```sh
+502drive inspect LINK --deep
+```
+
+**Copy several links at once:**
+
+```sh
+502d LINK1 LINK2 LINK3
+```
+
+**See my jobs:**
+
+```sh
+502drive jobs list
+```
+
+**Get a list of files that failed:**
+
+```sh
+502drive jobs report JOB_ID --format csv
+```
+
+**See my copies:**
+
+```sh
+502drive collections list
+```
+
+**Refresh a copy now:**
+
+```sh
+502drive sync run COPY_ID
+```
+
+**Refresh it every night at 22:00:**
+
+```sh
+502drive sync enable COPY_ID --daily 22:00
+```
+
+**Check a copy matches the original:**
+
+```sh
+502drive audit COPY_ID
+```
+
+**Pause everything:**
+
+```sh
+502drive pause
+```
+
+**Resume everything:**
+
+```sh
+502drive resume
+```
+
+**Clear old finished jobs from the list:**
+
+```sh
+502drive history clear --older-than 30d
+```
+
+**Check that everything is set up:**
+
+```sh
+502drive doctor
+```
+
+**Update to the latest release:**
+
+```sh
+502drive update --install --restart
+```
+
+**Stop 502Drive:**
+
+```sh
+502drive stop
+```
 
 `COPY_ID` comes from `collections list`. Every command has `--help`, and `--json`
 for scripts. Full list: [CLI reference](docs/features/cli.md).

@@ -355,7 +355,7 @@ func (a *App) tuiSlowSections(ctx context.Context, snap *tui.Snapshot) {
 	c := &a.slow
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if time.Since(c.at) > slowTTL {
+	if time.Since(c.at) > slowTTL || c.acc.Status != snap.Status.AccountStatus {
 		var fresh tui.Snapshot
 		a.tuiDestinations(ctx, &fresh)
 		a.tuiAccount(ctx, &fresh)

@@ -94,6 +94,26 @@ func TestLoginFailureAndExpiryAreExplained(t *testing.T) {
 	}
 }
 
+func TestLoginCompletionRefreshesAfterAnOlderSnapshotInFlight(t *testing.T) {
+	l := &loginFake{}
+	m := disconnectedModel(t, l, Options{NoMotion: true})
+	stale := m.snap
+	m.login = &loginState{id: "sess_1"}
+	m.fetching = true
+	l.snap.Status.AccountStatus = "connected"
+	l.snap.Account.Status = "connected"
+	m, cmd := update(t, m, loginStateMsg{id: "sess_1", state: "connected"})
+	m = run(t, m, cmd)
+	m, cmd = update(t, m, snapshotMsg{snap: stale})
+	if cmd != nil {
+		m, cmd = update(t, m, cmd())
+		m = run(t, m, cmd)
+	}
+	if m.needsGoogle() {
+		t.Fatalf("an older fetch left the sign-in warning after login:\n%s", m.View())
+	}
+}
+
 func TestLoginErrorFromTheDaemonIsShownAndNothingStarts(t *testing.T) {
 	l := &loginFake{err: errors.New("the daemon has no Google OAuth client configured; run 502drive setup")}
 	m := disconnectedModel(t, l, Options{})

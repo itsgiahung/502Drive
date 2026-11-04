@@ -70,6 +70,7 @@ type lifecycle struct {
 
 	gate   *power.Gate
 	prober *power.Prober
+	retry  chan struct{}
 
 	mu      sync.Mutex
 	state   string
@@ -93,8 +94,9 @@ func newLifecycle(o lifecycleOptions) *lifecycle {
 	l.checkpointFn = l.store.Checkpoint
 	l.state, l.since = stateRunning, l.now()
 	l.gate = power.NewGate(true)
+	l.retry = make(chan struct{}, 1)
 	l.prober = &power.Prober{Probe: l.probeOnce, Base: time.Second, Max: 30 * time.Second,
-		Sleep: o.Sleep, Rand: o.Rand, Permanent: isAuthError, Cooldown: reconnectCooldown,
+		Sleep: o.Sleep, Rand: o.Rand, Permanent: isAuthError, Cooldown: reconnectCooldown, Wake: l.retry,
 		OnRetry: func(err error, _ time.Duration) {
 			if isAuthError(err) {
 				l.setState(stateReconnectRequired)
@@ -269,6 +271,17 @@ func (l *lifecycle) startProbe(ctx context.Context) {
 		}
 		l.log.Info("power: online")
 	}()
+}
+
+func (l *lifecycle) credentialsChanged(ctx context.Context) {
+	if l.gate.Online() {
+		return
+	}
+	select {
+	case l.retry <- struct{}{}:
+	default:
+	}
+	l.startProbe(ctx)
 }
 
 // tick keeps the heartbeat fresh and applies the opt-in keep-awake.

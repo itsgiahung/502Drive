@@ -9,10 +9,40 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/itsgiahung/502Drive/internal/tui"
 )
+
+func TestTUISnapshotRefreshesAccountAndSetupAfterConnectionChange(t *testing.T) {
+	var connected atomic.Bool
+	a := driveApp(t, func(w http.ResponseWriter, r *http.Request) {
+		status := "reconnect_required"
+		if connected.Load() {
+			status = "connected"
+		}
+		switch r.URL.Path {
+		case "/v1/status":
+			reply(w, 200, map[string]any{"account": map[string]any{"status": status}})
+		case "/v1/account":
+			reply(w, 200, map[string]any{"status": status})
+		case "/v1/setup":
+			reply(w, 200, map[string]any{"ready": connected.Load()})
+		default:
+			reply(w, 200, map[string]any{"items": []any{}})
+		}
+	})
+	first, err := a.tuiSnapshot(t.Context())
+	if err != nil || first.Account.Status != "reconnect_required" || first.Setup == nil || first.Setup.Ready {
+		t.Fatalf("before login: %+v %v", first, err)
+	}
+	connected.Store(true)
+	next, err := a.tuiSnapshot(t.Context())
+	if err != nil || next.Account.Status != "connected" || next.Setup == nil || !next.Setup.Ready {
+		t.Fatalf("login must refresh cached account and setup immediately: %+v %v", next, err)
+	}
+}
 
 func replyError(w http.ResponseWriter, status int, code, msg string) {
 	w.Header().Set("Content-Type", "application/json")

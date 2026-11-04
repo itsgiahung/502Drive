@@ -215,6 +215,9 @@ func Run(parent context.Context, cfg config.Config, o Options) error {
 		},
 	})
 	eng.Network = life.gateRef()
+	if auth != nil {
+		auth.OnConnected = func() { life.credentialsChanged(lifeCtx) }
+	}
 	eng.OnUnreachable = func(err error) { life.noteUnreachable(lifeCtx, err) }
 	svc.Lifecycle = life.view
 	// Decide the startup state before the engine may claim anything.

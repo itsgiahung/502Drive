@@ -57,12 +57,25 @@ những thứ Google không cho phép copy.
 
 Chọn một cách:
 
-| Hệ điều hành | Cách dễ nhất |
-| --- | --- |
-| **Windows** | Chạy `irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 \| iex` trong PowerShell, hoặc tải `502drive-setup.exe` ở [Releases](https://github.com/itsgiahung/502Drive/releases) (xem [hướng dẫn Windows](docs/install-windows_VI.md)). |
-| **Linux** | `curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.sh \| sh`, hoặc gói `.rpm`/`.deb` (xem [hướng dẫn Linux](docs/install-linux_VI.md)). |
-| **macOS** | Dùng đúng dòng `install.sh` như Linux (chỉ Apple Silicon, chỉ dòng lệnh, [chưa kiểm thử](#đã-kiểm-thử-đến-đâu)). |
-| **Docker / máy chủ** | Xem [hướng dẫn Docker](docs/install-docker_VI.md). |
+**Windows — PowerShell:**
+
+```powershell
+irm https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.ps1 | iex
+```
+
+Hoặc tải `502drive-setup.exe` ở [Releases](https://github.com/itsgiahung/502Drive/releases)
+(xem [hướng dẫn Windows](docs/install-windows_VI.md)).
+
+**Linux / macOS — terminal:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/itsgiahung/502Drive/main/scripts/install.sh | sh
+```
+
+Linux cũng có gói `.rpm`/`.deb` (xem [hướng dẫn Linux](docs/install-linux_VI.md)).
+macOS chỉ hỗ trợ Apple Silicon, chỉ dòng lệnh và [chưa kiểm thử](#đã-kiểm-thử-đến-đâu).
+
+**Docker / máy chủ:** xem [hướng dẫn Docker](docs/install-docker_VI.md).
 
 Cả hai script đều kiểm tra file tải về với checksum đã công bố. Từ bản 0.4.5, mỗi bản
 phát hành còn có chữ ký của các checksum đó; script Linux/macOS kiểm chữ ký khi máy có
@@ -124,23 +137,104 @@ Xem [hướng dẫn Telegram](docs/features/telegram_VI.md).
 
 ## Dùng hằng ngày
 
-| Tôi muốn… | Lệnh |
-| --- | --- |
-| Mở ứng dụng | `502drive` |
-| Copy một link và chờ xong | `502d LINK --wait` |
-| Xem trước link có gì | `502drive inspect LINK --deep` |
-| Copy nhiều link cùng lúc | `502d LINK1 LINK2 LINK3` |
-| Xem các job | `502drive jobs list` |
-| Lấy danh sách file bị lỗi | `502drive jobs report JOB_ID --format csv` |
-| Xem các bản sao | `502drive collections list` |
-| Làm mới một bản sao ngay | `502drive sync run MA_BAN_SAO` |
-| Làm mới mỗi đêm lúc 22:00 | `502drive sync enable MA_BAN_SAO --daily 22:00` |
-| Kiểm tra bản sao khớp bản gốc | `502drive audit MA_BAN_SAO` |
-| Tạm dừng hoặc tiếp tục tất cả | `502drive pause` · `502drive resume` |
-| Dọn các job cũ đã xong khỏi danh sách | `502drive history clear --older-than 30d` |
-| Kiểm tra mọi thứ đã thiết lập chưa | `502drive doctor` |
-| Cập nhật lên bản mới nhất | `502drive update --install --restart` |
-| Dừng 502Drive | `502drive stop` |
+Di chuột lên khối lệnh và bấm nút copy ở góc phải trên GitHub. Thay `LINK`,
+`JOB_ID` và mã bản sao bằng giá trị của bạn trước khi chạy.
+
+**Mở ứng dụng:**
+
+```sh
+502drive
+```
+
+**Copy một link và chờ xong:**
+
+```sh
+502d LINK --wait
+```
+
+**Xem trước link có gì:**
+
+```sh
+502drive inspect LINK --deep
+```
+
+**Copy nhiều link cùng lúc:**
+
+```sh
+502d LINK1 LINK2 LINK3
+```
+
+**Xem các job:**
+
+```sh
+502drive jobs list
+```
+
+**Lấy danh sách file bị lỗi:**
+
+```sh
+502drive jobs report JOB_ID --format csv
+```
+
+**Xem các bản sao:**
+
+```sh
+502drive collections list
+```
+
+**Làm mới một bản sao ngay:**
+
+```sh
+502drive sync run MA_BAN_SAO
+```
+
+**Làm mới mỗi đêm lúc 22:00:**
+
+```sh
+502drive sync enable MA_BAN_SAO --daily 22:00
+```
+
+**Kiểm tra bản sao khớp bản gốc:**
+
+```sh
+502drive audit MA_BAN_SAO
+```
+
+**Tạm dừng tất cả:**
+
+```sh
+502drive pause
+```
+
+**Tiếp tục tất cả:**
+
+```sh
+502drive resume
+```
+
+**Dọn các job cũ đã xong khỏi danh sách:**
+
+```sh
+502drive history clear --older-than 30d
+```
+
+**Kiểm tra mọi thứ đã thiết lập chưa:**
+
+```sh
+502drive doctor
+```
+
+**Cập nhật lên bản mới nhất:**
+
+```sh
+502drive update --install --restart
+```
+
+**Dừng 502Drive:**
+
+```sh
+502drive stop
+```
 
 `MA_BAN_SAO` lấy từ `collections list`. Mọi lệnh đều có `--help`, và `--json` cho script.
 Danh sách đầy đủ: [tham chiếu CLI](docs/features/cli.md).

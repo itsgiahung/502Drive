@@ -2,11 +2,19 @@
 
 [English](troubleshooting.md) · Tiếng Việt
 
-Bắt đầu bằng `502drive status`, `502drive doctor` và nhật ký (`502drive logs`).
+Bắt đầu bằng trạng thái, Doctor và nhật ký:
+
+```sh
+502drive status
+502drive doctor
+502drive logs
+```
+
 `doctor --online` có gọi tới Google; `doctor` thường chỉ kiểm tra trên máy.
 
 | Hiện tượng | Kiểm tra và cách xử lý |
 | --- | --- |
+| Trang chủ chỉ hiện checklist, mất mascot và thanh tab | Bản cũ trả về checklist trước khi vẽ Home. Cần bản có sửa bố cục setup; phím `5` rồi `l` vẫn mở đăng nhập Google. Checklist vẫn hiện cho đến khi thiết lập xong. |
 | `daemon_unavailable` | Chạy `502drive up`; kiểm tra địa chỉ và file token riêng tư |
 | `unauthenticated` | Dùng đúng file token hiện tại của dịch vụ, đừng dùng token cũ đã chép |
 | `not_ready` | Kiểm tra khóa thư mục dữ liệu, quyền file, và phiên bản chương trình có khớp dữ liệu |

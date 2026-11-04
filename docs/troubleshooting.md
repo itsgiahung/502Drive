@@ -2,11 +2,19 @@
 
 English · [Tiếng Việt](troubleshooting_VI.md)
 
-Start with `502drive status`, `502drive doctor` and daemon logs. `doctor --online`
-contacts Google; ordinary Doctor checks are local.
+Start with status, Doctor and daemon logs:
+
+```sh
+502drive status
+502drive doctor
+502drive logs
+```
+
+`doctor --online` contacts Google; ordinary Doctor checks are local.
 
 | Symptom | Check and recovery |
 | --- | --- |
+| Home shows only setup checks, with no mascot or tabs | Older builds return the checklist before drawing Home. Upgrade to a build containing the setup layout fix; `5` then `l` still opens Google sign-in. Setup checks remain visible until ready. |
 | `daemon_unavailable` | Start `502drive up`; check endpoint and private token-file configuration |
 | `unauthenticated` | Use the daemon's current token file, not a copied obsolete token |
 | `not_ready` | Check data-directory writer lock, permissions and binary/schema compatibility |

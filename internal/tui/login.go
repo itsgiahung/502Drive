@@ -65,6 +65,10 @@ func (m Model) onLogin(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.state == "connected":
 			m.login = nil
 			m.status = m.t(i18n.LoginDone)
+			if m.fetching {
+				m.dirty = true
+				return m, nil
+			}
 			return m, m.refetch()
 		case msg.state == "failed":
 			m.login = nil

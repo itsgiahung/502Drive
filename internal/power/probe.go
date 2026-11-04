@@ -26,6 +26,8 @@ type Prober struct {
 	Permanent func(err error) bool
 	// Cooldown is the delay after a permanent failure (default 5m).
 	Cooldown time.Duration
+	// Wake interrupts a retry delay when credentials or connectivity change.
+	Wake <-chan struct{}
 
 	mu sync.Mutex
 }
@@ -48,7 +50,7 @@ func (p *Prober) Until(ctx context.Context) error {
 	}
 	sleep := p.Sleep
 	if sleep == nil {
-		sleep = sleepCtx
+		sleep = func(ctx context.Context, d time.Duration) bool { return sleepCtx(ctx, d, p.Wake) }
 	}
 	var last error
 	for attempt := 0; ; attempt++ {
@@ -104,11 +106,13 @@ func jitter(d time.Duration, r float64) time.Duration {
 	return out
 }
 
-func sleepCtx(ctx context.Context, d time.Duration) bool {
+func sleepCtx(ctx context.Context, d time.Duration, wake <-chan struct{}) bool {
 	t := time.NewTimer(d)
 	defer t.Stop()
 	select {
 	case <-t.C:
+		return true
+	case <-wake:
 		return true
 	case <-ctx.Done():
 		return false

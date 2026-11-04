@@ -27,8 +27,13 @@ object disappears, return to the parent list rather than target its replacement.
 
 ## Readiness, progress and editors
 
-Home shows setup checks until Doctor reports database, OAuth client, account and
-default destination ready. Deep preflight is driven by SSE while connected and
+Home shows setup checks inside its panel until Doctor reports database, OAuth
+client, account and default destination ready. Tabs, the command prompt and footer
+remain available during setup; the mascot appears when the terminal has room.
+After Google sign-in succeeds, the daemon immediately retries its connectivity
+probe, and the TUI refreshes account/setup data without waiting for the cache to
+expire. An older in-flight refresh cannot discard the login refresh.
+Deep preflight is driven by SSE while connected and
 falls back to polling. Partial discovery never claims a total.
 
 Rate/ETA uses a shared observation window and enough samples to establish a trend.

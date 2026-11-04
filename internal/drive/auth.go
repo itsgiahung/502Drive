@@ -67,6 +67,9 @@ type session struct {
 
 // Auth owns the OAuth client config, login sessions and the encrypted token.
 type Auth struct {
+	// OnConnected runs after a login is validated and saved. Set it before serving.
+	OnConnected func()
+
 	dir      string
 	cfg      oauth2.Config
 	validate func(ctx context.Context, accessToken string) error
@@ -336,6 +339,9 @@ func (a *Auth) callback(s *session, cfg oauth2.Config, w http.ResponseWriter, r 
 	if err != nil {
 		reply(w, http.StatusBadGateway, "Could not finish connecting. Return to 502drive for details.")
 		return
+	}
+	if a.OnConnected != nil {
+		a.OnConnected()
 	}
 	reply(w, http.StatusOK, "Connected. You can close this tab and return to 502drive.")
 }

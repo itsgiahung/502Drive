@@ -220,7 +220,13 @@ func (m Model) homePanel(pw int) []string {
 	act := m.activityColumn()
 	var cols [][]string
 	var widths []int
+	setup := m.snap.Setup != nil && !m.snap.Setup.Ready
 	switch {
+	case setup && inner >= 64:
+		w := inner - catCols - 3
+		cols, widths = [][]string{m.catColumn(), m.setupColumn(w)}, []int{catCols, w}
+	case setup:
+		cols, widths = [][]string{m.setupColumn(inner)}, []int{inner}
 	case inner >= 90:
 		cols, widths = [][]string{m.catColumn(), info, act}, []int{catCols, infoCols, inner - catCols - infoCols - 6}
 	case inner >= 64:
@@ -259,6 +265,24 @@ func (m Model) homePanel(pw int) []string {
 	}
 	out = append(out, m.dim(bl+strings.Repeat(h, pw-2)+br))
 	return out
+}
+
+func (m Model) setupColumn(width int) []string {
+	lines := []string{m.bold(m.t(i18n.SetupTitle)), ""}
+	for _, c := range m.snap.Setup.Checks {
+		mark := "✗"
+		if c.Status == "passed" {
+			mark = "✓"
+		}
+		if m.opt.ASCII {
+			mark = "[ ]"
+			if c.Status == "passed" {
+				mark = "[x]"
+			}
+		}
+		lines = append(lines, strings.Split(ansi.Wrap(mark+" "+present.SetupStep(c.Name, m.lang), width, ""), "\n")...)
+	}
+	return lines
 }
 
 func padCell(s string, w int) string {
