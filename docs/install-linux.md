@@ -12,6 +12,11 @@ sudo dnf install ./502drive_VERSION_linux_amd64.rpm
 sudo dpkg -i ./502drive_VERSION_linux_amd64.deb
 ```
 
+On Fedora releases requiring embedded RPM signatures, first verify Sigstore and
+the checksum as shown below, then install the verified package with
+`sudo rpm -i --nosignature ./502drive_VERSION_linux_amd64.rpm`. This package uses
+Sigstore rather than an embedded OpenPGP signature.
+
 Alternatively, the user-local installer verifies checksums and installs into
 `~/.local/bin`:
 

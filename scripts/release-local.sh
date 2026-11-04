@@ -70,8 +70,8 @@ if [ "$rpm" -eq 1 ]; then
   [ -n "$engine" ] || { echo "need podman or docker for --rpm-smoke" >&2; exit 1; }
   rpmfile="$(ls dist/*linux_amd64*.rpm dist/*.x86_64.rpm 2>/dev/null | head -n1)"
   [ -n "$rpmfile" ] || { echo "no rpm in dist/" >&2; exit 1; }
-  "$engine" run --rm -v "$PWD/dist:/dist:ro" fedora:latest bash -c \
-    "dnf install -y /dist/$(basename "$rpmfile") >/dev/null && 502drive version && rpm -qi 502drive | head -n 5"
+  "$engine" run --rm -v "$PWD/dist:/dist:ro,z" fedora:latest bash -c \
+    "dnf install -y --nogpgcheck /dist/$(basename "$rpmfile") >/dev/null && 502drive version && rpm -qi 502drive | head -n 5"
 fi
 
 step "done"

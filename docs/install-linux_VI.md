@@ -12,6 +12,11 @@ sudo dnf install ./502drive_PHIÊN_BẢN_linux_amd64.rpm
 sudo dpkg -i ./502drive_PHIÊN_BẢN_linux_amd64.deb
 ```
 
+Nếu Fedora yêu cầu chữ ký nhúng trong RPM, hãy kiểm tra chữ ký Sigstore và
+checksum theo hướng dẫn bên dưới trước, rồi cài gói đã xác minh bằng
+`sudo rpm -i --nosignature ./502drive_PHIÊN_BẢN_linux_amd64.rpm`. Gói này dùng
+chữ ký Sigstore thay cho chữ ký OpenPGP nhúng trong RPM.
+
 Hoặc dùng script cài trong thư mục người dùng (không cần sudo), nó kiểm tra checksum
 rồi cài vào `~/.local/bin`:
 

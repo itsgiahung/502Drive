@@ -4,10 +4,14 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
-## 0.4.13 — 2026-11-05
+## 0.4.14 — 2026-11-05
 
 ### Fixed
 
+- Fedora RPM smoke checks explicitly verify package digests; authenticity is
+  verified separately with Sigstore. RPM 6 signature enforcement no longer blocks
+  publication of packages that use Sigstore instead of embedded OpenPGP signatures.
+  Version 0.4.13 was a CI candidate and was not published.
 - Mirror's mass-removal guard counts unresolved source loss on later scans and
   uses the copied baseline before discovery, so audits, restarts, new files and
   already mirrored-away mappings cannot bypass the guard.
