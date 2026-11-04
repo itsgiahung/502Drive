@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -87,6 +88,7 @@ func (a *App) runTray(ctx context.Context) error {
 		Host:            host,
 		Status:          a.trayStatus,
 		Jobs:            a.trayJobs,
+		JobChanges:      a.trayJobChanges,
 		Copy:            a.trayCopy,
 		Language:        a.trayLanguage,
 		QueuePause:      a.trayQueuePause,
@@ -207,9 +209,33 @@ func (a *App) trayJobs(ctx context.Context) ([]tray.Job, error) {
 	if err = r.Decode(&page); err != nil {
 		return nil, err
 	}
-	out := make([]tray.Job, 0, len(page.Items))
-	for _, j := range page.Items {
+	return trayJobRows(page.Items), nil
+}
+
+func (a *App) trayJobChanges(ctx context.Context, since time.Time, cursor string) ([]tray.Job, string, error) {
+	q := url.Values{"limit": {"100"}, "all": {"true"}, "since": {since.UTC().Format(time.RFC3339Nano)}}
+	if cursor != "" {
+		q.Set("cursor", cursor)
+	}
+	r, err := a.call(ctx, "GET", "/v1/history", q, nil, "")
+	if err != nil {
+		return nil, "", err
+	}
+	var page struct {
+		Items []jobView `json:"items"`
+		Next  string    `json:"next_cursor"`
+	}
+	if err := r.Decode(&page); err != nil {
+		return nil, "", err
+	}
+	return trayJobRows(page.Items), page.Next, nil
+}
+
+func trayJobRows(items []jobView) []tray.Job {
+	out := make([]tray.Job, 0, len(items))
+	for _, j := range items {
 		job := tray.Job{Bytes: j.Counts.Bytes, QueueAhead: j.QueueAhead, QueuePaused: j.QueuePaused, ID: j.ID, SourceName: j.SourceName, State: j.State, Completed: j.Counts.Completed, Total: j.Counts.Total}
+		job.UpdatedAt = parseTime(&j.UpdatedAt)
 		if j.LastError != nil {
 			job.LastErrorCode = j.LastError.Code
 		}
@@ -218,7 +244,7 @@ func (a *App) trayJobs(ctx context.Context) ([]tray.Job, error) {
 		}
 		out = append(out, job)
 	}
-	return out, nil
+	return out
 }
 
 func (a *App) trayCopy(ctx context.Context, link string) (string, error) {

@@ -34,6 +34,7 @@ const (
 	JobsFilterAll    Key = "jobs_filter_all"
 	JobsFilterSource Key = "jobs_filter_source"
 	JobsMoreRows     Key = "jobs_more_rows"
+	LibraryMoreRows  Key = "library_more_rows"
 	JobsNoMatch      Key = "jobs_no_match"
 	JobsKeysIt       Key = "jobs_keys_it"
 
@@ -131,6 +132,7 @@ var tuiItVI = map[Key]string{
 	JobsFilterAll:    "tất cả trạng thái",
 	JobsFilterSource: "chỉ nguồn %s",
 	JobsMoreRows:     "… còn job nữa · kéo xuống cuối để tải thêm",
+	LibraryMoreRows:  "… còn nguồn nữa · kéo xuống cuối để tải thêm",
 	JobsNoMatch:      "Không có job nào khớp bộ lọc.",
 	JobsKeysIt:       "f lọc trạng thái · F chọn nhiều · s chỉ nguồn này · K/J lên/xuống hàng chờ · +/- ưu tiên · P/U tạm dừng/tiếp tục tất cả · E xuất lịch sử · x xóa khỏi lịch sử",
 
@@ -214,6 +216,7 @@ var tuiItEN = map[Key]string{
 	JobsFilterAll:    "all states",
 	JobsFilterSource: "only source %s",
 	JobsMoreRows:     "… more jobs · scroll to the end to load more",
+	LibraryMoreRows:  "… more sources · scroll to the end to load more",
 	JobsNoMatch:      "No job matches the filter.",
 	JobsKeysIt:       "f filter by state · F choose several · s only this source · K/J move in queue · +/- priority · P/U pause/resume all · E export history · x clear from history",
 

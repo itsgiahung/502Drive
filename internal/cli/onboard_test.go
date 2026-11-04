@@ -45,6 +45,7 @@ func TestCleanPromptPathExpandsHomeAndDropsQuotes(t *testing.T) {
 // In a terminal, onboard prints a readable checklist (not JSON), and pressing
 // Enter at the destination step uses My Drive.
 func TestOnboardInteractiveIsReadableAndEnterMeansMyDrive(t *testing.T) {
+	noBrowser(t)
 	var added string
 	destDone := false
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +82,7 @@ func TestOnboardInteractiveIsReadableAndEnterMeansMyDrive(t *testing.T) {
 	t.Cleanup(ts.Close)
 	dir := privateDir(t)
 	cfg := filepath.Join(dir, "config.json")
+	writeClientJSON(t, filepath.Join(dir, "client.json"), "synthetic.apps.googleusercontent.com", "synthetic-secret")
 	conf := `{"listen":"127.0.0.1:5020","data_dir":"data","token_file":"api-token","oauth_client_file":"client.json"}`
 	if err := os.WriteFile(cfg, []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
@@ -159,11 +161,12 @@ func writeClientJSON(t *testing.T, path, id, secret string) {
 
 func noBrowser(t *testing.T) {
 	t.Helper()
+	previousOpener := openSetupPage
 	openSetupPage = func(u string) error {
 		t.Fatalf("the browser was opened at %s", u)
 		return nil
 	}
-	t.Cleanup(func() { openSetupPage = openBrowser })
+	t.Cleanup(func() { openSetupPage = previousOpener })
 }
 
 // A configured key is the shortest path: onboard must not ask anything.
@@ -249,11 +252,12 @@ func TestOnboardGuideOpensEveryPage(t *testing.T) {
 	ts := onboardReadyServer(t)
 	cfg := onboardTestConfig(t, "")
 	var opened []string
+	previousOpener := openSetupPage
 	openSetupPage = func(u string) error {
 		opened = append(opened, u)
 		return nil
 	}
-	t.Cleanup(func() { openSetupPage = openBrowser })
+	t.Cleanup(func() { openSetupPage = previousOpener })
 	input := "g\n" + strings.Repeat("\n", 5) + client + "\n"
 	var out, errb strings.Builder
 	code := Execute(t.Context(), []string{"--config", cfg, "--endpoint", ts.URL, "onboard"}, onboardTestIO(strings.NewReader(input), &out, &errb))
@@ -287,8 +291,9 @@ func TestOnboardGuideRetriesWebClientThreeTimes(t *testing.T) {
 	}
 	ts := onboardReadyServer(t)
 	cfg := onboardTestConfig(t, "")
+	previousOpener := openSetupPage
 	openSetupPage = func(string) error { return nil }
-	t.Cleanup(func() { openSetupPage = openBrowser })
+	t.Cleanup(func() { openSetupPage = previousOpener })
 	input := "g\n" + web + "\n" + web + "\n" + web + "\n"
 	var out, errb strings.Builder
 	code := Execute(t.Context(), []string{"--config", cfg, "--endpoint", ts.URL, "onboard"}, onboardTestIO(strings.NewReader(input), &out, &errb))

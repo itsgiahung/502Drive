@@ -4,6 +4,43 @@ All notable changes to 502Drive. Versions follow [Semantic Versioning](https://s
 before 1.0 a minor version may change behaviour, and every such change is listed under
 **Upgrade notes**.
 
+## 0.4.13 — 2026-11-05
+
+### Fixed
+
+- Mirror's mass-removal guard counts unresolved source loss on later scans and
+  uses the copied baseline before discovery, so audits, restarts, new files and
+  already mirrored-away mappings cannot bypass the guard.
+- Single-file sync no longer reports success after a failed source read. Metadata
+  reads share retry, quota and network handling; an unreadable destination root
+  blocks writes. Audit completion preserves the last sync result and pending reruns.
+- Cleanup observes pause/cancel after metadata reads and permit waits, and stops
+  safely if its plan or job controls cannot be read. `replace_copy` retires old
+  copies in the same successful run and reports failed retirement for retry.
+- Cancelling a realtime bootstrap leaves it recoverable, including bootstraps
+  stranded by older daemons. Fresh reconciles discard stale replay pages atomically;
+  failed relevance queries preserve the buffer and cursor for retry.
+- `update --install --restart --yes` restarts the daemon even when the binary is
+  already current. Library loads more collections when scrolling past the first
+  page; tray notifications read updated jobs independently of its five menu slots.
+- Setup Home stays visible; Google sign-in refreshes connectivity and account state
+  immediately. Onboarding tests no longer open the system browser.
+
+### Performance
+
+- Cleanup calculates copied item/byte totals in SQL instead of loading the full
+  mapping into memory. The synthetic 10,000-row benchmark reduced Go allocations
+  from about 34.8 MB to 632 bytes per calculation; this is not total daemon RAM.
+- Sync no longer retains a per-run list of superseded destination IDs needed only
+  by repair. Library pages are fetched on demand.
+
+### Upgrade notes
+
+- No schema migration or configuration change is required. Single-file sources
+  continue to bypass selective filters, as documented.
+- Local format, vet, staticcheck, full race tests and the synthetic 10,000-file
+  load probe passed. Live Google/Telegram and native desktop acceptance were not rerun.
+
 ## 0.4.12 — 2026-10-28
 
 Fixes from an independent review (every one reproduced by a test first):

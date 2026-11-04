@@ -33,14 +33,14 @@ func TestSyncNeverTrashesACopyThatLostOurIntent(t *testing.T) {
 	e.fake.Mutate(f.ID, func(x *drive.File) { x.Version = "9"; x.MD5 = "new" })
 	// The user took the old copy out of our hands: its marker is gone.
 	e.fake.Mutate(old[0].ID, func(x *drive.File) { x.AppProperties = nil })
-	if j := e.runUntil(e.runNow(base.CollectionID).ID, terminal); j.State != state.JobSucceeded {
+	if j := e.runUntil(e.runNow(base.CollectionID).ID, terminal); j.State != state.JobPartial || j.LastError == nil || j.LastError.Code != "cleanup_failed" {
 		t.Fatalf("replace run = %s %+v", j.State, j.LastError)
 	}
 	if n := len(find(e.fake, root, "doc")); n != 2 {
 		t.Fatalf("replace_copy left %d copies, want both", n)
 	}
 
-	// The next run retires superseded generations; this one is not ours.
+	// Later runs retry retirement; this one is still not ours.
 	e.runUntil(e.runNow(base.CollectionID).ID, terminal)
 	if x, ok := e.fake.Get(old[0].ID); !ok || x.Trashed {
 		t.Fatalf("trashed a copy that no longer carries our intent: %+v", x)

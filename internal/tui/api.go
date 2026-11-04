@@ -155,8 +155,9 @@ type Snapshot struct {
 	Checks       []Check
 	// JobsNext is non-empty when the daemon has more jobs than Jobs holds for
 	// the current JobQuery.
-	JobsNext string
-	At       time.Time
+	JobsNext        string
+	CollectionsNext string
+	At              time.Time
 }
 
 // LoginSession is a Google sign-in the daemon started: the user opens URL.
@@ -402,18 +403,19 @@ type Actions struct {
 	// writes a CSV (kind report or history) to a path and returns the row
 	// count; Search finds Drive items by name; LatestAudit reads a
 	// collection's newest integrity audit (found is false when it has none).
-	SubmitOpts      func(ctx context.Context, plan Plan, o SubmitOptions) (jobID, collectionID string, err error)
-	SubmitBatch     func(ctx context.Context, req BatchRequest) (BatchResult, error)
-	GetPlan         func(ctx context.Context, id string) (Plan, error)
-	CancelPreflight func(ctx context.Context, planID string) (Plan, error)
-	GetBatch        func(ctx context.Context, id string) (BatchProgress, error)
-	QueuePause      func(ctx context.Context, paused bool) (affected int, err error)
-	MoveJob         func(ctx context.Context, id string, revision int, mv JobMove) error
-	SetJobQuery     func(q JobQuery)
-	Report          func(ctx context.Context, jobID string) (JobReport, error)
-	ExportCSV       func(ctx context.Context, kind, jobID, path string) (rows int, err error)
-	Search          func(ctx context.Context, query string) ([]DriveItem, error)
-	LatestAudit     func(ctx context.Context, collectionID string) (rep AuditReport, found bool, err error)
+	SubmitOpts         func(ctx context.Context, plan Plan, o SubmitOptions) (jobID, collectionID string, err error)
+	SubmitBatch        func(ctx context.Context, req BatchRequest) (BatchResult, error)
+	GetPlan            func(ctx context.Context, id string) (Plan, error)
+	CancelPreflight    func(ctx context.Context, planID string) (Plan, error)
+	GetBatch           func(ctx context.Context, id string) (BatchProgress, error)
+	QueuePause         func(ctx context.Context, paused bool) (affected int, err error)
+	MoveJob            func(ctx context.Context, id string, revision int, mv JobMove) error
+	SetJobQuery        func(q JobQuery)
+	SetCollectionPages func(pages int)
+	Report             func(ctx context.Context, jobID string) (JobReport, error)
+	ExportCSV          func(ctx context.Context, kind, jobID, path string) (rows int, err error)
+	Search             func(ctx context.Context, query string) ([]DriveItem, error)
+	LatestAudit        func(ctx context.Context, collectionID string) (rep AuditReport, found bool, err error)
 }
 
 // preset names shared with the CLI sync presets.

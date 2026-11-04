@@ -27,7 +27,7 @@ func jobTransitions(prev, cur []Job, lang string) []Notice {
 	var out []Notice
 	for _, j := range cur {
 		old, seen := before[j.ID]
-		if (!seen && j.State != "blocked") || (old.State == j.State && old.LastErrorCode == j.LastErrorCode) {
+		if seen && old.State == j.State && old.LastErrorCode == j.LastErrorCode {
 			continue
 		}
 		var title, kind string
@@ -52,9 +52,50 @@ func jobTransitions(prev, cur []Job, lang string) []Notice {
 		default:
 			continue
 		}
-		out = append(out, Notice{Kind: kind, Title: title, Body: plain(j.SourceName)})
+		out = append(out, Notice{Kind: kind, JobID: j.ID, Title: title, Body: plain(j.SourceName)})
 	}
 	return out
+}
+
+// notifyChanges keeps history paging separate from the fixed menu. A failed page
+// retains the window and delivered states so the next poll retries without duplicates.
+func (a *agent) notifyChanges(ctx context.Context, at time.Time, lang string) {
+	if a.o.NoNotify || a.o.Host.GOOS != "linux" {
+		return
+	}
+	cursor := ""
+	for {
+		jobs, next, err := a.o.JobChanges(ctx, a.noticeSince, cursor)
+		if err != nil {
+			a.o.log().Warn("tray: cannot read notification changes", "err", err)
+			return
+		}
+		var prev []Job
+		for _, j := range jobs {
+			if old, ok := a.noticeSeen[j.ID]; ok {
+				prev = append(prev, old)
+			}
+			a.noticeSeen[j.ID] = j
+		}
+		a.notify(ctx, jobTransitions(prev, jobs, lang))
+		if next == "" {
+			break
+		}
+		if next == cursor || ctx.Err() != nil {
+			return
+		}
+		cursor = next
+	}
+	// SQL history timestamps have millisecond precision. Keep the overlap only;
+	// old results never accumulate for the lifetime of the tray.
+	a.noticeSince = at.Truncate(time.Millisecond).Add(-time.Millisecond)
+	overlap := make(map[string]Job)
+	for id, j := range a.noticeSeen {
+		if !j.UpdatedAt.Before(a.noticeSince) {
+			overlap[id] = j
+		}
+	}
+	a.noticeSeen = overlap
 }
 
 // escapeMarkup stops a Drive name from being read as notification markup.

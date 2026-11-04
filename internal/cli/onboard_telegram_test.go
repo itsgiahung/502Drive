@@ -78,8 +78,9 @@ func TestOnboardTelegramFindsTheOwnerFromTheFirstPrivateMessage(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ts := fakeTelegram(t, false)
 	cfg := onboardTestConfig(t, "client.json")
+	previousOpener := openSetupPage
 	openSetupPage = func(string) error { return nil }
-	t.Cleanup(func() { openSetupPage = openBrowser })
+	t.Cleanup(func() { openSetupPage = previousOpener })
 	var out, errb strings.Builder
 	// A wrong token first, then the right one, then Enter to confirm "is that you?".
 	code := Execute(t.Context(), []string{"--config", cfg, "onboard", "--telegram"}, telegramTestIO(tgBadToken+"\n"+tgGoodToken+"\n\n", ts.URL, &out, &errb))
@@ -109,10 +110,11 @@ func TestOnboardTelegramAsksForTheIDWhenNoMessageArrives(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ts := fakeTelegram(t, true)
 	cfg := onboardTestConfig(t, "client.json")
+	previousOpener := openSetupPage
 	openSetupPage = func(string) error { return nil }
 	old := onboardTelegramWait
 	onboardTelegramWait = 100 * time.Millisecond
-	t.Cleanup(func() { openSetupPage, onboardTelegramWait = openBrowser, old })
+	t.Cleanup(func() { openSetupPage, onboardTelegramWait = previousOpener, old })
 	var out, errb strings.Builder
 	code := Execute(t.Context(), []string{"--config", cfg, "onboard", "--telegram"}, telegramTestIO(tgGoodToken+"\nabc\n555\n", ts.URL, &out, &errb))
 	if code != 0 {
@@ -128,8 +130,9 @@ func TestOnboardTelegramEnterSkipsAndSavesNothing(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ts := fakeTelegram(t, false)
 	cfg := onboardTestConfig(t, "client.json")
+	previousOpener := openSetupPage
 	openSetupPage = func(string) error { return nil }
-	t.Cleanup(func() { openSetupPage = openBrowser })
+	t.Cleanup(func() { openSetupPage = previousOpener })
 	var out, errb strings.Builder
 	if code := Execute(t.Context(), []string{"--config", cfg, "onboard", "--telegram"}, telegramTestIO("\n", ts.URL, &out, &errb)); code != 0 {
 		t.Fatalf("exit=%d err=%s", code, errb.String())

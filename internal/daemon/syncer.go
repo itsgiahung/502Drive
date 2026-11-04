@@ -144,12 +144,16 @@ func (s *syncer) replayPending(ctx context.Context, now time.Time) {
 		}
 		relevant := false
 		for _, ch := range changes {
-			hit, err := s.store.RelevantChange(ctx, id, ch.FileID, ch.Parents)
-			if err != nil {
-				s.note(ctx, id, err)
+			hit, readErr := s.store.RelevantChange(ctx, id, ch.FileID, ch.Parents)
+			if readErr != nil {
+				err = readErr
 				break
 			}
 			relevant = relevant || hit
+		}
+		if err != nil {
+			s.note(ctx, id, err)
+			continue // keep both the cursor and buffered changes for retry
 		}
 		run, err := s.store.FinishReplay(ctx, id, sub.Cursor, finalCursor, relevant, now.Add(s.nextPoll(id, relevant)))
 		switch {

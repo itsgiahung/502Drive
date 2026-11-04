@@ -126,17 +126,18 @@ type Model struct {
 	// made in the queue, batch progress, the newest audit per collection (the
 	// maps are shared between copies), the problem report and the CSV path
 	// being typed.
-	statePick  *statePicker
-	jq         JobQuery
-	jqName     string
-	qm         *queueMoves
-	batches    map[string]*batchState
-	lastAudits map[string]*lastAuditState
-	rep        *reportView
-	ab         *auditBrowser
-	fe         *filterEditor
-	prot       *protectFlow
-	exp        *exportFlow
+	statePick    *statePicker
+	jq           JobQuery
+	libraryPages int
+	jqName       string
+	qm           *queueMoves
+	batches      map[string]*batchState
+	lastAudits   map[string]*lastAuditState
+	rep          *reportView
+	ab           *auditBrowser
+	fe           *filterEditor
+	prot         *protectFlow
+	exp          *exportFlow
 
 	watching bool // the realtime stream is connected
 	watchCh  <-chan WatchEvent
@@ -792,6 +793,9 @@ func (m Model) goTo(s screen) (tea.Model, tea.Cmd) {
 func (m Model) afterMove(next Model) (tea.Model, tea.Cmd) {
 	if next.screen == screenJobs {
 		return next.loadMoreJobs()
+	}
+	if next.screen == screenLibrary {
+		return next.loadMoreCollections()
 	}
 	return next, next.maybeLoadMore()
 }

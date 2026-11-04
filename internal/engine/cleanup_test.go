@@ -35,7 +35,7 @@ func TestCleanupDryRunDoesNotTrash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Counts.Total == nil || *got.Counts.Total < 7 || got.Counts.Bytes != 150 {
+	if got.Counts.Total == nil || *got.Counts.Total != 8 || got.Counts.Bytes != 150 {
 		t.Fatalf("dry-run plan counts = %+v, want the copied items and 150 bytes", got.Counts)
 	}
 

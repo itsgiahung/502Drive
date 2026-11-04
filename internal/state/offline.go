@@ -2,6 +2,12 @@ package state
 
 import "context"
 
+// CleanupTotals counts confirmed copies without loading their metadata into the caller.
+func (s *Store) CleanupTotals(ctx context.Context, collectionID string) (count int, bytes int64, err error) {
+	err = s.db.QueryRowContext(ctx, "SELECT count(*),coalesce(sum(size),0) FROM items WHERE collection_id=? AND state='done' AND dest_id<>''", collectionID).Scan(&count, &bytes)
+	return
+}
+
 // ReleaseItemNoPenalty returns an item to pending without consuming an attempt.
 // It is used when the write provably never left the machine (no network): the
 // item did not fail, the machine was offline. ClaimItem incremented attempts

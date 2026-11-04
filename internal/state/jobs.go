@@ -358,6 +358,12 @@ func (s *Store) ActionAs(ctx context.Context, actor, owner, key, id, action stri
 				return nil, ErrTransition
 			}
 			j.DesiredState = "cancel"
+			if j.State == JobCancelled {
+				// A queued/paused run has no worker to finish bootstrap bookkeeping.
+				if _, e = tx.ExecContext(ctx, "UPDATE sync_subscriptions SET state='needs_reconcile',next_poll_at=0,revision=revision+1 WHERE collection_id=? AND state='bootstrapping'", j.CollectionID); e != nil {
+					return nil, e
+				}
+			}
 		case "retry":
 			if j.State != JobPartial && j.State != JobFailed && j.State != JobBlocked {
 				return nil, ErrTransition

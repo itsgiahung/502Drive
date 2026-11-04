@@ -1112,14 +1112,14 @@ func TestIconIsTheProjectLogoWithStateOverlays(t *testing.T) {
 	}
 }
 
-func TestJobTransitionsNotifyOnlyOnEndStatesSeenBefore(t *testing.T) {
+func TestJobTransitionsIncludeJobsThatFinishBetweenPolls(t *testing.T) {
 	prev := []Job{{ID: "a", SourceName: "Photos", State: "running"}, {ID: "b", SourceName: "Docs", State: "queued"},
 		{ID: "c", SourceName: "Old", State: "succeeded"}}
 	cur := []Job{{ID: "a", SourceName: "Photos", State: "succeeded"}, {ID: "b", SourceName: "Docs", State: "running"},
 		{ID: "c", SourceName: "Old", State: "succeeded"}, {ID: "d", SourceName: "New", State: "succeeded"}}
 	got := jobTransitions(prev, cur, "en")
-	if len(got) != 1 || got[0].Body != "Photos" || got[0].Title != "Copy finished" {
-		t.Fatalf("transitions = %+v, want only Photos finishing", got)
+	if len(got) != 2 || got[0].Body != "Photos" || got[0].Title != "Copy finished" || got[1].Body != "New" {
+		t.Fatalf("transitions = %+v, want Photos and New finishing", got)
 	}
 	failed := jobTransitions([]Job{{ID: "a", State: "running"}}, []Job{{ID: "a", State: "failed", SourceName: "X"}}, "vi")
 	if len(failed) != 1 || failed[0].Title != "Copy thất bại" {

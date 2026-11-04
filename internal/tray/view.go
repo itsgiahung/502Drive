@@ -59,6 +59,7 @@ type Status struct {
 
 // Job is one recent job shown in the tray submenu.
 type Job struct {
+	UpdatedAt     time.Time
 	Bytes         int64
 	Samples       []present.Sample
 	LastErrorCode string

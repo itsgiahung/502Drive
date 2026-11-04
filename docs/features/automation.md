@@ -45,13 +45,23 @@ mass recopying. A binary rename with unchanged MD5 renames its copy in place;
 Google-native renames can still look like edits when modified time also changes.
 
 `versioned_copy` retains earlier copies. `replace_copy` trashes a superseded copy
-only after the new copy is confirmed, and preserves snapshot-referenced versions.
+in the same run, only after the new copy is confirmed, and preserves snapshot-referenced
+versions. A retirement failure keeps both copies and reports `partial/cleanup_failed`;
+a later sync retries retirement.
 Missing sources become `source_removed`. Filter changes affect future discovery,
 not deletion of existing output.
 
 The mass-removal guard stops **before copying** when more than 30% of at least ten
-mapped items disappear. It produces `partial/source_mass_removal` and a read-only
-audit. It does not automatically repair or remove destination content.
+previously copied items disappear. Its baseline is counted before discovery;
+new files and already mirrored-away mappings cannot dilute the threshold.
+Unresolved loss is counted again on later runs, including after an audit or restart.
+It produces `partial/source_mass_removal` and a read-only audit; an audit does not
+clear the sync error or advance its last-success time. Recovery of the source
+clears the loss flags. The guard never automatically repairs or removes destination content.
+
+A failed single-file source read cannot report a successful sync. Metadata reads
+share listing retry/backoff, network and quota handling. An unreadable destination
+root blocks sync before writes, rather than relying on the source scan to detect it.
 
 ## Realtime polling and replay
 
@@ -64,6 +74,11 @@ Replay re-evaluates relevance against completed mappings, advances the cursor an
 admits work in one transaction. Limits are 5,000 changes or 4 MiB per collection;
 overflow requests a full reconcile rather than replaying an incomplete set.
 Restart resumes from the persisted page checkpoint.
+An error checking replay relevance preserves both the cursor and buffered changes
+for retry. Cancelling a bootstrap job leaves the subscription needing reconciliation;
+stopping the subscription still keeps it stopped. Old bootstraps with no remaining
+active job are recovered too. A fresh cursor and reconcile discard the old replay
+buffer atomically, so stale pages cannot override the new cursor.
 
 Full reconciliation defaults to every seven days, with jitter. Configuration
 `full_reconcile_every` accepts a Go duration; `0` / `off` disables it. A full queue

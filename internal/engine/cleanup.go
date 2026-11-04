@@ -30,6 +30,10 @@ func (r *run) executeCleanup(ctx context.Context, job state.Job) {
 	}
 	f, err := r.p.GetFile(ctx, *col.RootID, "")
 	r.e.release()
+	if ctx.Err() != nil || r.control() != "run" {
+		r.settleCleanup(ctx)
+		return
+	}
 
 	if drive.KindOf(err) == drive.KindNotFound || (err == nil && f.Trashed) {
 		// Already gone or trashed -> idempotent success
@@ -55,22 +59,17 @@ func (r *run) executeCleanup(ctx context.Context, job state.Job) {
 
 	// Both runs record what the trash move covers: the copied items and bytes
 	// below the root. A dry run stops there; a real run then trashes the root.
-	if items, err := r.e.Store.Items(r.db, col.ID); err == nil {
-		var totalBytes int64
-		var count int
-		for _, it := range items {
-			if it.DestID != "" && it.State == state.ItemDone {
-				count++
-				if it.Size != nil {
-					totalBytes += *it.Size
-				}
-			}
-		}
-		_, _ = r.e.Store.UpdateJob(r.db, r.id, func(j *state.Job) (string, bool) {
-			total := count
-			j.Counts.Total, j.Counts.Bytes = &total, totalBytes
-			return "plan", true
-		})
+	count, totalBytes, err := r.e.Store.CleanupTotals(r.db, col.ID)
+	if err != nil {
+		r.block("cleanup_plan_failed", "The cleanup plan could not be read. Nothing was trashed.")
+		return
+	}
+	if _, err = r.e.Store.UpdateJob(r.db, r.id, func(j *state.Job) (string, bool) {
+		j.Counts.Total, j.Counts.Bytes = &count, totalBytes
+		return "plan", true
+	}); err != nil {
+		r.block("cleanup_plan_failed", "The cleanup plan could not be saved. Nothing was trashed.")
+		return
 	}
 	// A retained snapshot still needs this copy. The dry run says so too, so
 	// a preview never promises a trash move the real run would refuse.
@@ -79,6 +78,10 @@ func (r *run) executeCleanup(ctx context.Context, job state.Job) {
 		return
 	}
 	if job.DryRun {
+		if ctx.Err() != nil || r.control() != "run" {
+			r.settleCleanup(ctx)
+			return
+		}
 		r.finishCleanup(state.JobSucceeded, "", "")
 		return
 	}
@@ -86,6 +89,11 @@ func (r *run) executeCleanup(ctx context.Context, job state.Job) {
 	// Live cleanup: move destination root folder to Drive trash
 	r.setPhase("cleanup")
 	if err := r.e.acquire(ctx); err != nil {
+		r.settleCleanup(ctx)
+		return
+	}
+	if ctx.Err() != nil || r.control() != "run" {
+		r.e.release()
 		r.settleCleanup(ctx)
 		return
 	}

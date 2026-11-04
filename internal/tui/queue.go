@@ -127,6 +127,16 @@ func (m Model) loadMoreJobs() (Model, tea.Cmd) {
 	return m.readJobs(q)
 }
 
+func (m Model) loadMoreCollections() (Model, tea.Cmd) {
+	if m.snap.CollectionsNext == "" || m.fetching || len(m.snap.Collections) == 0 || m.cursor < len(m.snap.Collections)-1 || m.acts.SetCollectionPages == nil {
+		return m, nil
+	}
+	m.libraryPages = max(1, m.libraryPages) + 1
+	m.acts.SetCollectionPages(m.libraryPages)
+	m.fetching = true
+	return m, m.fetch()
+}
+
 // filterLine says which filter is active ("" when none).
 func (m Model) filterLine() string {
 	if m.jq.State == "" && m.jq.CollectionID == "" {

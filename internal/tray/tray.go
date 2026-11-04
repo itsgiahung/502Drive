@@ -30,9 +30,11 @@ type Options struct {
 	// Exe is the 502drive binary used to open the TUI and start the daemon.
 	Exe  string
 	Host Host
-	// Status and Jobs are the only daemon reads the tray performs.
+	// Status and Jobs supply the status and recent-job menu.
 	Status func(ctx context.Context) (Status, error)
 	Jobs   func(ctx context.Context) ([]Job, error)
+	// JobChanges pages jobs by update time, independently of the five menu slots.
+	JobChanges func(ctx context.Context, since time.Time, cursor string) ([]Job, string, error)
 	// Copy submits one validated Drive link and returns the job id.
 	Copy func(ctx context.Context, link string) (string, error)
 	// StartDaemon and StopDaemon replace the OS-specific start/stop when set.
@@ -114,7 +116,9 @@ type agent struct {
 	lang       string
 	p          presenter
 	// primed is set after the first successful poll (the notification baseline).
-	primed bool
+	primed      bool
+	noticeSince time.Time
+	noticeSeen  map[string]Job
 	// stopArmed is the two-step confirmation of "Stop 502Drive…": the first
 	// click only arms it; the second one inside stopConfirmWindow stops.
 	stopArmed   bool
@@ -218,11 +222,22 @@ func (a *agent) refresh(ctx context.Context) (View, bool) {
 		lang := a.lang
 		a.mu.Unlock()
 		if primed {
-			notices := jobTransitions(prev, snap.Jobs, lang)
+			var notices []Notice
+			if a.o.JobChanges != nil {
+				a.notifyChanges(ctx, snap.At, lang)
+			} else {
+				notices = jobTransitions(prev, snap.Jobs, lang)
+			}
 			if previousStatus.AccountStatus != "reconnect_required" && snap.Status.AccountStatus == "reconnect_required" {
 				notices = append(notices, Notice{Kind: "action_required", Reason: "account_reconnect_required", Title: present.StateLabel("reconnect_required", lang), Body: present.Advice("account_reconnect_required", lang)})
 			}
 			a.notify(ctx, notices)
+		} else {
+			a.noticeSince = snap.At.Truncate(time.Millisecond).Add(-time.Millisecond)
+			a.noticeSeen = make(map[string]Job)
+			for _, j := range snap.Jobs {
+				a.noticeSeen[j.ID] = j
+			}
 		}
 	}
 	a.mu.Lock()

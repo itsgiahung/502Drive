@@ -187,6 +187,8 @@ refused with the package-manager command instead. `--restart` then stops the
 daemon, backs up its data under `<config>/backups/before-TAG-…` (the new version
 may upgrade the database) and starts the new binary. The checksum guards against
 a corrupted download; it comes from the same release, so it is not a signature.
+`update --install --restart --yes` also restarts an already running daemon when
+the installed binary is current, without downloading or replacing it again.
 
 ## Output contract
 

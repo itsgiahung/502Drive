@@ -221,6 +221,9 @@ func (s *Store) ConfigureSync(ctx context.Context, actor, scopePrincipal, key, c
 		sub.Mode, sub.ContentPolicy, sub.Schedule = ch.Mode, ch.ContentPolicy, ch.Schedule
 		sub.FullReconcileEvery = ch.FullReconcileEvery
 		sub.ReplayOverflow, sub.ReplayCount, sub.ReplayBytes = false, 0, 0
+		if e = clearPendingChanges(ctx, tx, collectionID); e != nil {
+			return nil, e
+		}
 		sub.Revision++
 		sub.ScheduleRevision++
 		sub.NextDue, sub.NextKey, sub.Cursor, sub.RerunRequested, sub.LastError = nil, "", "", false, nil
@@ -660,7 +663,13 @@ func (s *Store) MarkNeedsReconcile(ctx context.Context, collectionID, newCursor 
 		if e != nil {
 			return e
 		}
-		if sub.State != SyncActive && sub.State != SyncNeedsReconcile {
+		if sub.State == SyncBootstrapping {
+			if id, err := activeRun(ctx, tx, collectionID); err != nil {
+				return err
+			} else if id != "" {
+				return nil
+			}
+		} else if sub.State != SyncActive && sub.State != SyncNeedsReconcile {
 			return nil
 		}
 		sub.LastError = &f
@@ -669,6 +678,10 @@ func (s *Store) MarkNeedsReconcile(ctx context.Context, collectionID, newCursor 
 			return putSub(ctx, tx, sub)
 		}
 		sub.Cursor, sub.State = newCursor, SyncBootstrapping
+		if e = clearPendingChanges(ctx, tx, collectionID); e != nil {
+			return e
+		}
+		sub.ReplayOverflow, sub.ReplayCount, sub.ReplayBytes = false, 0, 0
 		var cb []byte
 		if e = tx.QueryRowContext(ctx, "SELECT body FROM collections WHERE id=?", collectionID).Scan(&cb); e != nil {
 			return e
@@ -727,12 +740,14 @@ func (s *Store) RunFinished(ctx context.Context, jobID string) (*Job, error) {
 			return e
 		}
 		now := time.Now().UTC()
-		sub.LastAttemptAt = &now
 		ok := j.State == JobSucceeded
-		if ok {
-			sub.LastSuccessAt, sub.LastError = &now, nil
-		} else if j.LastError != nil {
-			sub.LastError = j.LastError
+		if j.Kind == "" {
+			sub.LastAttemptAt = &now
+			if ok {
+				sub.LastSuccessAt, sub.LastError = &now, nil
+			} else if j.LastError != nil {
+				sub.LastError = j.LastError
+			}
 		}
 		switch sub.State {
 		case SyncWaitingBaseline:
@@ -753,7 +768,10 @@ func (s *Store) RunFinished(ctx context.Context, jobID string) (*Job, error) {
 				}
 			}
 		case SyncBootstrapping:
-			if ok && sub.ReplayOverflow {
+			if j.Kind != "" {
+				// An audit/repair is not the full source scan bootstrap requires.
+				sub.State, sub.NextPollAt = SyncNeedsReconcile, 0
+			} else if ok && sub.ReplayOverflow {
 				// The replay buffer hit its cap: do not pretend the feed is
 				// covered. Take a fresh cursor and run a full reconcile.
 				sub.State, sub.NextPollAt, sub.ReplayOverflow = SyncNeedsReconcile, 0, false
@@ -766,7 +784,7 @@ func (s *Store) RunFinished(ctx context.Context, jobID string) (*Job, error) {
 				if sub.FullReconcileEvery > 0 && sub.NextFullReconcileAt == 0 {
 					sub.NextFullReconcileAt = nextFullReconcile(now, sub.FullReconcileEvery)
 				}
-			} else if j.State != JobCancelled {
+			} else {
 				sub.State = SyncNeedsReconcile
 			}
 		case SyncStopping:
@@ -1146,14 +1164,16 @@ func (s *Store) ApplySingleFile(ctx context.Context, run, collectionID string, c
 // deleted from the destination; the item is only flagged.
 func (s *Store) FinishScan(ctx context.Context, run, collectionID string) (removed int, err error) {
 	err = s.tx(ctx, func(tx *sql.Tx) error {
-		res, e := tx.ExecContext(ctx, "UPDATE items SET error_code='source_removed' WHERE collection_id=? AND parent_source_id<>'' AND state='done' AND seen_job<>? AND error_code=''", collectionID, run)
+		_, e := tx.ExecContext(ctx, "UPDATE items SET error_code='source_removed' WHERE collection_id=? AND parent_source_id<>'' AND state='done' AND seen_job<>? AND error_code=''", collectionID, run)
 		if e != nil {
 			return e
 		}
-		n, _ := res.RowsAffected()
-		removed = int(n)
 		_, e = tx.ExecContext(ctx, "UPDATE items SET error_code='' WHERE collection_id=? AND seen_job=? AND error_code='source_removed'", collectionID, run)
-		return e
+		if e != nil {
+			return e
+		}
+		// Count unresolved loss, including earlier guarded scans, until it recovers.
+		return tx.QueryRowContext(ctx, "SELECT count(*) FROM items WHERE collection_id=? AND state='done' AND error_code='source_removed'", collectionID).Scan(&removed)
 	})
 	return removed, err
 }
@@ -1187,10 +1207,12 @@ func (s *Store) MarkTrashed(ctx context.Context, v Superseded) error {
 	return err
 }
 
-// NeedsReconcileSubs lists realtime subscriptions waiting for a fresh cursor
-// and a full reconcile scan.
+// NeedsReconcileSubs also recovers bootstraps stranded by older daemons.
 func (s *Store) NeedsReconcileSubs(ctx context.Context) ([]Subscription, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT "+subCols+" FROM sync_subscriptions WHERE mode='realtime' AND state='needs_reconcile' ORDER BY rowid LIMIT 50")
+	rows, err := s.db.QueryContext(ctx, "SELECT "+subCols+` FROM sync_subscriptions s WHERE mode='realtime' AND
+		(state='needs_reconcile' OR (state='bootstrapping' AND NOT EXISTS (
+			SELECT 1 FROM jobs j WHERE j.collection_id=s.collection_id AND j.state IN ('queued','running','pausing','paused','cancelling','reconciling','blocked'))))
+		ORDER BY rowid LIMIT 50`)
 	if err != nil {
 		return nil, err
 	}

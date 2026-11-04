@@ -395,6 +395,9 @@ func (m Model) libraryView() []string {
 		}
 		lines = append(lines, "            "+line)
 	}
+	if m.snap.CollectionsNext != "" && end == len(m.snap.Collections) {
+		lines = append(lines, m.dim(m.t(i18n.LibraryMoreRows)))
+	}
 	return lines
 }
 

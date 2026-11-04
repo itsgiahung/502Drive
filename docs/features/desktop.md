@@ -23,6 +23,8 @@ parent folder. Up/Down in job details scroll rather than select another job.
 
 A live refresh preserves detail identity across list reordering. If the open
 object disappears, return to the parent list rather than target its replacement.
+Library initially reads 20 collections. Scrolling to the last row loads another
+page, preserving the selected collection and the retired-source filter.
 `q` exits the TUI; the detached daemon keeps running.
 
 ## Readiness, progress and editors
@@ -80,6 +82,11 @@ the Windows backend. macOS has CLI/daemon support, not a native tray.
 Desktop notifications currently target Linux. They respect preferences and quiet
 hours and coalesce repeated causes. A supported Open action captures a fixed job ID;
 actual desktop clicks and Windows native delivery still need acceptance.
+Notifications page through jobs updated since the previous successful poll,
+independently of the five menu slots. Jobs that finish between polls and older
+jobs outside those slots are included. A failed page is retried without repeating
+notices from the earlier pages. Opening the tray primes a baseline rather than
+replaying historical results; notification state is not persisted across tray restarts.
 
 Update checks stay opt-in and run at most daily. When one finds a newer release,
 the tray shows `Update to vX…` and the tooltip adds `New release available: vX`.

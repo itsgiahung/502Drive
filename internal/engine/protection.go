@@ -446,6 +446,12 @@ func (r *run) protectSuccessfulRun(ctx context.Context, job state.Job) bool {
 	if !pr.RootDone || pr.Failed > 0 || pr.Blocked > 0 || pr.Pending > 0 || pr.Active > 0 || pr.Reconciling > 0 || pr.ListingLeft > 0 || pr.ListingFailed > 0 {
 		return true
 	}
+	if job.Trigger != "initial" {
+		r.cleanupFailures = r.retireSuperseded(ctx)
+		if r.cleanupFailures > 0 || ctx.Err() != nil || r.control() != "run" {
+			return true
+		}
+	}
 	if job.Protection.Mirror && job.Trigger != "initial" {
 		r.setPhase("mirror")
 		if err = r.mirror(ctx); err != nil {

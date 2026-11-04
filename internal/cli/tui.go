@@ -65,10 +65,15 @@ func (a *App) tuiActions() tui.Actions {
 		QueuePause:              a.tuiQueuePause,
 		MoveJob:                 a.tuiMoveJob,
 		SetJobQuery:             a.tuiSetJobQuery,
-		Report:                  a.tuiReport,
-		ExportCSV:               a.tuiExportCSV,
-		Search:                  a.tuiSearch,
-		LatestAudit:             a.tuiLatestAudit,
+		SetCollectionPages: func(pages int) {
+			a.slow.mu.Lock()
+			a.slow.collectionPages = pages
+			a.slow.mu.Unlock()
+		},
+		Report:      a.tuiReport,
+		ExportCSV:   a.tuiExportCSV,
+		Search:      a.tuiSearch,
+		LatestAudit: a.tuiLatestAudit,
 	}
 }
 
@@ -346,7 +351,8 @@ type slowCache struct {
 	pref  tui.Prefs
 	setup *tui.SetupState
 	// jq is the Jobs filter the TUI asked for; the next snapshots read it.
-	jq tui.JobQuery
+	jq              tui.JobQuery
+	collectionPages int
 }
 
 const slowTTL = 30 * time.Second
@@ -427,15 +433,27 @@ func (a *App) tuiJobs(ctx context.Context, snap *tui.Snapshot) {
 }
 
 func (a *App) tuiCollections(ctx context.Context, snap *tui.Snapshot) {
-	var q url.Values
+	q := url.Values{}
 	if a.showRetired.Load() {
 		// include_retired lists the retired sources of this principal beside
 		// the live ones, without other principals' copies.
 		q = url.Values{"include_retired": {"true"}}
 	}
-	items, ok := a.collectionItems(ctx, q)
-	if !ok {
-		return
+	a.slow.mu.Lock()
+	pages := max(1, a.slow.collectionPages)
+	a.slow.mu.Unlock()
+	var items []collectionView
+	for range pages {
+		page, next, ok := a.collectionItems(ctx, q)
+		if !ok {
+			return
+		}
+		items = append(items, page...)
+		snap.CollectionsNext = next
+		if next == "" {
+			break
+		}
+		q.Set("cursor", next)
 	}
 	for _, c := range items {
 		coll := tui.Collection{SourceID: c.SourceID, DestinationID: c.DestinationID, ID: c.ID, SourceName: c.SourceName, State: c.State, Revision: c.Revision, RootName: c.RootName,
@@ -468,18 +486,19 @@ func (a *App) tuiCollections(ctx context.Context, snap *tui.Snapshot) {
 }
 
 // collectionItems reads one page of the library.
-func (a *App) collectionItems(ctx context.Context, q url.Values) ([]collectionView, bool) {
+func (a *App) collectionItems(ctx context.Context, q url.Values) ([]collectionView, string, bool) {
 	r, err := a.call(ctx, "GET", "/v1/collections", q, nil, "")
 	if err != nil {
-		return nil, false
+		return nil, "", false
 	}
 	var page struct {
 		Items []collectionView `json:"items"`
+		Next  string           `json:"next_cursor"`
 	}
 	if r.Decode(&page) != nil {
-		return nil, false
+		return nil, "", false
 	}
-	return page.Items, true
+	return page.Items, page.Next, true
 }
 
 func (a *App) tuiDestinations(ctx context.Context, snap *tui.Snapshot) {

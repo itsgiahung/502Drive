@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/itsgiahung/502Drive/internal/update"
 )
 
 func TestLogsPrintsTheTailAndSanitizes(t *testing.T) {
@@ -272,6 +274,39 @@ func TestUpdateRestartBacksUpEvenWhenNoDaemonRuns(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "backup of the data is in") {
 		t.Fatalf("the user is told where the backup is: %q", out.String())
+	}
+}
+
+func TestUpdateRestartWorksWhenBinaryIsAlreadyCurrent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as the installed binary")
+	}
+	dir := t.TempDir()
+	log := filepath.Join(dir, "commands")
+	target := filepath.Join(dir, "502drive")
+	if err := os.WriteFile(target, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> '"+log+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	a := driveApp(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health/live" {
+			t.Errorf("unexpected download/request: %s", r.URL.Path)
+		}
+		reply(w, 200, map[string]any{"ready": true})
+	})
+	a.io.Out, a.io.Err = io.Discard, io.Discard
+	a.io.Getenv = func(k string) string {
+		if k == "DRIVE502_UPDATE_TARGET" {
+			return target
+		}
+		return ""
+	}
+	a.g.configPath = filepath.Join(dir, "config.json")
+	if err := a.installUpdate(t.Context(), update.Release{Tag: "v9.0.0"}, false, true, true); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(log)
+	if err != nil || !strings.Contains(string(data), "stop --yes") || !strings.Contains(string(data), "backup ") || !strings.Contains(string(data), "\nup ") {
+		t.Fatalf("current binary did not restart daemon through stop/backup/up: %q %v", data, err)
 	}
 }
 

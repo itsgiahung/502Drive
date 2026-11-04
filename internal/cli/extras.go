@@ -322,7 +322,9 @@ func (a *App) installUpdate(ctx context.Context, rel update.Release, newer, rest
 		if !a.g.quiet {
 			fmt.Fprintf(a.out(), "502drive %s is up to date (latest release %s).\n", Version, rel.Tag)
 		}
-		return nil
+		if !restart {
+			return nil
+		}
 	}
 	target := a.env("DRIVE502_UPDATE_TARGET") // tests only
 	if target == "" {
@@ -335,6 +337,17 @@ func (a *App) installUpdate(ctx context.Context, rel update.Release, newer, rest
 		}
 	}
 	dir := filepath.Dir(target)
+	if !newer {
+		if !yes {
+			if !a.io.StdinTTY || a.g.noInput {
+				return usage("add --yes to restart without a prompt")
+			}
+			if !a.confirm("Restart 502Drive and back up its data? [y/N]") {
+				return localErr(ExitUsage, "update_cancelled", "The daemon was not restarted.")
+			}
+		}
+		return a.finishUpdate(ctx, target, rel.Tag, true)
+	}
 	if strings.HasPrefix(target, "/usr/") || !update.Writable(dir) {
 		return localErr(ExitUsage, "update_package_managed", fmt.Sprintf(
 			"502drive in %s is managed by a package or an installer. Update it the same way: download %s from %s "+
@@ -393,9 +406,13 @@ func (a *App) installUpdate(ctx context.Context, rel update.Release, newer, rest
 	if !a.g.quiet {
 		fmt.Fprintf(a.out(), "Installed %s at %s (checksum verified). The previous binary is kept as %s.prev.\n", rel.Tag, target, target)
 	}
+	return a.finishUpdate(ctx, target, rel.Tag, restart)
+}
+
+func (a *App) finishUpdate(ctx context.Context, target, tag string, restart bool) error {
 	if !a.daemonUp(ctx) {
 		if restart { // nothing to restart, but the new version may upgrade the database on its first start
-			a.backupBeforeFirstStart(ctx, target, rel.Tag)
+			a.backupBeforeFirstStart(ctx, target, tag)
 		}
 		return nil
 	}
@@ -405,7 +422,7 @@ func (a *App) installUpdate(ctx context.Context, rel update.Release, newer, rest
 		}
 		return nil
 	}
-	return a.restartWith(ctx, target, rel.Tag)
+	return a.restartWith(ctx, target, tag)
 }
 
 // releaseIdentity is the only workflow whose signature is accepted: this
